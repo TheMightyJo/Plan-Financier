@@ -154,6 +154,7 @@ type SavingsTarget = {
 }
 
 type AlertItem = { message: string; level: 'info' | 'warning' | 'danger' }
+type AIProviderId = 'anthropic' | 'openai' | 'mistral' | 'google' | 'openrouter'
 type DashboardWidgetId =
   | 'annualTrend'
   | 'coaching'
@@ -164,7 +165,7 @@ type DashboardWidgetId =
   | 'savingsProjects'
   | 'expenseCalendar'
 type DashboardWidgetTemplateId = 'essentiel' | 'equilibre' | 'analytique' | 'custom'
-type DashboardWidgetSize = 'compact' | 'large'
+type DashboardWidgetSize = 'compact' | 'medium' | 'large'
 type DashboardWidgetSizes = Partial<Record<DashboardWidgetId, DashboardWidgetSize>>
 type DashboardWidgetState = {
   templateId: DashboardWidgetTemplateId
@@ -188,6 +189,8 @@ const SAVINGS_TARGETS_STORAGE_KEY = 'plan-financier-savings-targets-v1'
 const ONBOARDING_DONE_KEY = 'plan-financier-onboarding-done-v1'
 const THEME_STORAGE_KEY = 'plan-financier-theme-v1'
 const DASHBOARD_WIDGETS_STORAGE_KEY = 'plan-financier-dashboard-widgets-v1'
+const AI_PROVIDER_STORAGE_KEY = 'plan-financier-ai-provider-v1'
+const AI_PROVIDER_KEYS_STORAGE_KEY = 'plan-financier-ai-provider-keys-v1'
 const DEFAULT_CHAT_THREAD: ChatThread = { id: 'general', label: 'Général', lastActivityAt: 0 }
 
 const DASHBOARD_WIDGET_LIBRARY: Array<{ id: DashboardWidgetId; label: string }> = [
@@ -227,20 +230,45 @@ const DASHBOARD_WIDGET_TEMPLATES: Array<{
   },
 ]
 
+const MINI_CALENDAR_WEEKDAYS = ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di'] as const
+const DASHBOARD_WIDGET_SIZE_ORDER: DashboardWidgetSize[] = ['compact', 'medium', 'large']
+const DASHBOARD_WIDGET_SIZE_LABELS: Record<DashboardWidgetSize, string> = {
+  compact: 'Petit',
+  medium: 'Moyen',
+  large: 'Grand',
+}
+
+const DASHBOARD_WIDGET_ALLOWED_SIZES: Record<DashboardWidgetId, DashboardWidgetSize[]> = {
+  annualTrend: ['medium', 'large'],
+  coaching: ['compact', 'medium'],
+  csvImport: ['medium', 'large'],
+  alerts: ['compact', 'medium'],
+  savingsGoals: ['compact', 'medium', 'large'],
+  recurringCharges: ['compact', 'medium'],
+  savingsProjects: ['compact', 'medium', 'large'],
+  expenseCalendar: ['medium', 'large'],
+}
+
 const isDashboardWidgetId = (value: unknown): value is DashboardWidgetId =>
   typeof value === 'string' && DASHBOARD_WIDGET_LIBRARY.some((entry) => entry.id === value)
 
-const getDefaultDashboardWidgetSize = (widgetId: DashboardWidgetId): DashboardWidgetSize => {
-  if (widgetId === 'annualTrend' || widgetId === 'csvImport' || widgetId === 'expenseCalendar') {
-    return 'large'
-  }
+const isDashboardWidgetSize = (value: unknown): value is DashboardWidgetSize =>
+  typeof value === 'string' && DASHBOARD_WIDGET_SIZE_ORDER.includes(value as DashboardWidgetSize)
 
-  return 'compact'
+const getAllowedDashboardWidgetSizes = (widgetId: DashboardWidgetId) => DASHBOARD_WIDGET_ALLOWED_SIZES[widgetId]
+
+const getDefaultDashboardWidgetSize = (widgetId: DashboardWidgetId): DashboardWidgetSize => {
+  return getAllowedDashboardWidgetSizes(widgetId)[0]
 }
 
 const buildDashboardWidgetSizes = (widgetIds: DashboardWidgetId[], previousSizes: DashboardWidgetSizes = {}) =>
   widgetIds.reduce<DashboardWidgetSizes>((accumulator, widgetId) => {
-    accumulator[widgetId] = previousSizes[widgetId] ?? getDefaultDashboardWidgetSize(widgetId)
+    const fallbackSize = getDefaultDashboardWidgetSize(widgetId)
+    const candidate = previousSizes[widgetId]
+    const allowedSizes = getAllowedDashboardWidgetSizes(widgetId)
+    accumulator[widgetId] = candidate && isDashboardWidgetSize(candidate) && allowedSizes.includes(candidate)
+      ? candidate
+      : fallbackSize
     return accumulator
   }, {})
 
@@ -1165,6 +1193,7 @@ function App() {
   const [dashboardWidgetState, setDashboardWidgetState] = useState<DashboardWidgetState>(loadDashboardWidgetState)
   const isWidgetDirectMode = true
   const [widgetEditMode, setWidgetEditMode] = useState(false)
+  const [widgetSizeMenuFor, setWidgetSizeMenuFor] = useState<DashboardWidgetId | null>(null)
   const [draggedWidgetId, setDraggedWidgetId] = useState<DashboardWidgetId | null>(null)
   const [dragOverWidgetId, setDragOverWidgetId] = useState<DashboardWidgetId | null>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -1249,9 +1278,36 @@ function App() {
 
   // ── Claude AI ──────────────────────────────────────────────────────────
   type ChatMessage = { role: 'user' | 'assistant'; content: string }
-  const [anthropicKey, setAnthropicKey] = useState<string>(
-    () => window.localStorage.getItem(ANTHROPIC_KEY_STORAGE) ?? '',
+  const [aiProvider, setAiProvider] = useState<AIProviderId>(
+    () => (window.localStorage.getItem(AI_PROVIDER_STORAGE_KEY) as AIProviderId) ?? 'anthropic',
   )
+  const [aiProviderKeys, setAiProviderKeys] = useState<Record<AIProviderId, string>>(() => {
+    const fallbackAnthropicKey = window.localStorage.getItem(ANTHROPIC_KEY_STORAGE) ?? ''
+    const initial: Record<AIProviderId, string> = {
+      anthropic: fallbackAnthropicKey,
+      openai: '',
+      mistral: '',
+      google: '',
+      openrouter: '',
+    }
+
+    const raw = window.localStorage.getItem(AI_PROVIDER_KEYS_STORAGE_KEY)
+    if (!raw) return initial
+
+    try {
+      const parsed = JSON.parse(raw) as Partial<Record<AIProviderId, string>>
+      return {
+        anthropic: parsed.anthropic ?? fallbackAnthropicKey,
+        openai: parsed.openai ?? '',
+        mistral: parsed.mistral ?? '',
+        google: parsed.google ?? '',
+        openrouter: parsed.openrouter ?? '',
+      }
+    } catch {
+      return initial
+    }
+  })
+  const anthropicKey = aiProviderKeys.anthropic
   const [chatOpen, setChatOpen] = useState(false)
   const [chatThreads, setChatThreads] = useState<ChatThread[]>([DEFAULT_CHAT_THREAD])
   const [chatThreadId, setChatThreadId] = useState(DEFAULT_CHAT_THREAD.id)
@@ -1364,6 +1420,24 @@ function App() {
     })
   }
 
+  const setDashboardWidgetSize = (widgetId: DashboardWidgetId, size: DashboardWidgetSize) => {
+    setDashboardWidgetState((previous) => {
+      const allowedSizes = getAllowedDashboardWidgetSizes(widgetId)
+      if (!allowedSizes.includes(size)) {
+        return previous
+      }
+
+      return {
+        ...previous,
+        templateId: 'custom',
+        widgetSizes: {
+          ...previous.widgetSizes,
+          [widgetId]: size,
+        },
+      }
+    })
+  }
+
   const reorderDashboardWidgets = (sourceId: DashboardWidgetId, targetId: DashboardWidgetId) => {
     if (sourceId === targetId) return
 
@@ -1389,8 +1463,10 @@ function App() {
 
   const toggleDashboardWidgetSize = (widgetId: DashboardWidgetId) => {
     setDashboardWidgetState((previous) => {
+      const allowedSizes = getAllowedDashboardWidgetSizes(widgetId)
       const currentSize = previous.widgetSizes[widgetId] ?? getDefaultDashboardWidgetSize(widgetId)
-      const nextSize: DashboardWidgetSize = currentSize === 'large' ? 'compact' : 'large'
+      const currentIndex = Math.max(0, allowedSizes.indexOf(currentSize))
+      const nextSize = allowedSizes[(currentIndex + 1) % allowedSizes.length]
 
       return {
         ...previous,
@@ -1414,25 +1490,22 @@ function App() {
       ),
       widgetSizes: buildDashboardWidgetSizes(previous.visibleWidgets),
     }))
+    setWidgetSizeMenuFor(null)
     setDraggedWidgetId(null)
     setDragOverWidgetId(null)
   }
 
-  const openWidgetFromOverview = (widgetId: DashboardWidgetId) => {
-    setActiveDashboardWidgetId(widgetId)
-    navigateToSection(widgetId === 'annualTrend' ? 'budget' : 'pilotage')
-  }
-
   const handleWidgetDragStart = (event: DragEvent<HTMLElement>, widgetId: DashboardWidgetId) => {
-    if (!widgetEditMode) return
+    if (!widgetEditMode && !isWidgetDirectMode) return
 
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData('text/plain', widgetId)
+    setWidgetSizeMenuFor(null)
     setDraggedWidgetId(widgetId)
   }
 
   const handleWidgetDragOver = (event: DragEvent<HTMLElement>, widgetId: DashboardWidgetId) => {
-    if (!widgetEditMode) return
+    if (!widgetEditMode && !isWidgetDirectMode) return
 
     event.preventDefault()
     event.dataTransfer.dropEffect = 'move'
@@ -1440,7 +1513,7 @@ function App() {
   }
 
   const handleWidgetDrop = (event: DragEvent<HTMLElement>, widgetId: DashboardWidgetId) => {
-    if (!widgetEditMode) return
+    if (!widgetEditMode && !isWidgetDirectMode) return
 
     event.preventDefault()
     const sourceId = (event.dataTransfer.getData('text/plain') || draggedWidgetId) as DashboardWidgetId
@@ -1455,6 +1528,26 @@ function App() {
     setDraggedWidgetId(null)
     setDragOverWidgetId(null)
   }
+
+  useEffect(() => {
+    if (!widgetSizeMenuFor) return
+
+    const handleOutsideClick = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!target?.closest('.widget-preview-card__tools, .widget-size-flip-panel')) {
+        setWidgetSizeMenuFor(null)
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+    document.addEventListener('touchstart', handleOutsideClick)
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick)
+      document.removeEventListener('touchstart', handleOutsideClick)
+    }
+  }, [widgetSizeMenuFor])
+
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const [chatClearConfirmOpen, setChatClearConfirmOpen] = useState(false)
@@ -1477,7 +1570,7 @@ function App() {
 
   // ── Onboarding first-time ────────────────────────────────────────────
   type OnboardingMsg = { role: 'user' | 'assistant'; content: string }
-  type OnboardingProviderId = 'anthropic' | 'openai' | 'mistral' | 'google' | 'openrouter'
+  type OnboardingProviderId = AIProviderId
 
   const ONBOARDING_PROVIDERS: Array<{
     id: OnboardingProviderId
@@ -1558,6 +1651,10 @@ function App() {
       supported: false,
     },
   ]
+
+  const selectedAiProvider = ONBOARDING_PROVIDERS.find((provider) => provider.id === aiProvider) ?? ONBOARDING_PROVIDERS[0]
+  const activeAiKey = aiProviderKeys[aiProvider] ?? ''
+  const isCurrentAiProviderOperational = selectedAiProvider.id === 'anthropic'
 
   const [showOnboarding, setShowOnboarding] = useState(
     () =>
@@ -1716,11 +1813,28 @@ Règles :
     setShowOnboarding(false)
   }
 
-  const saveAnthropicKey = (key: string) => {
-    setAnthropicKey(key)
-    window.localStorage.setItem(ANTHROPIC_KEY_STORAGE, key)
+  const saveAiProvider = (provider: AIProviderId) => {
+    setAiProvider(provider)
+    window.localStorage.setItem(AI_PROVIDER_STORAGE_KEY, provider)
     setClaudeTestState('idle')
     setClaudeTestMessage('')
+  }
+
+  const saveAiProviderKey = (provider: AIProviderId, key: string) => {
+    setAiProviderKeys((previous) => {
+      const next = { ...previous, [provider]: key }
+      window.localStorage.setItem(AI_PROVIDER_KEYS_STORAGE_KEY, JSON.stringify(next))
+      if (provider === 'anthropic') {
+        window.localStorage.setItem(ANTHROPIC_KEY_STORAGE, key)
+      }
+      return next
+    })
+    setClaudeTestState('idle')
+    setClaudeTestMessage('')
+  }
+
+  const saveAnthropicKey = (key: string) => {
+    saveAiProviderKey('anthropic', key)
   }
 
   const openSettingsPanel = (section: SettingsSection = 'profiles') => {
@@ -2928,6 +3042,41 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     } satisfies Record<DashboardWidgetId, { eyebrow: string; title: string; summary: string; accent: string }>
   }, [alertMessages, annualTrendData, calendarData, coachingTips, csvPreview.length, csvRawData.headers.length, csvStatus, goalProgress, recurringItems, savingsTargets])
 
+  const expenseCalendarPreviewCells = useMemo(() => {
+    const [year, month] = selectedMonth.split('-').map(Number)
+    const firstWeekday = (new Date(year, month - 1, 1).getDay() + 6) % 7
+    const highestTotal = Math.max(0, ...calendarData.map((entry) => entry.total))
+    const leadingEmptyCells = Array.from({ length: firstWeekday }, (_, index) => ({
+      key: `empty-${index}`,
+      day: null as number | null,
+      total: 0,
+      intensity: 0,
+    }))
+
+    const filledCells = calendarData.map((entry) => ({
+      key: `day-${entry.day}`,
+      day: entry.day,
+      total: entry.total,
+      intensity: highestTotal > 0 ? entry.total / highestTotal : 0,
+    }))
+
+    return [...leadingEmptyCells, ...filledCells]
+  }, [calendarData, selectedMonth])
+
+  const annualTrendPreviewBars = useMemo(() => {
+    const recentMonths = annualTrendData.slice(-6)
+    const peakExpense = Math.max(1, ...recentMonths.map((entry) => entry.depenses))
+
+    return recentMonths.map((entry) => ({
+      month: entry.month,
+      depenses: entry.depenses,
+      heightPercent: Math.max(10, (entry.depenses / peakExpense) * 100),
+    }))
+  }, [annualTrendData])
+
+  const widgetAlertPreviewItems = useMemo(() => alertMessages.slice(0, 3), [alertMessages])
+  const widgetGoalsPreviewItems = useMemo(() => goalProgress.slice(0, 3), [goalProgress])
+
   const yoyComparisonData = useMemo(() => {
     const [y, m] = selectedMonth.split('-').map(Number)
     const prevYear = `${y - 1}-${String(m).padStart(2, '0')}`
@@ -3431,7 +3580,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     setBudgetQuickEditOpen(true)
   }
 
-  const isBudgetAiConfigured = anthropicKey.trim().length > 0
+  const isBudgetAiConfigured = isCurrentAiProviderOperational && activeAiKey.trim().length > 0
 
   const requestBudgetAssistantAdvice = async () => {
     if (!isBudgetAiConfigured || budgetAssistantLoading) {
@@ -4340,9 +4489,6 @@ Réponse attendue:
             </span>
           </div>
           <div className="hero-secondary-actions">
-            <button type="button" className="ghost-button" onClick={() => openSettingsPanel('profiles')}>
-              Paramètres
-            </button>
             <button type="button" className="ghost-button" onClick={() => void exportMonthlyPdf()}>
               <Download size={16} /> PDF mensuel
             </button>
@@ -4460,33 +4606,25 @@ Réponse attendue:
 
             const preview = widgetPreviewDefinitions[widgetId]
             const widgetSize = dashboardWidgetState.widgetSizes[widgetId] ?? getDefaultDashboardWidgetSize(widgetId)
+            const allowedWidgetSizes = getAllowedDashboardWidgetSizes(widgetId)
+            const isSizeSelectorOpen = widgetSizeMenuFor === widgetId
+            const isCompactWidget = widgetSize === 'compact'
+            const isMediumWidget = widgetSize === 'medium'
             const isDragging = draggedWidgetId === widgetId
             const isDropTarget = dragOverWidgetId === widgetId && draggedWidgetId !== widgetId
 
             return (
               <article
                 key={widgetId}
-                className={`widget-preview-card widget-preview-card--${widgetSize}${isWidgetDirectMode ? ' widget-preview-card--direct' : ''}${widgetId === 'coaching' && !widgetEditMode ? ' widget-preview-card--advice-rail' : ''}${isDragging ? ' is-dragging' : ''}${isDropTarget ? ' is-drop-target' : ''}`}
-                draggable={!isWidgetDirectMode && widgetEditMode}
+                className={`widget-preview-card widget-preview-card--${widgetSize}${isWidgetDirectMode ? ' widget-preview-card--direct' : ''}${isSizeSelectorOpen ? ' widget-preview-card--size-open' : ''}${widgetId === 'coaching' && !widgetEditMode ? ' widget-preview-card--advice-rail' : ''}${isDragging ? ' is-dragging' : ''}${isDropTarget ? ' is-drop-target' : ''}`}
+                draggable={widgetEditMode || isWidgetDirectMode}
                 onDragStart={(event) => handleWidgetDragStart(event, widgetId)}
                 onDragOver={(event) => handleWidgetDragOver(event, widgetId)}
                 onDrop={(event) => handleWidgetDrop(event, widgetId)}
                 onDragEnd={handleWidgetDragEnd}
-                onClick={() => {
-                  if (isWidgetDirectMode) {
-                    openWidgetFromOverview(widgetId)
-                  }
-                }}
-                onKeyDown={(event) => {
-                  if (!isWidgetDirectMode) return
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    openWidgetFromOverview(widgetId)
-                  }
-                }}
-                tabIndex={isWidgetDirectMode ? 0 : undefined}
-                role={isWidgetDirectMode ? 'button' : undefined}
               >
+                <div className="widget-preview-card__flip">
+                <div className="widget-preview-card__face widget-preview-card__face--front">
                 {!isWidgetDirectMode ? (
                   <button
                     type="button"
@@ -4502,27 +4640,141 @@ Réponse attendue:
                     <span className="widget-preview-card__eyebrow">{preview.eyebrow}</span>
                     <h3>{preview.title}</h3>
                   </div>
-                  {widgetEditMode ? (
-                    <span className="widget-preview-card__drag" aria-hidden="true">
-                      <GripVertical size={16} />
-                    </span>
-                  ) : null}
+                  <div className="widget-preview-card__tools">
+                    {(widgetEditMode || isWidgetDirectMode) ? (
+                      <button
+                        type="button"
+                        className="widget-preview-card__resize"
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setWidgetSizeMenuFor((previous) => previous === widgetId ? null : widgetId)
+                        }}
+                        aria-label={`Choisir la taille de ${widget.label}`}
+                        title={`Taille: ${DASHBOARD_WIDGET_SIZE_LABELS[widgetSize]}`}
+                      >
+                        {widgetSize === 'large' ? <Maximize2 size={14} /> : widgetSize === 'medium' ? <Layers3 size={14} /> : <Minimize2 size={14} />}
+                      </button>
+                    ) : null}
+                    {widgetEditMode ? (
+                      <span className="widget-preview-card__drag" aria-hidden="true">
+                        <GripVertical size={16} />
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
-                <p className="widget-preview-card__summary">{preview.summary}</p>
-                <div className="widget-preview-card__accent">{preview.accent}</div>
-                {widgetEditMode || isWidgetDirectMode ? (
+                <p className={`widget-preview-card__summary${isCompactWidget ? ' widget-preview-card__summary--compact' : ''}`}>{preview.summary}</p>
+                {(isMediumWidget || widgetSize === 'large') ? <div className="widget-preview-card__accent">{preview.accent}</div> : null}
+                {widgetId === 'annualTrend' ? (
+                  <div className={`widget-mini-trend${isCompactWidget ? ' widget-mini-trend--compact' : ''}`} aria-label="Aperçu des dépenses sur 6 mois">
+                    <div className="widget-mini-trend__bars">
+                      {(isCompactWidget ? annualTrendPreviewBars.slice(-3) : isMediumWidget ? annualTrendPreviewBars.slice(-4) : annualTrendPreviewBars).map((entry) => (
+                        <div key={entry.month} className="widget-mini-trend__bar-wrap" title={`${entry.month}: ${euroFormatter.format(entry.depenses)}`}>
+                          <span className="widget-mini-trend__bar" style={{ height: `${entry.heightPercent}%` }} />
+                          <small>{entry.month}</small>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {widgetId === 'alerts' ? (
+                  <ul className={`widget-mini-alerts${isCompactWidget ? ' widget-mini-alerts--compact' : ''}`} aria-label="Aperçu des alertes">
+                    {widgetAlertPreviewItems.length > 0 ? (
+                      (isCompactWidget ? widgetAlertPreviewItems.slice(0, 1) : isMediumWidget ? widgetAlertPreviewItems.slice(0, 2) : widgetAlertPreviewItems).map((item, index) => (
+                        <li key={`${item.level}-${index}`} className={`widget-mini-alerts__item widget-mini-alerts__item--${item.level}`}>
+                          {item.message}
+                        </li>
+                      ))
+                    ) : (
+                      <li className="widget-mini-alerts__item widget-mini-alerts__item--info">Aucune alerte active.</li>
+                    )}
+                  </ul>
+                ) : null}
+                {widgetId === 'savingsGoals' ? (
+                  <ul className={`widget-mini-goals${isCompactWidget ? ' widget-mini-goals--compact' : ''}`} aria-label="Aperçu des objectifs d'épargne">
+                    {(isCompactWidget ? widgetGoalsPreviewItems.slice(0, 2) : isMediumWidget ? widgetGoalsPreviewItems.slice(0, 3) : widgetGoalsPreviewItems).map((goal) => (
+                      <li key={goal.category}>
+                        <div className="widget-mini-goals__head">
+                          <strong>{goal.category}</strong>
+                          <span>{goal.rate.toFixed(0)}%</span>
+                        </div>
+                        <div className="widget-mini-goals__track">
+                          <span style={{ width: `${Math.max(4, Math.min(100, goal.rate))}%` }} />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {widgetId === 'expenseCalendar' ? (
+                  <div className={`widget-mini-calendar${isCompactWidget ? ' widget-mini-calendar--compact' : ''}`} aria-label={`Aperçu du calendrier pour ${formatMonth(selectedMonth)}`}>
+                    {!isCompactWidget ? (
+                      <div className="widget-mini-calendar__weekdays">
+                        {MINI_CALENDAR_WEEKDAYS.map((weekday) => (
+                          <span key={weekday}>{weekday}</span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="widget-mini-calendar__grid">
+                      {(isCompactWidget ? expenseCalendarPreviewCells.slice(0, 21) : isMediumWidget ? expenseCalendarPreviewCells.slice(0, 35) : expenseCalendarPreviewCells).map((cell) => (
+                        <div
+                          key={cell.key}
+                          className={`widget-mini-calendar__cell${cell.day === null ? ' is-empty' : ''}`}
+                          style={cell.day === null
+                            ? undefined
+                            : { background: `rgba(249, 115, 22, ${0.1 + cell.intensity * 0.7})` }}
+                          title={cell.day === null ? '' : `Jour ${cell.day}: ${euroFormatter.format(cell.total)}`}
+                        >
+                          {cell.day !== null ? <strong>{cell.day}</strong> : null}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {widgetEditMode && !isWidgetDirectMode ? (
                 <div className="widget-preview-card__actions">
-                  <button type="button" className="ghost-button" onClick={() => openWidgetFromOverview(widgetId)}>
-                    Ouvrir
+                  <button type="button" className="ghost-button" onClick={() => toggleDashboardWidgetSize(widgetId)}>
+                    {widgetSize === 'large' ? <Maximize2 size={14} /> : widgetSize === 'medium' ? <Layers3 size={14} /> : <Minimize2 size={14} />}
+                    Changer la taille
                   </button>
-                  {!isWidgetDirectMode ? (
-                    <button type="button" className="ghost-button" onClick={() => toggleDashboardWidgetSize(widgetId)}>
-                      {widgetSize === 'large' ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-                      {widgetSize === 'large' ? 'Réduire' : 'Agrandir'}
-                    </button>
-                  ) : null}
                 </div>
                 ) : null}
+                </div>
+                <div className="widget-preview-card__face widget-preview-card__face--back">
+                  <div className="widget-size-flip-panel" role="menu" aria-label={`Taille du widget ${widget.label}`}>
+                    <strong>Choisir la taille</strong>
+                    <div className="widget-size-flip-options">
+                      {allowedWidgetSizes.map((sizeOption) => (
+                        <button
+                          key={sizeOption}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={widgetSize === sizeOption}
+                          className={widgetSize === sizeOption ? 'active' : ''}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setDashboardWidgetSize(widgetId, sizeOption)
+                            setWidgetSizeMenuFor(null)
+                          }}
+                        >
+                          {DASHBOARD_WIDGET_SIZE_LABELS[sizeOption]}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setWidgetSizeMenuFor(null)
+                      }}
+                    >
+                      Retour
+                    </button>
+                  </div>
+                </div>
+                </div>
               </article>
             )
           })}
@@ -4584,7 +4836,7 @@ Réponse attendue:
               <aside className="settings-nav" aria-label="Sections de paramètres">
                 {[
                   ['profiles', 'Profils'],
-                  ['ai', 'Claude AI'],
+                  ['ai', 'Assistant IA'],
                   ['security', 'Sécurité'],
                   ['backup', 'Sauvegarde'],
                   ['theme', 'Thème'],
@@ -4690,39 +4942,77 @@ Réponse attendue:
                   <div className="settings-section-grid">
                     <article className="glass-card settings-section-card form-panel claude-onboarding-card">
                       <div className="panel-title">
-                        <h2>Claude AI</h2>
-                        <p>Active l’assistant, vérifie la clé et rends son état explicite.</p>
+                        <h2>Assistant IA</h2>
+                        <p>Choisissez votre fournisseur IA et gérez une clé API par fournisseur.</p>
                       </div>
                       <div className="claude-status-banner">
-                        <strong>{anthropicKey ? 'Statut: activable' : 'Statut: inactif'}</strong>
+                        <strong>
+                          {isCurrentAiProviderOperational
+                            ? (activeAiKey ? 'Statut: activable' : 'Statut: inactif')
+                            : 'Statut: en préparation'}
+                        </strong>
                         <small>
-                          {anthropicKey
-                            ? 'Une clé est enregistrée localement. Teste-la avant de t’appuyer dessus.'
-                            : 'Aucune clé enregistrée pour le moment.'}
+                          {isCurrentAiProviderOperational
+                            ? (activeAiKey
+                              ? 'Une clé est enregistrée localement. Testez-la avant de vous appuyer dessus.'
+                              : 'Aucune clé enregistrée pour le moment.')
+                            : `${selectedAiProvider.name} est sélectionné. L’intégration complète arrive bientôt dans FP.`}
                         </small>
                       </div>
                       <label>
-                        Clé API Claude (sk-ant-…)
+                        Fournisseur IA
+                        <select
+                          value={aiProvider}
+                          onChange={(event) => saveAiProvider(event.target.value as AIProviderId)}
+                        >
+                          {ONBOARDING_PROVIDERS.map((provider) => (
+                            <option key={provider.id} value={provider.id}>
+                              {provider.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Clé API {selectedAiProvider.name}
                         <input
                           type="password"
-                          value={anthropicKey}
-                          onChange={(event) => saveAnthropicKey(event.target.value)}
-                          placeholder="sk-ant-api03-..."
+                          value={activeAiKey}
+                          onChange={(event) => saveAiProviderKey(aiProvider, event.target.value)}
+                          placeholder={selectedAiProvider.keyPlaceholder}
                           autoComplete="off"
                         />
                       </label>
                       <div className="settings-inline-actions">
-                        <button type="button" onClick={() => void testClaudeKey()} disabled={claudeTestState === 'testing'}>
+                        <a href={selectedAiProvider.helpUrl} target="_blank" rel="noreferrer" className="ghost-button">
+                          Guide API
+                        </a>
+                        <a href={selectedAiProvider.consoleUrl} target="_blank" rel="noreferrer" className="ghost-button">
+                          Console clés
+                        </a>
+                      </div>
+                      <div className="settings-inline-actions">
+                        <button
+                          type="button"
+                          onClick={() => void testClaudeKey()}
+                          disabled={claudeTestState === 'testing' || !isCurrentAiProviderOperational}
+                        >
                           {claudeTestState === 'testing' ? (
                             <span className="inline-loading-label"><span className="inline-loader" aria-hidden="true" />Test en cours...</span>
-                          ) : 'Tester la clé'}
+                          ) : isCurrentAiProviderOperational ? 'Tester la clé' : 'Test indisponible'}
                         </button>
-                        <button type="button" className="ghost-button" onClick={() => setChatOpen(true)} disabled={!anthropicKey}>
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          onClick={() => setChatOpen(true)}
+                          disabled={!isCurrentAiProviderOperational || !anthropicKey}
+                        >
                           Ouvrir le chat
                         </button>
                       </div>
                       <p className={`claude-status-text claude-status-text--${claudeTestState}`}>
-                        {claudeTestMessage || (anthropicKey ? 'Clé enregistrée localement.' : 'Ajoute une clé pour activer Claude.')}
+                        {isCurrentAiProviderOperational
+                          ? (claudeTestMessage || (anthropicKey ? 'Clé enregistrée localement.' : 'Ajoutez une clé pour activer Anthropic.'))
+                          : `${selectedAiProvider.name} est bien sélectionné. Les fonctionnalités IA temps réel restent temporairement limitées à Anthropic.`}
                       </p>
                     </article>
                   </div>
@@ -5111,8 +5401,8 @@ Réponse attendue:
               <div className={`budget-ai-hint${isBudgetAiConfigured ? '' : ' warning'}`} role="status" aria-live="polite">
                 <span className="budget-ai-hint-text">
                   {isBudgetAiConfigured
-                    ? 'IA prête: vous pouvez utiliser Claude pour vos projections et conseils automatiques.'
-                    : "IA non configurée. Ajoutez d'abord votre clé Anthropic pour activer IA budget."}
+                    ? `IA prête: ${selectedAiProvider.name} est disponible pour les projections et conseils automatiques.`
+                    : `IA non configurée. Ajoutez d'abord votre clé ${selectedAiProvider.name} pour activer IA budget.`}
                 </span>
                 <span className="budget-ai-hint-actions">
                   {!isBudgetAiConfigured ? (
@@ -5129,7 +5419,7 @@ Réponse attendue:
                       className="budget-ai-hint-action"
                       onClick={() => setChatOpen(true)}
                     >
-                      Ouvrir Claude
+                      Ouvrir l'assistant
                     </button>
                   )}
                   <button
@@ -6495,7 +6785,7 @@ Réponse attendue:
     </main>
 
     {/* ── Claude AI Chat ─────────────────────────────────────────── */}
-    {isAuthenticated && anthropicKey ? (
+    {isAuthenticated && isCurrentAiProviderOperational && anthropicKey ? (
       <>
         <button
           type="button"
