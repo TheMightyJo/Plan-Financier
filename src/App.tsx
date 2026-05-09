@@ -4333,8 +4333,36 @@ Réponse attendue:
         </header>
         ) : null}
 
+        {isActiveView('overview') ? (
+        <section className="glass-card kpi-summary" style={{ margin: '0 0 1rem 0' }}>
+          <div className="kpi-card kpi-card--primary">
+            <div className="kpi-card-label">Solde disponible</div>
+            <div className="kpi-card-value">{euroFormatter.format(budget - monthlyExpense)}</div>
+            <div className="kpi-card-change" style={{ color: budget - monthlyExpense >= 0 ? '#4caf80' : '#ff6b7a' }}>
+              {budget - monthlyExpense >= 0 ? '✓ En positif' : '⚠ À revoir'}
+            </div>
+          </div>
+          <div className="kpi-card kpi-card--secondary">
+            <div className="kpi-card-label">Revenus ce mois</div>
+            <div className="kpi-card-value">{euroFormatter.format(monthlyRevenue)}</div>
+            <div className="kpi-card-change positive">+{((monthlyRevenue / budget) * 100).toFixed(0)}% du budget</div>
+          </div>
+          <div className="kpi-card kpi-card--danger">
+            <div className="kpi-card-label">Dépenses ce mois</div>
+            <div className="kpi-card-value">{euroFormatter.format(monthlyExpense)}</div>
+            <div className="kpi-card-change" style={{ color: usageRate >= 80 ? '#ff6b7a' : '#f59e0b' }}>
+              {usageRate.toFixed(0)}% du budget
+            </div>
+          </div>
+          <div className="kpi-card kpi-card--accent">
+            <div className="kpi-card-label">Économies possibles</div>
+            <div className="kpi-card-value">{euroFormatter.format(Math.max(0, budget * 0.15 - monthlyExpense + monthlyRevenue))}</div>
+            <div className="kpi-card-change positive">Reste à optimiser</div>
+          </div>
+        </section>
+        ) : null}
+
       {isActiveView('envelopes') ? (
-      <section id="envelopes" className="glass-card envelope-strip">
         <div className="panel-title">
           <h2>Enveloppes</h2>
           <p>Segmentation budgétaire par poche de dépense</p>
