@@ -4363,6 +4363,7 @@ Réponse attendue:
         ) : null}
 
       {isActiveView('envelopes') ? (
+      <section id="envelopes" className="glass-card envelope-strip">
         <div className="panel-title">
           <h2>Enveloppes</h2>
           <p>Segmentation budgétaire par poche de dépense</p>
