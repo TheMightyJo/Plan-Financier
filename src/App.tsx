@@ -741,7 +741,8 @@ const loadRolloverState = (currentMonth: string, profiles: UserProfile[]): Rollo
       month: typeof parsed.month === 'string' ? parsed.month : currentMonth,
       carryOver: profiles.reduce<Record<string, number>>((accumulator, profile) => {
         const legacyCarry = profile.id === defaultProfile.id ? parsed.carryOver?.Moi : undefined
-        accumulator[profile.id] = Number(legacyCarry ?? parsed.carryOver?.[profile.id] ?? 0)
+        const carryOverValue = Number(legacyCarry ?? parsed.carryOver?.[profile.id] ?? 0)
+        accumulator[profile.id] = Number.isFinite(carryOverValue) ? carryOverValue : 0
         return accumulator
       }, {}),
     }
@@ -1100,11 +1101,12 @@ function App() {
   type SettingsSection = 'profiles' | 'ai' | 'security' | 'backup' | 'reset' | 'theme'
   const currentMonth = new Date().toISOString().slice(0, 7)
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
+  const formatYearMonth = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
   const navigateMonth = (offset: number) => {
     setSelectedMonth((previous) => {
       const [y, m] = previous.split('-').map(Number)
       const d = new Date(y, m - 1 + offset, 1)
-      return d.toISOString().slice(0, 7)
+      return formatYearMonth(d)
     })
   }
   const formatMonth = (ym: string) => {
@@ -1161,6 +1163,7 @@ function App() {
     () => (window.localStorage.getItem(THEME_STORAGE_KEY) as 'dark' | 'light' | 'system') ?? 'system'
   )
   const [dashboardWidgetState, setDashboardWidgetState] = useState<DashboardWidgetState>(loadDashboardWidgetState)
+  const isWidgetDirectMode = true
   const [widgetEditMode, setWidgetEditMode] = useState(false)
   const [draggedWidgetId, setDraggedWidgetId] = useState<DashboardWidgetId | null>(null)
   const [dragOverWidgetId, setDragOverWidgetId] = useState<DashboardWidgetId | null>(null)
@@ -2409,6 +2412,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const budget = selectedProfileBudget + (rolloverState.carryOver[selectedProfileId] ?? 0)
   const remaining = budget - monthlyExpense
   const usageRateRaw = budget > 0 ? (monthlyExpense / budget) * 100 : 0
+  const incomeRate = budget > 0 ? (monthlyIncome / budget) * 100 : 0
   const usageRate = Math.min(100, usageRateRaw)
   const budgetSimpleMessage =
     remaining < 0
@@ -2420,23 +2424,29 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
           : 'Très bon départ. Continuez comme ça.'
 
   // Calcul des % changements par rapport au mois précédent
+  const previousMonthKey = useMemo(() => {
+    const [year, month] = selectedMonth.split('-').map(Number)
+    if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+      const now = new Date()
+      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      return `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`
+    }
+
+    const previousMonthDate = new Date(year, month - 2, 1)
+    return `${previousMonthDate.getFullYear()}-${String(previousMonthDate.getMonth() + 1).padStart(2, '0')}`
+  }, [selectedMonth])
+
   const previousMonthExpense = useMemo(() => {
-    const now = new Date()
-    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const monthKey = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`
     return filteredTransactions
-      .filter((item) => item.kind === 'depense' && item.date.startsWith(monthKey))
+      .filter((item) => item.kind === 'depense' && item.date.startsWith(previousMonthKey))
       .reduce((sum, item) => sum + item.amount, 0)
-  }, [filteredTransactions])
+  }, [filteredTransactions, previousMonthKey])
 
   const previousMonthIncome = useMemo(() => {
-    const now = new Date()
-    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const monthKey = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`
     return filteredTransactions
-      .filter((item) => item.kind === 'revenu' && item.date.startsWith(monthKey))
+      .filter((item) => item.kind === 'revenu' && item.date.startsWith(previousMonthKey))
       .reduce((sum, item) => sum + item.amount, 0)
-  }, [filteredTransactions])
+  }, [filteredTransactions, previousMonthKey])
 
   const depenseChangePercent = previousMonthExpense > 0
     ? ((monthlyExpense - previousMonthExpense) / previousMonthExpense) * 100
@@ -4221,7 +4231,7 @@ Réponse attendue:
       </div>
     ) : null}
 
-    <main className={`dashboard-shell${isActiveView('budget') ? ' dashboard-shell--three-columns' : ''}`} id="app-main" aria-label="Tableau de bord budgétaire">
+    <main className={`dashboard-shell${isActiveView('budget') || isActiveView('overview') ? ' dashboard-shell--three-columns' : ''}`} id="app-main" aria-label="Tableau de bord budgétaire">
       <h1 className="sr-only">Plan Financier — Tableau de bord</h1>
       <aside className="glass-card side-menu" aria-label="Navigation principale">
         <p className="eyebrow">Navigation</p>
@@ -4246,12 +4256,33 @@ Réponse attendue:
           >
             ⚙️ Paramètres
           </button>
+          <button
+            type="button"
+            className="side-menu-logout-btn"
+            onClick={handleLogout}
+            aria-label="Se déconnecter"
+          >
+            ⎋ Déconnexion
+          </button>
         </div>
       </aside>
 
       <div className="dashboard-main">
         {isActiveView('overview') ? (
         <header id="overview" className="hero-header glass-card">
+        {!isBudgetAiConfigured ? (
+          <div className="hero-ai-info-bar" role="status" aria-live="polite">
+            <div>
+              <strong>Assistant IA non configuré</strong>
+              <small>
+                Activez votre fournisseur IA dans les paramètres pour débloquer les analyses automatiques et le coaching avancé.
+              </small>
+            </div>
+            <button type="button" onClick={() => openSettingsPanel('ai')}>
+              Configurer l&apos;IA
+            </button>
+          </div>
+        ) : null}
         <div>
           <div className="app-brand-row">
             <img className="app-brand-logo" src="/logo.png" alt="Logo FP" />
@@ -4297,16 +4328,6 @@ Réponse attendue:
               <button type="button" onClick={() => navigateMonth(1)} aria-label="Mois suivant">&#8250;</button>
             </div>
           </div>
-          <div className="hero-claude-card">
-            <div>
-              <strong>{anthropicKey ? 'Claude activé' : 'Active Claude'}</strong>
-              <small>
-                {anthropicKey
-                  ? 'Assistant prêt pour analyser ce profil et ce mois.'
-                  : 'Ajoute une clé Anthropic et teste-la pour débloquer l’assistant.'}
-              </small>
-            </div>
-          </div>
           <div className="hero-budget-bar">
             <div className="hero-budget-bar__track">
               <div
@@ -4325,9 +4346,6 @@ Réponse attendue:
             <button type="button" className="ghost-button" onClick={() => void exportMonthlyPdf()}>
               <Download size={16} /> PDF mensuel
             </button>
-            <button type="button" className="logout-button" onClick={handleLogout}>
-              Déconnexion
-            </button>
           </div>
         </div>
         </header>
@@ -4338,25 +4356,25 @@ Réponse attendue:
           <div className="kpi-card kpi-card--primary">
             <div className="kpi-card-label">Solde disponible</div>
             <div className="kpi-card-value">{euroFormatter.format(budget - monthlyExpense)}</div>
-            <div className="kpi-card-change" style={{ color: budget - monthlyExpense >= 0 ? '#4caf80' : '#ff6b7a' }}>
+            <div className="kpi-card-change" style={{ color: budget - monthlyExpense >= 0 ? 'var(--kpi-positive)' : 'var(--kpi-danger)' }}>
               {budget - monthlyExpense >= 0 ? '✓ En positif' : '⚠ À revoir'}
             </div>
           </div>
           <div className="kpi-card kpi-card--secondary">
             <div className="kpi-card-label">Revenus ce mois</div>
-            <div className="kpi-card-value">{euroFormatter.format(monthlyRevenue)}</div>
-            <div className="kpi-card-change positive">+{((monthlyRevenue / budget) * 100).toFixed(0)}% du budget</div>
+            <div className="kpi-card-value">{euroFormatter.format(monthlyIncome)}</div>
+            <div className="kpi-card-change positive">+{incomeRate.toFixed(0)}% du budget</div>
           </div>
           <div className="kpi-card kpi-card--danger">
             <div className="kpi-card-label">Dépenses ce mois</div>
             <div className="kpi-card-value">{euroFormatter.format(monthlyExpense)}</div>
-            <div className="kpi-card-change" style={{ color: usageRate >= 80 ? '#ff6b7a' : '#f59e0b' }}>
+            <div className="kpi-card-change" style={{ color: usageRate >= 80 ? 'var(--kpi-danger)' : 'var(--kpi-warn)' }}>
               {usageRate.toFixed(0)}% du budget
             </div>
           </div>
           <div className="kpi-card kpi-card--accent">
             <div className="kpi-card-label">Économies possibles</div>
-            <div className="kpi-card-value">{euroFormatter.format(Math.max(0, budget * 0.15 - monthlyExpense + monthlyRevenue))}</div>
+            <div className="kpi-card-value">{euroFormatter.format(Math.max(0, budget * 0.15 - monthlyExpense + monthlyIncome))}</div>
             <div className="kpi-card-change positive">Reste à optimiser</div>
           </div>
         </section>
@@ -4396,11 +4414,7 @@ Réponse attendue:
       ) : null}
 
       {isActiveView('overview') ? (
-      <section className="glass-card widget-customizer" aria-label="Personnalisation des widgets">
-        <div className="panel-title">
-          <h2>Widgets du dashboard</h2>
-          <p>Partez d'un modèle puis personnalisez la vue comme un écran d'accueil: ordre, taille et ouverture rapide.</p>
-        </div>
+      <section className={`widget-customizer${isWidgetDirectMode ? ' widget-customizer--direct' : ''}`} aria-label={isWidgetDirectMode ? 'Widgets du dashboard' : 'Personnalisation des widgets'}>
         <div className="widget-customizer-toolbar">
           <button
             type="button"
@@ -4437,7 +4451,10 @@ Réponse attendue:
           </button>
         </div>
         <div className={`widget-board${widgetEditMode ? ' widget-board--editing' : ''}`}>
-          {orderedVisibleDashboardWidgets.map((widgetId) => {
+          {(widgetEditMode
+            ? orderedVisibleDashboardWidgets
+            : orderedVisibleDashboardWidgets.filter((widgetId) => widgetId !== 'coaching')
+          ).map((widgetId) => {
             const widget = DASHBOARD_WIDGET_LIBRARY.find((entry) => entry.id === widgetId)
             if (!widget) return null
 
@@ -4449,21 +4466,37 @@ Réponse attendue:
             return (
               <article
                 key={widgetId}
-                className={`widget-preview-card widget-preview-card--${widgetSize}${isDragging ? ' is-dragging' : ''}${isDropTarget ? ' is-drop-target' : ''}`}
-                draggable={widgetEditMode}
+                className={`widget-preview-card widget-preview-card--${widgetSize}${isWidgetDirectMode ? ' widget-preview-card--direct' : ''}${widgetId === 'coaching' && !widgetEditMode ? ' widget-preview-card--advice-rail' : ''}${isDragging ? ' is-dragging' : ''}${isDropTarget ? ' is-drop-target' : ''}`}
+                draggable={!isWidgetDirectMode && widgetEditMode}
                 onDragStart={(event) => handleWidgetDragStart(event, widgetId)}
                 onDragOver={(event) => handleWidgetDragOver(event, widgetId)}
                 onDrop={(event) => handleWidgetDrop(event, widgetId)}
                 onDragEnd={handleWidgetDragEnd}
+                onClick={() => {
+                  if (isWidgetDirectMode) {
+                    openWidgetFromOverview(widgetId)
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (!isWidgetDirectMode) return
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    openWidgetFromOverview(widgetId)
+                  }
+                }}
+                tabIndex={isWidgetDirectMode ? 0 : undefined}
+                role={isWidgetDirectMode ? 'button' : undefined}
               >
-                <button
-                  type="button"
-                  className="widget-preview-card__remove"
-                  aria-label={`Retirer ${widget.label}`}
-                  onClick={() => toggleDashboardWidget(widgetId)}
-                >
-                  ✕
-                </button>
+                {!isWidgetDirectMode ? (
+                  <button
+                    type="button"
+                    className="widget-preview-card__remove"
+                    aria-label={`Retirer ${widget.label}`}
+                    onClick={() => toggleDashboardWidget(widgetId)}
+                  >
+                    ✕
+                  </button>
+                ) : null}
                 <div className="widget-preview-card__top">
                   <div>
                     <span className="widget-preview-card__eyebrow">{preview.eyebrow}</span>
@@ -4477,19 +4510,26 @@ Réponse attendue:
                 </div>
                 <p className="widget-preview-card__summary">{preview.summary}</p>
                 <div className="widget-preview-card__accent">{preview.accent}</div>
+                {widgetEditMode || isWidgetDirectMode ? (
                 <div className="widget-preview-card__actions">
                   <button type="button" className="ghost-button" onClick={() => openWidgetFromOverview(widgetId)}>
                     Ouvrir
                   </button>
-                  <button type="button" className="ghost-button" onClick={() => toggleDashboardWidgetSize(widgetId)}>
-                    {widgetSize === 'large' ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-                    {widgetSize === 'large' ? 'Réduire' : 'Agrandir'}
-                  </button>
+                  {!isWidgetDirectMode ? (
+                    <button type="button" className="ghost-button" onClick={() => toggleDashboardWidgetSize(widgetId)}>
+                      {widgetSize === 'large' ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                      {widgetSize === 'large' ? 'Réduire' : 'Agrandir'}
+                    </button>
+                  ) : null}
                 </div>
+                ) : null}
               </article>
             )
           })}
-          {orderedVisibleDashboardWidgets.length === 0 ? (
+          {(widgetEditMode
+            ? orderedVisibleDashboardWidgets
+            : orderedVisibleDashboardWidgets.filter((widgetId) => widgetId !== 'coaching')
+          ).length === 0 ? (
             <article className="widget-preview-card widget-preview-card--empty">
               <span className="widget-preview-card__eyebrow">Vide</span>
               <h3>Aucun widget sur la vue d’ensemble</h3>
@@ -6370,6 +6410,30 @@ Réponse attendue:
       </section>
       ) : null}
       </div>
+
+      {isActiveView('overview') ? (
+      <aside className="glass-card budget-advice-rail dashboard-right-rail overview-coaching-rail" aria-label="Conseils coaching">
+        <div className="budget-assistant-title-row">
+          <div className="budget-assistant-title-main">
+            <p className="eyebrow">Conseils</p>
+            <span className="budget-assistant-ai-tag">
+              <Brain size={12} /> Coaching financier
+            </span>
+          </div>
+        </div>
+        <p className="budget-advice-helper">
+          Conseils rapides pour garder le cap ce mois-ci.
+        </p>
+        <ul className="alert-list coaching-list overview-coaching-list">
+          {(coachingTips.length > 0 ? coachingTips.slice(0, 4) : ['Ajoutez vos premières transactions pour obtenir des conseils personnalisés.']).map((tip) => (
+            <li key={tip}>
+              <Brain size={15} />
+              <span>{tip}</span>
+            </li>
+          ))}
+        </ul>
+      </aside>
+      ) : null}
 
       {isActiveView('budget') ? (
       <aside className={`glass-card budget-advice-rail dashboard-right-rail${budgetAssistantVisible ? '' : ' collapsed'}`} aria-label="Conseils budget">

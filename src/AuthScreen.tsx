@@ -53,6 +53,28 @@ function FloatingBg() {
   const lastRef = useRef(0)
 
   useEffect(() => {
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    if (prefersReducedMotion) {
+      stateRef.current.forEach((_, i) => {
+        const el = itemRefs.current[i]
+        if (!el) {
+          return
+        }
+
+        const x = (i * 83) % Math.max(1, window.innerWidth - 80)
+        const y = (i * 67) % Math.max(1, window.innerHeight - 40)
+        el.style.transform = `translate(${x}px, ${y}px)`
+
+        const emojiEl = el.children[0] as HTMLElement
+        const wordEl = el.children[1] as HTMLElement
+        if (emojiEl) emojiEl.style.opacity = '0'
+        if (wordEl) wordEl.style.opacity = '1'
+      })
+
+      return undefined
+    }
+
     const animate = (now: number) => {
       const dt = Math.min(now - lastRef.current, 40)
       lastRef.current = now
