@@ -781,6 +781,41 @@ h1 {
   font-size: 0.62rem;
 }
 
+.widget-mini-calendar--large {
+  gap: 0.52rem;
+}
+
+.widget-mini-calendar--large .widget-mini-calendar__weekdays {
+  font-size: 0.72rem;
+  gap: 0.28rem;
+}
+
+.widget-mini-calendar--large .widget-mini-calendar__grid {
+  gap: 0.28rem;
+}
+
+.widget-mini-calendar--large .widget-mini-calendar__cell {
+  min-height: 2.05rem;
+}
+
+.widget-mini-calendar--large .widget-mini-calendar__cell strong {
+  font-size: 0.78rem;
+}
+
+.widget-mini-calendar__cell.has-details {
+  align-content: center;
+  justify-items: center;
+  gap: 0.1rem;
+  padding: 0.18rem 0.2rem;
+}
+
+.widget-mini-calendar__cell.has-details small {
+  font-size: 0.58rem;
+  line-height: 1.15;
+  color: var(--text-1);
+  opacity: 0.9;
+}
+
 .widget-mini-trend {
   margin-top: 0.3rem;
 }
@@ -1225,6 +1260,10 @@ h1 {
   grid-column: span 8;
 }
 
+.widget-preview-card--calendar-full {
+  grid-column: 1 / -1;
+}
+
 .widget-preview-card--medium {
   grid-column: span 6;
 }
@@ -1322,6 +1361,32 @@ h1 {
   font-size: var(--text-2xs);
   font-weight: 800;
   letter-spacing: 0.08em;
+}
+
+.widget-preview-card__eyebrow-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+}
+
+.widget-ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24rem;
+  padding: 0.16rem 0.38rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: var(--text-1);
+  border: 1px solid rgba(var(--accent-rgb), 0.45);
+  background: color-mix(in srgb, rgba(var(--accent-rgb), 0.22) 85%, transparent);
+}
+
+.widget-ai-inline-icon {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 0.35rem;
+  color: var(--accent-soft);
 }
 
 .widget-preview-card h3 {

@@ -2784,21 +2784,25 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const calendarData = useMemo(() => {
     const [calYear, calMon] = selectedMonth.split('-').map(Number)
     const daysInMonth = new Date(calYear, calMon, 0).getDate()
-    const map = new Map<number, number>()
+    const amountByDay = new Map<number, number>()
+    const countByDay = new Map<number, number>()
 
     activeMonthTransactions
       .filter((item) => item.kind === 'depense')
       .forEach((item) => {
         const day = Number(item.date.slice(8, 10))
-        map.set(day, (map.get(day) ?? 0) + item.amount)
+        amountByDay.set(day, (amountByDay.get(day) ?? 0) + item.amount)
+        countByDay.set(day, (countByDay.get(day) ?? 0) + 1)
       })
 
     return Array.from({ length: daysInMonth }, (_, index) => {
       const day = index + 1
-      const total = map.get(day) ?? 0
+      const total = amountByDay.get(day) ?? 0
+      const count = countByDay.get(day) ?? 0
       return {
         day,
         total,
+        count,
         intensity: Math.min(1, total / 120),
       }
     })
@@ -3057,6 +3061,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       key: `day-${entry.day}`,
       day: entry.day,
       total: entry.total,
+      count: entry.count,
       intensity: highestTotal > 0 ? entry.total / highestTotal : 0,
     }))
 
@@ -4616,7 +4621,7 @@ Réponse attendue:
             return (
               <article
                 key={widgetId}
-                className={`widget-preview-card widget-preview-card--${widgetSize}${isWidgetDirectMode ? ' widget-preview-card--direct' : ''}${isSizeSelectorOpen ? ' widget-preview-card--size-open' : ''}${widgetId === 'coaching' && !widgetEditMode ? ' widget-preview-card--advice-rail' : ''}${isDragging ? ' is-dragging' : ''}${isDropTarget ? ' is-drop-target' : ''}`}
+                className={`widget-preview-card widget-preview-card--${widgetSize}${widgetId === 'expenseCalendar' && widgetSize === 'large' ? ' widget-preview-card--calendar-full' : ''}${isWidgetDirectMode ? ' widget-preview-card--direct' : ''}${isSizeSelectorOpen ? ' widget-preview-card--size-open' : ''}${widgetId === 'coaching' && !widgetEditMode ? ' widget-preview-card--advice-rail' : ''}${isDragging ? ' is-dragging' : ''}${isDropTarget ? ' is-drop-target' : ''}`}
                 draggable={widgetEditMode || isWidgetDirectMode}
                 onDragStart={(event) => handleWidgetDragStart(event, widgetId)}
                 onDragOver={(event) => handleWidgetDragOver(event, widgetId)}
@@ -4637,8 +4642,20 @@ Réponse attendue:
                 ) : null}
                 <div className="widget-preview-card__top">
                   <div>
-                    <span className="widget-preview-card__eyebrow">{preview.eyebrow}</span>
-                    <h3>{preview.title}</h3>
+                    <span className="widget-preview-card__eyebrow-row">
+                      <span className="widget-preview-card__eyebrow">{preview.eyebrow}</span>
+                      {widgetId === 'coaching' && isBudgetAiConfigured ? (
+                        <span className="widget-ai-badge" aria-label="IA connectée">
+                          <Bot size={12} /> IA
+                        </span>
+                      ) : null}
+                    </span>
+                    <h3>
+                      {preview.title}
+                      {widgetId === 'coaching' && isBudgetAiConfigured ? (
+                        <span className="widget-ai-inline-icon" aria-hidden="true"> <Bot size={14} /></span>
+                      ) : null}
+                    </h3>
                   </div>
                   <div className="widget-preview-card__tools">
                     {(widgetEditMode || isWidgetDirectMode) ? (
@@ -4706,7 +4723,7 @@ Réponse attendue:
                   </ul>
                 ) : null}
                 {widgetId === 'expenseCalendar' ? (
-                  <div className={`widget-mini-calendar${isCompactWidget ? ' widget-mini-calendar--compact' : ''}`} aria-label={`Aperçu du calendrier pour ${formatMonth(selectedMonth)}`}>
+                  <div className={`widget-mini-calendar${isCompactWidget ? ' widget-mini-calendar--compact' : isMediumWidget ? '' : ' widget-mini-calendar--large'}`} aria-label={`Aperçu du calendrier pour ${formatMonth(selectedMonth)}`}>
                     {!isCompactWidget ? (
                       <div className="widget-mini-calendar__weekdays">
                         {MINI_CALENDAR_WEEKDAYS.map((weekday) => (
@@ -4718,13 +4735,19 @@ Réponse attendue:
                       {(isCompactWidget ? expenseCalendarPreviewCells.slice(0, 21) : isMediumWidget ? expenseCalendarPreviewCells.slice(0, 35) : expenseCalendarPreviewCells).map((cell) => (
                         <div
                           key={cell.key}
-                          className={`widget-mini-calendar__cell${cell.day === null ? ' is-empty' : ''}`}
+                          className={`widget-mini-calendar__cell${cell.day === null ? ' is-empty' : ''}${!isCompactWidget && !isMediumWidget ? ' has-details' : ''}`}
                           style={cell.day === null
                             ? undefined
                             : { background: `rgba(249, 115, 22, ${0.1 + cell.intensity * 0.7})` }}
                           title={cell.day === null ? '' : `Jour ${cell.day}: ${euroFormatter.format(cell.total)}`}
                         >
                           {cell.day !== null ? <strong>{cell.day}</strong> : null}
+                          {cell.day !== null && !isCompactWidget && !isMediumWidget ? (
+                            <small>
+                              {cell.count > 0 ? `${cell.count} op.` : 'Aucune'}
+                              {cell.total > 0 ? ` · ${Math.round(cell.total)}€` : ''}
+                            </small>
+                          ) : null}
                         </div>
                       ))}
                     </div>
