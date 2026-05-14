@@ -51,127 +51,62 @@ import {
 import {
   addPinChangeLog,
   clearPinChangeLogs,
+  DEFAULT_PARENT_PIN,
   defaultSensitiveState,
   loadSensitiveState,
   loadPinChangeLogs,
   resetSensitiveStorage,
   SESSION_DURATION_OPTIONS,
   saveSensitiveState,
+  setParentPin,
+  verifyParentPin,
   type AuthRole,
   type PinChangeLog,
   type SensitiveState,
 } from './security'
-
-type FamilyMember = string
-type UserProfile = {
-  id: string
-  name: string
-  monthlyBudget: number
-}
-type TransactionKind = 'depense' | 'revenu'
-type Category =
-  | 'Courses'
-  | 'Transport'
-  | 'Ecole'
-  | 'Loisirs'
-  | 'Sante'
-  | 'Maison'
-  | 'Autre'
-
-type Envelope = 'Perso' | 'Maison' | 'Vacances'
-
-type Transaction = {
-  id: number
-  label: string
-  amount: number
-  category: Category
-  member: FamilyMember
-  date: string
-  kind: TransactionKind
-  envelope: Envelope
-}
-
-type SavingsGoals = Record<FamilyMember, Record<Category, number>>
-
-type RolloverState = {
-  month: string
-  carryOver: Record<FamilyMember, number>
-}
-
-type CsvPreviewRow = {
-  id: number
-  date: string
-  label: string
-  amount: number
-  kind: TransactionKind
-  category: Category
-  duplicate: boolean
-  duplicateReason?: string
-}
-
-type CsvColumnMapping = {
-  date: string
-  label: string
-  amount: string
-  type: string
-}
-
-type CsvRawData = {
-  headers: string[]
-  rows: string[][]
-}
-
-type StoredCsvMappings = Record<string, CsvColumnMapping>
-
-type EncryptedBackup = {
-  version: number
-  createdAt: number
-  salt: string
-  iv: string
-  cipher: string
-}
-
-type BackupPayload = {
-  profiles: UserProfile[]
-  activeProfileId: string
-  defaultProfileId: string
-  transactions: Transaction[]
-  savingsGoals: SavingsGoals
-  rolloverState: RolloverState
-  storedCsvMappings: StoredCsvMappings
-}
-
-type ChatThread = {
-  id: string
-  label: string
-  lastActivityAt: number
-}
-
-type SavingsTarget = {
-  id: string
-  label: string
-  targetAmount: number
-}
-
-type AlertItem = { message: string; level: 'info' | 'warning' | 'danger' }
-type AIProviderId = 'anthropic' | 'openai' | 'mistral' | 'google' | 'openrouter'
-type DashboardWidgetId =
-  | 'annualTrend'
-  | 'coaching'
-  | 'csvImport'
-  | 'alerts'
-  | 'savingsGoals'
-  | 'recurringCharges'
-  | 'savingsProjects'
-  | 'expenseCalendar'
-type DashboardWidgetTemplateId = 'essentiel' | 'equilibre' | 'analytique' | 'custom'
-type DashboardWidgetSize = 'compact' | 'medium' | 'large'
-type DashboardWidgetSizes = Partial<Record<DashboardWidgetId, DashboardWidgetSize>>
-type DashboardWidgetState = {
-  templateId: DashboardWidgetTemplateId
-  visibleWidgets: DashboardWidgetId[]
-  widgetSizes: DashboardWidgetSizes
-}
+import {
+  euroFormatter,
+  formatTooltipValue,
+} from './lib/format'
+import {
+  computeLabelSimilarity,
+  normalizeText,
+  sanitizeProfileId,
+} from './lib/text'
+import { getDateDistanceInDays } from './lib/dates'
+import {
+  categories,
+  categoryColors,
+  envelopes,
+  envelopeColors,
+  inferEnvelope,
+  suggestCategoryFromLabel,
+} from './lib/categories'
+import type {
+  AIProviderId,
+  AlertItem,
+  BackupPayload,
+  Category,
+  ChatThread,
+  CsvColumnMapping,
+  CsvPreviewRow,
+  CsvRawData,
+  DashboardWidgetId,
+  DashboardWidgetSize,
+  DashboardWidgetSizes,
+  DashboardWidgetState,
+  DashboardWidgetTemplateId,
+  EncryptedBackup,
+  Envelope,
+  FamilyMember,
+  RolloverState,
+  SavingsGoals,
+  SavingsTarget,
+  StoredCsvMappings,
+  Transaction,
+  TransactionKind,
+  UserProfile,
+} from './types'
 
 const TRANSACTIONS_STORAGE_KEY = 'plan-financier-transactions-v1'
 const ANTHROPIC_KEY_STORAGE = 'plan-financier-anthropic-key-v1'
@@ -325,24 +260,6 @@ const defaultProfile: UserProfile = {
   monthlyBudget: 2300,
 }
 
-const envelopes: Envelope[] = ['Perso', 'Maison', 'Vacances']
-
-const categoryColors: Record<Category, string> = {
-  Courses: '#f97316',
-  Transport: '#14b8a6',
-  Ecole: '#0ea5e9',
-  Loisirs: '#f43f5e',
-  Sante: '#a855f7',
-  Maison: '#10b981',
-  Autre: '#64748b',
-}
-
-const envelopeColors: Record<Envelope, string> = {
-  Perso: '#f97316',
-  Maison: '#10b981',
-  Vacances: '#eab308',
-}
-
 const baseTransactions: Transaction[] = [
   {
     id: 1,
@@ -446,16 +363,6 @@ const baseTransactions: Transaction[] = [
   },
 ]
 
-const categories: Category[] = [
-  'Courses',
-  'Transport',
-  'Ecole',
-  'Loisirs',
-  'Sante',
-  'Maison',
-  'Autre',
-]
-
 const defaultGoalTemplate: Record<Category, number> = {
   Courses: 320,
   Transport: 120,
@@ -470,93 +377,6 @@ const defaultSavingsGoals: SavingsGoals = {
   [defaultProfile.id]: defaultGoalTemplate,
 }
 
-const categoryKeywords: Array<{ category: Category; keywords: string[] }> = [
-  { category: 'Courses', keywords: ['supermarche', 'courses', 'alimentation', 'carrefour'] },
-  { category: 'Transport', keywords: ['transport', 'metro', 'bus', 'essence', 'train'] },
-  { category: 'Ecole', keywords: ['ecole', 'cantine', 'fourniture', 'scolaire', 'cours'] },
-  { category: 'Loisirs', keywords: ['cinema', 'loisir', 'sport', 'sortie', 'jeu'] },
-  { category: 'Sante', keywords: ['pharmacie', 'medecin', 'sante', 'dentiste'] },
-  { category: 'Maison', keywords: ['electricite', 'loyer', 'maison', 'internet', 'eau'] },
-]
-
-const euroFormatter = new Intl.NumberFormat('fr-FR', {
-  style: 'currency',
-  currency: 'EUR',
-  maximumFractionDigits: 0,
-})
-
-const formatTooltipValue = (
-  value: number | string | ReadonlyArray<number | string> | undefined,
-) => {
-  const rawValue = Array.isArray(value) ? value[0] : value
-  const numericValue = typeof rawValue === 'number' ? rawValue : Number(rawValue ?? 0)
-
-  return euroFormatter.format(numericValue)
-}
-
-const normalizeText = (value: string) =>
-  value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-const getLabelTokens = (value: string) =>
-  normalizeText(value)
-    .split(' ')
-    .filter((token) => token.length > 2)
-
-const computeLabelSimilarity = (left: string, right: string) => {
-  const leftTokens = getLabelTokens(left)
-  const rightTokens = getLabelTokens(right)
-
-  if (leftTokens.length === 0 || rightTokens.length === 0) {
-    return 0
-  }
-
-  const leftSet = new Set(leftTokens)
-  const rightSet = new Set(rightTokens)
-  const intersection = leftTokens.filter((token) => rightSet.has(token)).length
-  const union = new Set([...leftSet, ...rightSet]).size
-
-  return union === 0 ? 0 : intersection / union
-}
-
-const getDateDistanceInDays = (left: string, right: string) => {
-  const leftDate = new Date(left)
-  const rightDate = new Date(right)
-  return Math.abs(leftDate.getTime() - rightDate.getTime()) / (1000 * 60 * 60 * 24)
-}
-
-const suggestCategoryFromLabel = (label: string): Category | null => {
-  const normalized = normalizeText(label)
-  if (!normalized.trim()) {
-    return null
-  }
-
-  const found = categoryKeywords.find((entry) =>
-    entry.keywords.some((keyword) => normalized.includes(keyword)),
-  )
-
-  return found?.category ?? null
-}
-
-const inferEnvelope = (category: Category): Envelope => {
-  if (category === 'Maison' || category === 'Courses') {
-    return 'Maison'
-  }
-
-  if (category === 'Loisirs' || category === 'Autre') {
-    return 'Vacances'
-  }
-
-  return 'Perso'
-}
-
-const sanitizeProfileId = (value: string) =>
-  normalizeText(value).replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
 
 const normalizeProfile = (value: unknown): UserProfile | null => {
   if (!value || typeof value !== 'object') {
@@ -3054,6 +2874,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       key: `empty-${index}`,
       day: null as number | null,
       total: 0,
+      count: 0,
       intensity: 0,
     }))
 
@@ -3764,7 +3585,7 @@ Réponse attendue:
       return
     }
 
-    if (pin !== sensitiveState.parentPin) {
+    if (!(await verifyParentPin(pin))) {
       setSettingsError('PIN parent incorrect. Sauvegarde annulee.')
       return
     }
@@ -3955,7 +3776,7 @@ Réponse attendue:
       return
     }
 
-    if (settingsForm.parentPinValidation !== sensitiveState.parentPin) {
+    if (!(await verifyParentPin(settingsForm.parentPinValidation))) {
       setSettingsError('PIN parent incorrect.')
       return
     }
@@ -3992,10 +3813,17 @@ Réponse attendue:
       return
     }
 
-    const nextSensitiveState: SensitiveState = {
+    let nextSensitiveState: SensitiveState = {
       ...sensitiveState,
-      parentPin: hasParentUpdate ? settingsForm.newParentPin : sensitiveState.parentPin,
       sessionDurationDays: requestedSessionDuration as 7 | 14 | 30,
+    }
+
+    if (hasParentUpdate) {
+      nextSensitiveState = await setParentPin(settingsForm.newParentPin)
+      nextSensitiveState = {
+        ...nextSensitiveState,
+        sessionDurationDays: requestedSessionDuration as 7 | 14 | 30,
+      }
     }
 
     setSensitiveState(nextSensitiveState)
@@ -4033,7 +3861,7 @@ Réponse attendue:
       return
     }
 
-    if (settingsForm.resetPinValidation !== sensitiveState.parentPin) {
+    if (!(await verifyParentPin(settingsForm.resetPinValidation))) {
       setSettingsError('PIN parent incorrect pour la reinitialisation.')
       return
     }
@@ -4042,10 +3870,10 @@ Réponse attendue:
   }
 
   const resetLocalState = async (nextParentPin: string) => {
-    const resetState = await resetSensitiveStorage()
+    await resetSensitiveStorage()
+    const updatedState = await setParentPin(nextParentPin)
     const nextSensitiveState: SensitiveState = {
-      ...resetState,
-      parentPin: nextParentPin,
+      ...updatedState,
       persistedSession: undefined,
     }
 
@@ -4091,7 +3919,7 @@ Réponse attendue:
   }
 
   const executeLocalReset = async () => {
-    await resetLocalState(defaultSensitiveState.parentPin)
+    await resetLocalState(DEFAULT_PARENT_PIN)
   }
 
 
