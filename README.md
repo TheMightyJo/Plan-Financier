@@ -1,73 +1,75 @@
-# React + TypeScript + Vite
+# Plan Financier
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Cockpit budgétaire familial : suivi des dépenses, enveloppes, objectifs d'épargne, import CSV bancaire, projections et coaching IA.
 
-Currently, two official plugins are available:
+Application 100 % côté navigateur — les données restent sur l'appareil (localStorage) et seule l'authentification passe par Firebase.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Stack
 
-## React Compiler
+- **React 19** + **TypeScript** + **Vite**
+- **Firebase Auth** (email/password + Google)
+- **Recharts** pour les graphiques, **Lucide React** pour les icônes
+- **jsPDF** + **jspdf-autotable** pour les exports
+- **Vitest** pour les tests
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Démarrage
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+L'application est servie sur http://localhost:5173.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Scripts
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+| Commande | Effet |
+|---|---|
+| `npm run dev` | Serveur de dev avec HMR |
+| `npm run build` | Type-check (`tsc -b`) puis build Vite |
+| `npm run lint` | ESLint sur tout le projet |
+| `npm run test` | Lance Vitest une fois |
+| `npm run test:watch` | Vitest en watch |
+| `npm run preview` | Sert le build de production localement |
+
+## Structure
+
+```
+src/
+├── App.tsx                # Application principale
+├── AppErrorBoundary.tsx   # Boundary d'erreur global
+├── AuthScreen.tsx         # Écran d'authentification
+├── firebase.ts            # Initialisation Firebase
+├── security.ts            # PIN parent + chiffrement local
+├── types.ts               # Types métier partagés
+├── lib/                   # Helpers purs (formatage, dates, calculs)
+└── index.css              # Styles globaux
+```
+
+## Sécurité
+
+- **PIN parent** : haché côté client (PBKDF2 + sel par installation, AES-GCM) avant d'être stocké. Le PIN en clair n'est jamais persisté.
+- **Données financières** : conservées dans `localStorage` du navigateur (non synchronisées). Seul l'utilisateur du poste y a accès.
+- **Firebase** : seules les API d'authentification sont utilisées. La configuration côté client est publique (clé identifiant le projet, pas un secret) — la défense repose sur les règles Auth/Firestore.
+- **CSP** : politique restrictive déclarée dans `index.html` pour limiter la surface XSS.
+
+## Configuration Firebase
+
+Les paramètres du projet sont déclarés dans [`src/firebase.ts`](src/firebase.ts). Pour pointer vers un autre projet Firebase, modifier directement ce fichier.
+
+Les fichiers `firebase.json`, `firestore.rules` et `storage.rules` à la racine définissent la configuration de déploiement et les règles de sécurité par défaut (deny-all tant que Firestore/Storage ne sont pas utilisés).
+
+## Conventions
+
+- TypeScript en mode `strict`.
+- Composants UI dans `src/`, helpers purs dans `src/lib/` (testables sans React).
+- Clés de stockage local préfixées par `plan-financier-` et versionnées (`-v1`, etc.).
+- Tests Vitest co-localisés (`fichier.test.ts`).
+
+## Vérifications avant commit
+
+```bash
+npm run lint
+npm run test
+npm run build
 ```
