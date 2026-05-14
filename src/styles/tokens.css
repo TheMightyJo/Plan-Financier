@@ -1,0 +1,96 @@
+/**
+ * Tokens de design Plan Financier
+ * Source de vérité : brand_identity_plan_financier.html
+ *
+ * Exposés sur :root pour être consommés via var(--pf-*) dans tout le CSS.
+ * Ne PAS modifier les valeurs ici sans valider avec la charte.
+ */
+
+:root {
+  /* ── Palette principale (neutres terre/crème) ────────────────────────── */
+  --pf-color-primary: #8B6C52;          /* Terre chaude — CTA, logo, accent */
+  --pf-color-primary-hover: #7A5E47;
+  --pf-color-primary-on: #FFF8F0;       /* Texte sur fond primaire */
+
+  --pf-color-bg: #FDFAF6;               /* Crème douce — fond principal */
+  --pf-color-bg-elevated: #F5EFE6;      /* Sable clair — cartes, fond secondaire */
+  --pf-color-bg-input: #FDFAF6;
+
+  --pf-color-border: #D6C5B0;           /* Lin — bordures, séparateurs */
+  --pf-color-border-strong: #C4956A;    /* Bordure CTA secondary */
+  --pf-color-border-subtle: rgba(0, 0, 0, 0.06);
+
+  --pf-color-text-primary: #3D2B1F;     /* Café — texte principal */
+  --pf-color-text-secondary: #A08060;   /* Caramel — texte secondaire */
+  --pf-color-text-on-elevated: #5C3D1E; /* Texte sur fond sable clair */
+
+  /* ── Sémantique (signaux financiers) ─────────────────────────────────── */
+  --pf-color-positive: #3A7D44;         /* Vert forêt — revenus, succès */
+  --pf-color-positive-bg: #E8F5E2;      /* Vert pâle — fond succès */
+  --pf-color-positive-border: #9FD189;
+  --pf-color-positive-text: #2E6B20;
+
+  --pf-color-negative: #C05C2A;         /* Terracotta — dépenses */
+  --pf-color-negative-bg: #FDE8E8;      /* Rose poudré — fond alerte */
+  --pf-color-negative-border: #F0A0A0;
+  --pf-color-negative-text: #8B2020;
+
+  --pf-color-warning: #B8963E;          /* Ambre doré — attention */
+  --pf-color-warning-bg: #FDF3E3;
+  --pf-color-warning-border: #F0C060;
+  --pf-color-warning-text: #7A5000;
+
+  --pf-color-ai: #6B5B8A;               /* Prune doux — suggestions IA */
+  --pf-color-ai-bg: #EEE8D5;
+  --pf-color-ai-border: #C8B06A;
+  --pf-color-ai-text: #4A3800;
+
+  /* ── Typographie ─────────────────────────────────────────────────────── */
+  --pf-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --pf-font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+
+  --pf-fs-display: 28px;                /* Titre principal */
+  --pf-fs-section: 20px;                /* Titre section */
+  --pf-fs-label-strong: 15px;           /* Label fort */
+  --pf-fs-body: 14px;                   /* Corps de texte */
+  --pf-fs-meta: 12px;                   /* Méta / uppercase */
+  --pf-fs-micro: 11px;                  /* Hex, ratios, debug */
+
+  --pf-fw-regular: 400;
+  --pf-fw-medium: 500;
+
+  --pf-lh-tight: 1.2;
+  --pf-lh-body: 1.6;
+  --pf-lh-loose: 1.7;
+
+  --pf-letter-spacing-display: -0.5px;
+  --pf-letter-spacing-meta: 0.07em;
+
+  /* ── Radius ──────────────────────────────────────────────────────────── */
+  --pf-radius-sm: 8px;
+  --pf-radius-md: 10px;                 /* Boutons, inputs */
+  --pf-radius-lg: 12px;                 /* Cartes composants */
+  --pf-radius-xl: 14px;                 /* Logo mark */
+  --pf-radius-2xl: 16px;                /* Logo container */
+  --pf-radius-pill: 20px;               /* Badges */
+
+  /* ── Spacing ─────────────────────────────────────────────────────────── */
+  --pf-space-1: 4px;
+  --pf-space-2: 8px;
+  --pf-space-3: 12px;
+  --pf-space-4: 16px;
+  --pf-space-5: 20px;
+  --pf-space-6: 24px;
+  --pf-space-7: 28px;
+  --pf-space-8: 32px;
+
+  /* ── Bordures (largeurs) ─────────────────────────────────────────────── */
+  --pf-border-thin: 0.5px;
+  --pf-border-default: 1.5px;
+  --pf-border-emphasis: 3px;            /* Accent gauche bloc citation */
+
+  /* ── Ombres ──────────────────────────────────────────────────────────── */
+  --pf-shadow-card: 0 1px 2px rgba(61, 43, 31, 0.04), 0 2px 8px rgba(61, 43, 31, 0.04);
+  --pf-shadow-elevated: 0 4px 16px rgba(61, 43, 31, 0.08);
+  --pf-shadow-focus: 0 0 0 3px rgba(139, 108, 82, 0.18);
+}

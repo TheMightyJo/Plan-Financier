@@ -39,11 +39,21 @@ src/
 ├── App.tsx                # Application principale
 ├── AppErrorBoundary.tsx   # Boundary d'erreur global
 ├── AuthScreen.tsx         # Écran d'authentification
-├── firebase.ts            # Initialisation Firebase
+├── firebase.ts            # Initialisation Firebase (à supprimer en étape 1)
 ├── security.ts            # PIN parent + chiffrement local
 ├── types.ts               # Types métier partagés
 ├── lib/                   # Helpers purs (formatage, dates, calculs)
+├── styles/
+│   └── tokens.css         # Tokens charte (palette terre/crème, typo, radius)
 └── index.css              # Styles globaux
+
+docs/
+└── architecture.md        # Décision archi cible (Supabase) + ERD + plan migration
+
+supabase/
+├── config.toml            # Config Supabase locale (CLI)
+└── migrations/
+    └── 0001_initial_schema.sql   # Schéma Postgres + RLS + seed catégories
 ```
 
 ## Sécurité
@@ -53,11 +63,42 @@ src/
 - **Firebase** : seules les API d'authentification sont utilisées. La configuration côté client est publique (clé identifiant le projet, pas un secret) — la défense repose sur les règles Auth/Firestore.
 - **CSP** : politique restrictive déclarée dans `index.html` pour limiter la surface XSS.
 
-## Configuration Firebase
+## Configuration Firebase (transitoire)
 
-Les paramètres du projet sont déclarés dans [`src/firebase.ts`](src/firebase.ts). Pour pointer vers un autre projet Firebase, modifier directement ce fichier.
+Les paramètres du projet sont déclarés dans [`src/firebase.ts`](src/firebase.ts). Firebase Auth est utilisé jusqu'à l'étape 1 du [plan d'architecture](docs/architecture.md), où il sera remplacé par Supabase Auth.
 
 Les fichiers `firebase.json`, `firestore.rules` et `storage.rules` à la racine définissent la configuration de déploiement et les règles de sécurité par défaut (deny-all tant que Firestore/Storage ne sont pas utilisés).
+
+## Préparation Supabase (étape 0 ✅, étape 1 à venir)
+
+Le projet est en cours de migration vers Supabase (cf. [docs/architecture.md](docs/architecture.md) — décision validée le 2026-05-14).
+
+### Ce qui est prêt dès aujourd'hui
+
+- `supabase/migrations/0001_initial_schema.sql` — schéma Postgres complet (14 tables), RLS exhaustive, catégories système en seed.
+- `supabase/config.toml` — config Supabase locale (PostgREST, Realtime, Studio, Storage, Auth).
+- `.env.example` — variables attendues côté client (`VITE_SUPABASE_*`) et serveur (`SUPABASE_SERVICE_ROLE_KEY`).
+- `src/styles/tokens.css` — tokens design importés globalement, prêts à être consommés via `var(--pf-*)`.
+
+### Pour démarrer l'étape 1 (migration auth)
+
+1. Installer le CLI Supabase :
+
+   ```bash
+   brew install supabase/tap/supabase
+   ```
+
+2. Créer un projet Supabase EU (https://supabase.com → New project, region "Frankfurt").
+3. Récupérer `URL` et `anon key` dans Project Settings → API, les coller dans `.env.local`.
+4. Appliquer le schéma :
+
+   ```bash
+   supabase link --project-ref <project-ref>
+   supabase db push
+   ```
+
+5. Installer le SDK côté client : `npm install @supabase/supabase-js`.
+6. Suivre le plan de migration dans [docs/architecture.md](docs/architecture.md) §6.
 
 ## Conventions
 
