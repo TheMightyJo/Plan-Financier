@@ -5,10 +5,17 @@
 --
 -- Conventions :
 --   * id uuid PK (gen_random_uuid)
---   * created_at / updated_at / deleted_at (soft delete) sur toutes les tables métier
+--   * created_at / updated_at / deleted_at sur toutes les tables métier
 --   * montants : numeric(12, 2) (jamais float)
 --   * RLS activée partout, policies en bas du fichier
 --   * service_role conserve l'accès complet (bypass RLS) — réservé Edge Functions
+--
+-- Convention soft delete :
+--   * `deleted_at` = horodatage de suppression logique. Les SELECT policies
+--     filtrent `deleted_at is null` ; les rows conservent l'historique.
+--   * Les policies DELETE restent autorisées pour le hard delete (cascade vers
+--     enfants), à utiliser pour les purges RGPD ou la suppression définitive.
+--   * Le mode normal est `update set deleted_at = now()` — réversible.
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -174,13 +181,21 @@ create table public.recurring_rules (
   amount             numeric(12, 2) not null check (amount > 0),
   kind               text not null check (kind in ('debit','credit')),
   frequency          text not null check (frequency in ('weekly','monthly','quarterly','yearly')),
-  day_of_period      smallint not null check (day_of_period between 1 and 31),
+  -- Sémantique de day_of_period dépend de frequency :
+  --   weekly  → 1..7 (1 = lundi … 7 = dimanche, ISO 8601)
+  --   monthly / quarterly / yearly → 1..31 (jour du mois ; le job de génération
+  --   fallback au dernier jour du mois si la date est invalide, ex. 31 février).
+  day_of_period      smallint not null,
   start_date         date not null,
   end_date           date,
   last_generated_on  date,
   paused_at          timestamptz,
   created_at         timestamptz not null default now(),
-  updated_at         timestamptz not null default now()
+  updated_at         timestamptz not null default now(),
+  constraint recurring_day_matches_frequency check (
+    (frequency = 'weekly'  and day_of_period between 1 and 7)
+    or (frequency in ('monthly','quarterly','yearly') and day_of_period between 1 and 31)
+  )
 );
 create index idx_recurring_account on public.recurring_rules(account_id);
 create trigger trg_recurring_updated_at
@@ -202,13 +217,22 @@ create table public.transactions (
   recurring_rule_id  uuid references public.recurring_rules(id) on delete set null,
   receipt_storage_path text,
   ai_categorized     boolean not null default false,
+  -- Pour kind = 'transfer' : un transfert = 2 rows (debit source + credit destination)
+  -- partageant le même transfer_group_id pour pouvoir être appariées.
+  -- Pour les autres kinds : NULL.
+  transfer_group_id  uuid,
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now(),
-  deleted_at         timestamptz
+  deleted_at         timestamptz,
+  constraint transactions_transfer_group_consistent check (
+    (kind = 'transfer' and transfer_group_id is not null)
+    or (kind <> 'transfer' and transfer_group_id is null)
+  )
 );
 create index idx_transactions_account_date on public.transactions(account_id, occurred_at desc);
 create index idx_transactions_category     on public.transactions(category_id);
 create index idx_transactions_paid_by      on public.transactions(paid_by_user_id);
+create index idx_transactions_transfer     on public.transactions(transfer_group_id) where transfer_group_id is not null;
 create trigger trg_transactions_updated_at
   before update on public.transactions
   for each row execute function public.touch_updated_at();
@@ -227,12 +251,17 @@ create table public.budgets (
   constraint budgets_owner_xor_family check (
     (owner_user_id is not null and family_group_id is null)
     or (owner_user_id is null and family_group_id is not null)
-  ),
-  -- Un seul budget par scope, catégorie, période
-  unique (owner_user_id, category_id, period),
-  unique (family_group_id, category_id, period)
+  )
 );
 create index idx_budgets_period on public.budgets(period);
+-- Unicité par scope. Index partiels : sans `where ... is not null`, Postgres
+-- considère les NULL distincts dans les index uniques et la contrainte fuit.
+create unique index uq_budgets_owner_cat_period
+  on public.budgets (owner_user_id, category_id, period)
+  where owner_user_id is not null;
+create unique index uq_budgets_family_cat_period
+  on public.budgets (family_group_id, category_id, period)
+  where family_group_id is not null;
 create trigger trg_budgets_updated_at
   before update on public.budgets
   for each row execute function public.touch_updated_at();
@@ -359,7 +388,10 @@ create policy profiles_update_own on public.profiles
 
 -- ------------------------------- family_groups ------------------------------
 create policy family_groups_select_member on public.family_groups
-  for select using (public.is_family_member(id) or owner_user_id = auth.uid());
+  for select using (
+    deleted_at is null
+    and (public.is_family_member(id) or owner_user_id = auth.uid())
+  );
 
 create policy family_groups_insert_self on public.family_groups
   for insert with check (owner_user_id = auth.uid());
@@ -387,8 +419,11 @@ create policy memberships_delete_parent on public.family_memberships
 -- ------------------------------- accounts -----------------------------------
 create policy accounts_select on public.accounts
   for select using (
-    owner_user_id = auth.uid()
-    or (family_group_id is not null and public.is_family_member(family_group_id))
+    deleted_at is null
+    and (
+      owner_user_id = auth.uid()
+      or (family_group_id is not null and public.is_family_member(family_group_id))
+    )
   );
 
 create policy accounts_insert on public.accounts
@@ -452,9 +487,11 @@ create policy recurring_modify on public.recurring_rules
 -- ------------------------------- transactions -------------------------------
 create policy transactions_select on public.transactions
   for select using (
-    exists (
+    deleted_at is null
+    and exists (
       select 1 from public.accounts a
       where a.id = transactions.account_id
+        and a.deleted_at is null
         and (
           a.owner_user_id = auth.uid()
           or (a.family_group_id is not null and public.is_family_member(a.family_group_id))
@@ -515,8 +552,11 @@ create policy budgets_modify on public.budgets
 -- ------------------------------- savings_goals ------------------------------
 create policy savings_select on public.savings_goals
   for select using (
-    owner_user_id = auth.uid()
-    or (family_group_id is not null and public.is_family_member(family_group_id))
+    deleted_at is null
+    and (
+      owner_user_id = auth.uid()
+      or (family_group_id is not null and public.is_family_member(family_group_id))
+    )
   );
 
 create policy savings_modify on public.savings_goals
@@ -594,6 +634,13 @@ grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant usage, select on all sequences in schema public to authenticated;
 
+-- Privilèges par défaut : s'appliquent automatiquement aux objets créés par
+-- les futures migrations (sinon il faudrait re-grant à chaque migration).
+alter default privileges in schema public
+  grant select, insert, update, delete on tables to authenticated;
+alter default privileges in schema public
+  grant usage, select on sequences to authenticated;
+
 -- =============================================================================
 -- Bootstrap : trigger qui crée un profile à chaque nouveau user auth
 -- =============================================================================
@@ -617,6 +664,31 @@ $$;
 create trigger trg_on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- =============================================================================
+-- Bootstrap : auto-créer la membership 'parent' pour le créateur d'un family_group
+-- =============================================================================
+-- Sans ce trigger, le créateur ne peut PAS insérer sa première membership :
+-- la policy memberships_insert_parent exige is_family_parent(...) = true,
+-- qui dépend d'une membership 'parent' déjà acceptée — chicken-and-egg.
+-- security definer pour bypasser la RLS lors de l'insertion bootstrap.
+create or replace function public.handle_new_family_group()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.family_memberships (family_group_id, user_id, role, accepted_at)
+  values (new.id, new.owner_user_id, 'parent', now())
+  on conflict (family_group_id, user_id) do nothing;
+  return new;
+end;
+$$;
+
+create trigger trg_on_family_group_created
+  after insert on public.family_groups
+  for each row execute function public.handle_new_family_group();
 
 -- =============================================================================
 -- Catégories système (graine commune à tous les users, RLS les exposera en lecture)
