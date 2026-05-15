@@ -79,6 +79,7 @@ import { loadRecurringRules, saveRecurringRules } from './repos/recurringRulesRe
 import { RecurringRulesPanel } from './components/RecurringRulesPanel'
 import { FirstTransactionTour } from './components/FirstTransactionTour'
 import { AccountsPanel } from './components/AccountsPanel'
+import { TransactionHistoryPanel } from './components/TransactionHistoryPanel'
 import {
   computeConsolidatedBalance,
   balanceByAccountType,
@@ -1065,6 +1066,7 @@ function App() {
   const [showRecurringPanel, setShowRecurringPanel] = useState(false)
   const [accounts, setAccounts] = useState<Account[]>(loadAccounts)
   const [showAccountsPanel, setShowAccountsPanel] = useState(false)
+  const [showHistoryPanel, setShowHistoryPanel] = useState(false)
   const [showFirstTxTour, setShowFirstTxTour] = useState(
     () =>
       typeof window !== 'undefined' &&
@@ -6426,8 +6428,19 @@ Réponse attendue:
 
         <article className="glass-card transaction-panel wide-card">
           <div className="panel-title">
-            <h2>Transactions du mois</h2>
-            <p>{txFiltered.length} opération{txFiltered.length !== 1 ? 's' : ''} · {formatMonth(selectedMonth)} · {selectedProfileName.toLowerCase()}</p>
+            <div>
+              <h2>Transactions du mois</h2>
+              <p>{txFiltered.length} opération{txFiltered.length !== 1 ? 's' : ''} · {formatMonth(selectedMonth)} · {selectedProfileName.toLowerCase()}</p>
+            </div>
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => setShowHistoryPanel(true)}
+              title="Recherche, filtres, édition, export CSV sur tout l'historique"
+            >
+              <Layers3 size={14} />
+              Voir tout l'historique
+            </button>
           </div>
           <div className="tx-summary-bar">
             <div className="tx-summary-card">
@@ -7019,6 +7032,17 @@ Réponse attendue:
         onChange={setAccounts}
         member={selectedProfileId}
         onClose={() => setShowAccountsPanel(false)}
+      />
+    ) : null}
+
+    {/* ── Historique complet des transactions ────────────────────── */}
+    {showHistoryPanel ? (
+      <TransactionHistoryPanel
+        transactions={transactions}
+        accounts={accounts}
+        member={selectedProfileId}
+        onChange={setTransactions}
+        onClose={() => setShowHistoryPanel(false)}
       />
     ) : null}
     </>
