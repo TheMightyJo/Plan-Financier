@@ -77,6 +77,7 @@ import { getDateDistanceInDays } from './lib/dates'
 import { generateDueTransactions } from './lib/recurring'
 import { loadRecurringRules, saveRecurringRules } from './repos/recurringRulesRepo'
 import { RecurringRulesPanel } from './components/RecurringRulesPanel'
+import { FirstTransactionTour } from './components/FirstTransactionTour'
 import type { RecurringRule } from './types'
 import {
   categories,
@@ -126,6 +127,7 @@ const DEFAULT_PROFILE_STORAGE_KEY = 'plan-financier-default-profile-v1'
 const BACKUP_VERSION = 1
 const SAVINGS_TARGETS_STORAGE_KEY = 'plan-financier-savings-targets-v1'
 const ONBOARDING_DONE_KEY = 'plan-financier-onboarding-done-v1'
+const FIRST_TX_TOUR_DONE_KEY = 'plan-financier-first-tx-tour-done-v1'
 const THEME_STORAGE_KEY = 'plan-financier-theme-v1'
 const DASHBOARD_WIDGETS_STORAGE_KEY = 'plan-financier-dashboard-widgets-v1'
 const AI_PROVIDER_STORAGE_KEY = 'plan-financier-ai-provider-v1'
@@ -1049,6 +1051,11 @@ function App() {
   const [transactions, setTransactions] = useState<Transaction[]>(loadTransactions)
   const [recurringRules, setRecurringRules] = useState<RecurringRule[]>(loadRecurringRules)
   const [showRecurringPanel, setShowRecurringPanel] = useState(false)
+  const [showFirstTxTour, setShowFirstTxTour] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      !window.localStorage.getItem(FIRST_TX_TOUR_DONE_KEY),
+  )
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoals>(() => loadSavingsGoals(loadProfiles()))
   const [rolloverState, setRolloverState] = useState<RolloverState>(() =>
     loadRolloverState(currentMonth, loadProfiles()),
@@ -1637,6 +1644,15 @@ Règles :
   const skipOnboarding = () => {
     window.localStorage.setItem(ONBOARDING_DONE_KEY, '1')
     setShowOnboarding(false)
+    // Le tour de première transaction prend le relais (sauf si déjà fait).
+  }
+
+  const completeFirstTxTour = (transaction?: Transaction) => {
+    if (transaction) {
+      setTransactions((previous) => [...previous, transaction])
+    }
+    window.localStorage.setItem(FIRST_TX_TOUR_DONE_KEY, '1')
+    setShowFirstTxTour(false)
   }
 
   const saveAiProvider = (provider: AIProviderId) => {
@@ -6895,6 +6911,15 @@ Réponse attendue:
         onChange={setRecurringRules}
         member={selectedProfileId}
         onClose={() => setShowRecurringPanel(false)}
+      />
+    ) : null}
+
+    {/* ── Tour de première transaction (onboarding final) ───────── */}
+    {showFirstTxTour && !showOnboarding ? (
+      <FirstTransactionTour
+        member={selectedProfileId}
+        onSubmit={(tx) => completeFirstTxTour(tx)}
+        onSkip={() => completeFirstTxTour()}
       />
     ) : null}
     </>
