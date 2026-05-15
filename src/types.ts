@@ -96,6 +96,35 @@ export type AlertItem = { message: string; level: 'info' | 'warning' | 'danger' 
 
 export type AIProviderId = 'anthropic' | 'openai' | 'mistral' | 'google' | 'openrouter'
 
+// Règles de dépenses récurrentes (loyer, abonnements, assurances…).
+// Le champ `member` reflète le profile actuel — quand on basculera sur Supabase
+// (cf. supabase/migrations/0001_initial_schema.sql table recurring_rules),
+// `member` deviendra `account_id` (FK vers accounts).
+export const RECURRING_FREQUENCIES = ['weekly', 'monthly', 'quarterly', 'yearly'] as const
+export type RecurringFrequency = (typeof RECURRING_FREQUENCIES)[number]
+
+export type RecurringRule = {
+  id: string
+  member: FamilyMember
+  category: Category
+  envelope: Envelope
+  label: string
+  amount: number               // toujours > 0
+  kind: TransactionKind        // depense | revenu
+  frequency: RecurringFrequency
+  /**
+   * 1..7 si frequency = 'weekly' (1 = lundi, 7 = dimanche, ISO 8601).
+   * 1..31 sinon (jour du mois ; clamp au dernier jour du mois si invalide).
+   */
+  dayOfPeriod: number
+  startDate: string            // YYYY-MM-DD
+  endDate: string | null
+  lastGeneratedOn: string | null
+  pausedAt: number | null      // timestamp epoch ms
+  createdAt: number
+  updatedAt: number
+}
+
 export type DashboardWidgetId =
   | 'annualTrend'
   | 'coaching'

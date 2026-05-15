@@ -74,6 +74,10 @@ import {
   sanitizeProfileId,
 } from './lib/text'
 import { getDateDistanceInDays } from './lib/dates'
+import { generateDueTransactions } from './lib/recurring'
+import { loadRecurringRules, saveRecurringRules } from './repos/recurringRulesRepo'
+import { RecurringRulesPanel } from './components/RecurringRulesPanel'
+import type { RecurringRule } from './types'
 import {
   categories,
   categoryColors,
@@ -1043,6 +1047,8 @@ function App() {
     loadDefaultProfileId(loadProfiles()),
   )
   const [transactions, setTransactions] = useState<Transaction[]>(loadTransactions)
+  const [recurringRules, setRecurringRules] = useState<RecurringRule[]>(loadRecurringRules)
+  const [showRecurringPanel, setShowRecurringPanel] = useState(false)
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoals>(() => loadSavingsGoals(loadProfiles()))
   const [rolloverState, setRolloverState] = useState<RolloverState>(() =>
     loadRolloverState(currentMonth, loadProfiles()),
@@ -2182,6 +2188,30 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       JSON.stringify(transactions),
     )
   }, [transactions])
+
+  // Persistance des règles récurrentes (localStorage v1, mappable Supabase plus tard)
+  useEffect(() => {
+    saveRecurringRules(recurringRules)
+  }, [recurringRules])
+
+  // Génération idempotente des transactions dues depuis les règles récurrentes.
+  // Re-run safe : si lastGeneratedOn est à jour, generateDueTransactions ne
+  // produit rien et on n'appelle pas setState → pas de boucle.
+  useEffect(() => {
+    if (recurringRules.length === 0) return
+    const today = new Date().toISOString().slice(0, 10)
+    let counter = Date.now()
+    const generated: Transaction[] = []
+    const updatedRules = recurringRules.map((rule) => {
+      const result = generateDueTransactions(rule, today, () => counter++)
+      if (result.transactions.length === 0) return rule
+      generated.push(...result.transactions)
+      return { ...rule, lastGeneratedOn: result.lastGeneratedOn, updatedAt: Date.now() }
+    })
+    if (generated.length === 0) return
+    setTransactions((previous) => [...previous, ...generated])
+    setRecurringRules(updatedRules)
+  }, [recurringRules])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -5992,8 +6022,18 @@ Réponse attendue:
         {isPilotageWidgetVisible('recurringCharges') && isActiveView('pilotage') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
-            <h2>Charges récurrentes</h2>
-            <p>Transactions détectées sur 2+ mois pour {selectedProfileName.toLowerCase()}</p>
+            <div>
+              <h2>Charges récurrentes</h2>
+              <p>Transactions détectées sur 2+ mois pour {selectedProfileName.toLowerCase()}</p>
+            </div>
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => setShowRecurringPanel(true)}
+            >
+              <Repeat2 size={14} />
+              Gérer les règles ({recurringRules.filter((r) => r.member === selectedProfileId).length})
+            </button>
           </div>
           {recurringItems.length === 0 ? (
             <p className="auth-note">Pas assez de données pour détecter des récurrences sur ce profil.</p>
@@ -6846,6 +6886,16 @@ Réponse attendue:
       <div key={toast.key} className="app-toast" role="status" aria-live="polite">
         {toast.message}
       </div>
+    ) : null}
+
+    {/* ── Panneau de gestion des dépenses récurrentes ───────────── */}
+    {showRecurringPanel ? (
+      <RecurringRulesPanel
+        rules={recurringRules}
+        onChange={setRecurringRules}
+        member={selectedProfileId}
+        onClose={() => setShowRecurringPanel(false)}
+      />
     ) : null}
     </>
   )
