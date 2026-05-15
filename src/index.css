@@ -290,6 +290,19 @@
   transition: opacity 120ms ease;
 }
 
+@media (max-width: 480px) {
+  .recurring-item {
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      'dot main'
+      'dot actions';
+    gap: 0.4rem 0.6rem;
+  }
+  .recurring-color-dot { grid-area: dot; align-self: center; }
+  .recurring-item-main { grid-area: main; }
+  .recurring-item-actions { grid-area: actions; justify-self: start; }
+}
+
 .recurring-item.is-paused {
   opacity: 0.55;
 }
@@ -692,6 +705,20 @@
   border-radius: var(--pf-radius-md);
 }
 
+@media (max-width: 480px) {
+  .account-item {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      'dot main balance'
+      'dot main actions';
+    gap: 0.3rem 0.6rem;
+  }
+  .account-color-dot { grid-area: dot; align-self: center; }
+  .account-item-main { grid-area: main; }
+  .account-balance { grid-area: balance; }
+  .account-item-actions { grid-area: actions; justify-self: end; }
+}
+
 .account-item.is-archived {
   opacity: 0.55;
 }
@@ -958,21 +985,29 @@
 }
 
 .tx-history-filters-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 0.4rem;
   align-items: center;
+}
+
+@media (max-width: 480px) {
+  .tx-history-filters-row {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .tx-history-filters-row select {
   background: var(--field-bg);
   border: 1px solid var(--field-border);
   border-radius: var(--pf-radius-md);
-  padding: 0.4rem 0.6rem;
+  padding: 0.5rem 0.6rem;
   color: var(--text-1);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   font-family: inherit;
   outline: none;
+  min-width: 0;
+  width: 100%;
 }
 
 .tx-history-filters-row select:focus {
@@ -983,10 +1018,11 @@
 .tx-history-export {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.35rem;
-  padding: 0.4rem 0.75rem;
-  font-size: var(--text-xs);
-  margin-left: auto;
+  padding: 0.5rem 0.75rem;
+  font-size: var(--text-sm);
+  width: 100%;
 }
 
 .tx-history-custom-range {
@@ -1042,6 +1078,22 @@
   background: var(--surface-soft);
   border: 1px solid var(--border);
   border-radius: var(--pf-radius-md);
+}
+
+/* Sur mobile : empile main+amount d'un côté, garde dot et actions sur les bords */
+@media (max-width: 480px) {
+  .tx-history-item {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      'dot main actions'
+      'dot amount actions';
+    gap: 0.25rem 0.6rem;
+  }
+  .tx-history-color-dot { grid-area: dot; align-self: center; }
+  .tx-history-main { grid-area: main; }
+  .tx-history-amount { grid-area: amount; justify-self: start; }
+  .tx-history-actions { grid-area: actions; align-self: center; }
+  .tx-history-confirm { grid-area: actions; align-self: center; flex-direction: column; gap: 0.2rem; }
 }
 
 .tx-history-item.is-confirming {
@@ -3338,6 +3390,35 @@ h1 {
 
 .wide-card {
   grid-column: span 2;
+}
+
+/* Layout responsive : titre + bouton "Gérer" en ligne sur desktop, empilés sur mobile.
+   Géré sur le sélecteur direct car certains panel-title n'ont qu'un h2 + p (pas de div).
+   La règle flex ne casse pas ce layout : un seul enfant prend 100% comme avant. */
+.panel-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.panel-title > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.panel-title > .hero-cta-button,
+.panel-title > .ghost-button {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 480px) {
+  .panel-title > .hero-cta-button,
+  .panel-title > .ghost-button {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
 }
 
 .panel-title h2 {
