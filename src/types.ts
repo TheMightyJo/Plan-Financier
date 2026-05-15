@@ -134,6 +134,22 @@ export type SavingsTarget = {
   id: string
   label: string
   targetAmount: number
+  // Extensions V1 (optionnels = rétro-compat avec les SavingsTarget historiques).
+  // Mirror partiel de la table savings_goals (cf. supabase/migrations/0001).
+  /** YYYY-MM-DD. Sans date : pas de mensualité conseillée calculable. */
+  targetDate?: string
+  /** Si renseigné : progression = solde de ce compte (auto). */
+  destinationAccountId?: string
+  /** Si pas de compte lié : montant manuellement saisi par l'utilisateur. */
+  currentSaved?: number
+  /** Hex (depuis charte) — utilisé pour la barre de progression. */
+  displayColor?: string
+  /** Timestamp epoch ms quand l'objectif est atteint (verrou). */
+  achievedAt?: number
+  /** Propriétaire ; deviendra owner_user_id en Supabase. */
+  member?: FamilyMember
+  createdAt?: number
+  updatedAt?: number
 }
 
 export type AlertItem = { message: string; level: 'info' | 'warning' | 'danger' }

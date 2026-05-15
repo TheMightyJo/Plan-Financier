@@ -80,6 +80,7 @@ import { RecurringRulesPanel } from './components/RecurringRulesPanel'
 import { FirstTransactionTour } from './components/FirstTransactionTour'
 import { AccountsPanel } from './components/AccountsPanel'
 import { TransactionHistoryPanel } from './components/TransactionHistoryPanel'
+import { SavingsGoalsPanel } from './components/SavingsGoalsPanel'
 import {
   computeConsolidatedBalance,
   balanceByAccountType,
@@ -1067,6 +1068,7 @@ function App() {
   const [accounts, setAccounts] = useState<Account[]>(loadAccounts)
   const [showAccountsPanel, setShowAccountsPanel] = useState(false)
   const [showHistoryPanel, setShowHistoryPanel] = useState(false)
+  const [showGoalsPanel, setShowGoalsPanel] = useState(false)
   const [showFirstTxTour, setShowFirstTxTour] = useState(
     () =>
       typeof window !== 'undefined' &&
@@ -6162,8 +6164,19 @@ Réponse attendue:
         {isPilotageWidgetVisible('savingsProjects') && isActiveView('pilotage') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
-            <h2>Objectifs d'épargne projet</h2>
-            <p>Projets financiers et leur progression estimée</p>
+            <div>
+              <h2>Objectifs d'épargne projet</h2>
+              <p>Projets financiers et leur progression estimée</p>
+            </div>
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => setShowGoalsPanel(true)}
+              title="Échéance, mensualité conseillée, lien vers un compte dédié"
+            >
+              <Target size={14} />
+              Gérer ({savingsTargets.length})
+            </button>
           </div>
           {savingsTargets.length > 0 ? (
             <ul className="savings-target-list">
@@ -7043,6 +7056,21 @@ Réponse attendue:
         member={selectedProfileId}
         onChange={setTransactions}
         onClose={() => setShowHistoryPanel(false)}
+      />
+    ) : null}
+
+    {/* ── Panneau Objectifs d'épargne ─────────────────────────────── */}
+    {showGoalsPanel ? (
+      <SavingsGoalsPanel
+        goals={savingsTargets}
+        accounts={accounts}
+        transactions={transactions}
+        member={selectedProfileId}
+        onChange={(next) => {
+          setSavingsTargets(next)
+          window.localStorage.setItem(SAVINGS_TARGETS_STORAGE_KEY, JSON.stringify(next))
+        }}
+        onClose={() => setShowGoalsPanel(false)}
       />
     ) : null}
     </>
