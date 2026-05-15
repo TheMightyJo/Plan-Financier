@@ -13,20 +13,22 @@ export const categories: Category[] = [
 
 export const envelopes: Envelope[] = ['Perso', 'Maison', 'Vacances']
 
+// Couleurs catégories alignées sur la charte Plan Financier
+// (cf. src/styles/tokens.css et brand_identity_plan_financier.html).
 export const categoryColors: Record<Category, string> = {
-  Courses: '#f97316',
-  Transport: '#14b8a6',
-  Ecole: '#0ea5e9',
-  Loisirs: '#f43f5e',
-  Sante: '#a855f7',
-  Maison: '#10b981',
-  Autre: '#64748b',
+  Courses: '#C05C2A',   // terracotta
+  Transport: '#8B6C52', // terre chaude
+  Ecole: '#B8963E',     // ambre doré
+  Loisirs: '#6B5B8A',   // prune doux
+  Sante: '#A08060',     // caramel
+  Maison: '#3A7D44',    // vert forêt
+  Autre: '#D6C5B0',     // lin
 }
 
 export const envelopeColors: Record<Envelope, string> = {
-  Perso: '#f97316',
-  Maison: '#10b981',
-  Vacances: '#eab308',
+  Perso: '#8B6C52',     // terre (primaire)
+  Maison: '#3A7D44',    // vert
+  Vacances: '#6B5B8A',  // prune
 }
 
 export const categoryKeywords: Array<{ category: Category; keywords: string[] }> = [

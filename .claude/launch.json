@@ -1,36 +1,22 @@
 {
-  "version": "1.0",
-  "servers": [
+  "version": "0.0.1",
+  "configurations": [
     {
       "name": "vite-dev",
-      "label": "Vite dev server",
-      "description": "Serveur de développement avec HMR (Hot Module Replacement). À utiliser pour développer.",
-      "command": "npm run dev",
-      "cwd": ".",
-      "url": "http://localhost:5173",
-      "port": 5173,
-      "default": true
-    },
-    {
-      "name": "vitest-watch",
-      "label": "Vitest (watch)",
-      "description": "Tests unitaires en mode watch. Re-lance les tests à chaque modification de fichier.",
-      "command": "npm run test:watch",
-      "cwd": ".",
-      "url": null,
-      "port": null,
-      "default": false
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173
     },
     {
       "name": "vite-preview",
-      "label": "Vite preview (build prod)",
-      "description": "Sert le build de production local (dossier dist/). Lancer `npm run build` avant.",
-      "command": "npm run preview",
-      "cwd": ".",
-      "url": "http://localhost:4173",
-      "port": 4173,
-      "default": false,
-      "requiresBuild": true
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "preview"],
+      "port": 4173
+    },
+    {
+      "name": "vitest-watch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "test:watch"]
     }
   ]
 }

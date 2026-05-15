@@ -1,106 +1,128 @@
+/*
+ * Thème par défaut : Plan Financier "Café" (mode sombre warm).
+ * Toutes les valeurs proviennent des tokens charte (src/styles/tokens.css).
+ * Le mode "light" (= terre/crème par défaut de la charte) est défini en bas.
+ */
 :root {
-  --bg-1: #031634;
-  --bg-2: #004d82;
-  --bg-3: #129f9c;
-  --text-1: #f9fafb;
-  --text-2: #d4d4d8;
-  --surface: rgba(17, 24, 39, 0.62);
-  --surface-soft: rgba(255, 255, 255, 0.06);
-  --border: rgba(244, 244, 245, 0.14);
-  --border-soft: rgba(255, 255, 255, 0.14);
-  --accent: #0b7f88;
-  --accent-2: #055aa6;
-  --accent-soft: #8be8de;
-  --accent-contrast: #eefcff;
-  --accent-rgb: 11, 127, 136;
-  --accent-2-rgb: 5, 90, 166;
-  --field-bg: rgba(8, 12, 24, 0.74);
-  --field-border: rgba(255, 255, 255, 0.16);
-  --link-color: #8bc4ff;
-  --danger: #f43f5e;
-  --status-error: #fda4af;
-  --status-success: #86efac;
-  --kpi-value-primary: #8be8de;
-  --kpi-value-secondary: #86efac;
-  --kpi-value-danger: #fda4af;
-  --kpi-value-accent: #a5b4fc;
-  --kpi-positive: #86efac;
-  --kpi-danger: #fecdd3;
-  --kpi-warn: #fcd34d;
-  --shadow: 0 20px 48px rgba(2, 6, 23, 0.45);
+  /* Fonds café progressifs (du plus sombre au plus warm) */
+  --bg-1: #2A1810;
+  --bg-2: #3D2B1F;
+  --bg-3: #5C3D1E;
+  --text-1: var(--pf-color-bg);              /* #FDFAF6 cream sur café */
+  --text-2: var(--pf-color-border);          /* #D6C5B0 lin */
+  --surface: rgba(61, 43, 31, 0.72);         /* café charte translucide */
+  --surface-soft: rgba(253, 250, 246, 0.06); /* cream translucide léger */
+  --border: rgba(214, 197, 176, 0.18);       /* lin avec alpha */
+  --border-soft: rgba(214, 197, 176, 0.32);
+  --accent: #C4956A;                         /* terre claire (lisible sur café) */
+  --accent-2: var(--pf-color-warning);       /* #B8963E ambre */
+  --accent-soft: var(--pf-color-bg-elevated);/* #F5EFE6 sable */
+  --accent-contrast: var(--pf-color-primary-on); /* #FFF8F0 */
+  --accent-rgb: 196, 149, 106;
+  --accent-2-rgb: 184, 150, 62;
+  --field-bg: rgba(42, 24, 16, 0.74);
+  --field-border: rgba(214, 197, 176, 0.20);
+  --link-color: #C4956A;
+  --danger: var(--pf-color-negative);        /* #C05C2A terracotta */
+  --status-error: var(--pf-color-negative-bg);
+  --status-success: var(--pf-color-positive-bg);
+  --kpi-value-primary: #C4956A;
+  --kpi-value-secondary: #9FD189;            /* vert lisible sur café */
+  --kpi-value-danger: #F0A0A0;
+  --kpi-value-accent: #C8B06A;               /* ambre AI lisible */
+  --kpi-positive: #9FD189;
+  --kpi-danger: var(--pf-color-negative-bg);
+  --kpi-warn: var(--pf-color-warning);
+  --shadow: 0 20px 48px rgba(20, 12, 8, 0.55);
   --ui-radius: 0.9rem;
   --ui-radius-sm: 0.72rem;
   --ui-btn-height: 2.75rem;
   --ui-btn-padding-x: 0.95rem;
-  --ui-btn-border: rgba(255, 255, 255, 0.2);
-  --ui-btn-bg: rgba(255, 255, 255, 0.08);
-  --ui-btn-bg-hover: rgba(255, 255, 255, 0.14);
+  --ui-btn-border: rgba(214, 197, 176, 0.22);
+  --ui-btn-bg: rgba(253, 250, 246, 0.08);
+  --ui-btn-bg-hover: rgba(253, 250, 246, 0.16);
   --ui-btn-text: var(--text-1);
   --ui-btn-primary-bg: linear-gradient(130deg, var(--accent), var(--accent-2));
   --ui-btn-primary-text: var(--accent-contrast);
-  --ui-btn-danger-bg: linear-gradient(130deg, #ef4444, #be123c);
-  --ui-btn-danger-text: #fff1f2;
+  --ui-btn-danger-bg: linear-gradient(130deg, var(--pf-color-negative), #8B2020);
+  --ui-btn-danger-text: var(--pf-color-bg);
 
-  font-family: 'DM Sans', 'Manrope', 'Avenir Next', 'Segoe UI', sans-serif;
+  font-family: var(--pf-font-sans, 'DM Sans', 'Manrope', 'Avenir Next', 'Segoe UI', sans-serif);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── Light theme ───────────────────────────────────────────── */
+/* ── Light theme : Plan Financier "Crème" (brand par défaut) ────────── */
 [data-theme='light'] {
-  --bg-1: #eef8fb;
-  --bg-2: #dbf0f5;
-  --bg-3: #d5e8fb;
-  --text-1: #111827;
-  --text-2: #4b5563;
+  --bg-1: var(--pf-color-bg);                /* #FDFAF6 cream */
+  --bg-2: var(--pf-color-bg-elevated);       /* #F5EFE6 sable */
+  --bg-3: var(--pf-color-border);            /* #D6C5B0 lin */
+  --text-1: var(--pf-color-text-primary);    /* #3D2B1F café */
+  --text-2: var(--pf-color-text-secondary);  /* #A08060 caramel */
   --surface: rgba(255, 255, 255, 0.75);
   --surface-soft: rgba(255, 255, 255, 0.92);
-  --border: rgba(0, 0, 0, 0.1);
-  --border-soft: rgba(15, 91, 133, 0.16);
-  --accent-soft: #0f5b85;
-  --field-bg: rgba(255, 255, 255, 0.9);
-  --field-border: rgba(15, 91, 133, 0.18);
-  --link-color: #0d6aa8;
-  --status-error: #b42318;
-  --status-success: #166534;
-  --kpi-value-primary: #0f766e;
-  --kpi-value-secondary: #166534;
-  --kpi-value-danger: #b42318;
-  --kpi-value-accent: #3730a3;
-  --kpi-positive: #166534;
-  --kpi-danger: #b42318;
-  --kpi-warn: #9a3412;
-  --shadow: 0 20px 48px rgba(0, 0, 0, 0.12);
+  --border: rgba(61, 43, 31, 0.10);          /* café avec alpha */
+  --border-soft: rgba(214, 197, 176, 0.55);  /* lin doux */
+  --accent: var(--pf-color-primary);         /* #8B6C52 terre */
+  --accent-2: var(--pf-color-warning);       /* #B8963E ambre */
+  --accent-soft: var(--pf-color-bg-elevated);
+  --accent-contrast: var(--pf-color-primary-on);
+  --accent-rgb: 139, 108, 82;
+  --accent-2-rgb: 184, 150, 62;
+  --field-bg: var(--pf-color-bg-input);
+  --field-border: rgba(214, 197, 176, 0.65);
+  --link-color: var(--pf-color-primary);
+  --status-error: var(--pf-color-negative-text);
+  --status-success: var(--pf-color-positive-text);
+  --kpi-value-primary: var(--pf-color-primary);
+  --kpi-value-secondary: var(--pf-color-positive);
+  --kpi-value-danger: var(--pf-color-negative);
+  --kpi-value-accent: var(--pf-color-ai);    /* #6B5B8A prune */
+  --kpi-positive: var(--pf-color-positive);
+  --kpi-danger: var(--pf-color-negative);
+  --kpi-warn: var(--pf-color-warning);
+  --shadow: 0 20px 48px rgba(61, 43, 31, 0.10);
+  --ui-btn-border: rgba(196, 149, 106, 0.4);
+  --ui-btn-bg: rgba(245, 239, 230, 0.55);
+  --ui-btn-bg-hover: rgba(245, 239, 230, 0.85);
 }
 
-/* ── System preference: light ──────────────────────────────── */
+/* ── System preference : light → utilise le brand crème ─────────────── */
 @media (prefers-color-scheme: light) {
   [data-theme='system'] {
-    --bg-1: #eef8fb;
-    --bg-2: #dbf0f5;
-    --bg-3: #d5e8fb;
-    --text-1: #111827;
-    --text-2: #4b5563;
+    --bg-1: var(--pf-color-bg);
+    --bg-2: var(--pf-color-bg-elevated);
+    --bg-3: var(--pf-color-border);
+    --text-1: var(--pf-color-text-primary);
+    --text-2: var(--pf-color-text-secondary);
     --surface: rgba(255, 255, 255, 0.75);
     --surface-soft: rgba(255, 255, 255, 0.92);
-    --border: rgba(0, 0, 0, 0.1);
-    --border-soft: rgba(15, 91, 133, 0.16);
-    --accent-soft: #0f5b85;
-    --field-bg: rgba(255, 255, 255, 0.9);
-    --field-border: rgba(15, 91, 133, 0.18);
-    --link-color: #0d6aa8;
-    --status-error: #b42318;
-    --status-success: #166534;
-    --kpi-value-primary: #0f766e;
-    --kpi-value-secondary: #166534;
-    --kpi-value-danger: #b42318;
-    --kpi-value-accent: #3730a3;
-    --kpi-positive: #166534;
-    --kpi-danger: #b42318;
-    --kpi-warn: #9a3412;
-    --shadow: 0 20px 48px rgba(0, 0, 0, 0.12);
+    --border: rgba(61, 43, 31, 0.10);
+    --border-soft: rgba(214, 197, 176, 0.55);
+    --accent: var(--pf-color-primary);
+    --accent-2: var(--pf-color-warning);
+    --accent-soft: var(--pf-color-bg-elevated);
+    --accent-contrast: var(--pf-color-primary-on);
+    --accent-rgb: 139, 108, 82;
+    --accent-2-rgb: 184, 150, 62;
+    --field-bg: var(--pf-color-bg-input);
+    --field-border: rgba(214, 197, 176, 0.65);
+    --link-color: var(--pf-color-primary);
+    --status-error: var(--pf-color-negative-text);
+    --status-success: var(--pf-color-positive-text);
+    --kpi-value-primary: var(--pf-color-primary);
+    --kpi-value-secondary: var(--pf-color-positive);
+    --kpi-value-danger: var(--pf-color-negative);
+    --kpi-value-accent: var(--pf-color-ai);
+    --kpi-positive: var(--pf-color-positive);
+    --kpi-danger: var(--pf-color-negative);
+    --kpi-warn: var(--pf-color-warning);
+    --shadow: 0 20px 48px rgba(61, 43, 31, 0.10);
+    --ui-btn-border: rgba(196, 149, 106, 0.4);
+    --ui-btn-bg: rgba(245, 239, 230, 0.55);
+    --ui-btn-bg-hover: rgba(245, 239, 230, 0.85);
   }
 }
 
