@@ -2,12 +2,12 @@
 
 Cockpit budgétaire familial : suivi des dépenses, enveloppes, objectifs d'épargne, import CSV bancaire, projections et coaching IA.
 
-Application 100 % côté navigateur — les données restent sur l'appareil (localStorage) et seule l'authentification passe par Firebase.
+Application 100 % côté navigateur — les données métier restent sur l'appareil (localStorage) et l'authentification passe par Supabase (région EU).
 
 ## Stack
 
 - **React 19** + **TypeScript** + **Vite**
-- **Firebase Auth** (email/password + Google)
+- **Supabase Auth** (email/password + Google OAuth) — hosting EU, RGPD-friendly
 - **Recharts** pour les graphiques, **Lucide React** pour les icônes
 - **jsPDF** + **jspdf-autotable** pour les exports
 - **Vitest** pour les tests
@@ -39,7 +39,7 @@ src/
 ├── App.tsx                # Application principale
 ├── AppErrorBoundary.tsx   # Boundary d'erreur global
 ├── AuthScreen.tsx         # Écran d'authentification
-├── firebase.ts            # Initialisation Firebase (à supprimer en étape 1)
+├── supabase.ts            # Client Supabase + garde-fou env vars
 ├── security.ts            # PIN parent + chiffrement local
 ├── types.ts               # Types métier partagés
 ├── lib/                   # Helpers purs (formatage, dates, calculs)
@@ -60,45 +60,46 @@ supabase/
 
 - **PIN parent** : haché côté client (PBKDF2 + sel par installation, AES-GCM) avant d'être stocké. Le PIN en clair n'est jamais persisté.
 - **Données financières** : conservées dans `localStorage` du navigateur (non synchronisées). Seul l'utilisateur du poste y a accès.
-- **Firebase** : seules les API d'authentification sont utilisées. La configuration côté client est publique (clé identifiant le projet, pas un secret) — la défense repose sur les règles Auth/Firestore.
+- **Supabase** : seules les API d'authentification sont actives en V1 (la migration des données vers Postgres + RLS est en cours, cf. plan d'archi étape 2+). La clé publique côté client (`VITE_SUPABASE_ANON_KEY`) est conçue pour être exposée — la défense repose sur la **Row-Level Security** côté serveur.
 - **CSP** : politique restrictive déclarée dans `index.html` pour limiter la surface XSS.
 
-## Configuration Firebase (transitoire)
+## Configuration Supabase (REQUISE pour l'auth)
 
-Les paramètres du projet sont déclarés dans [`src/firebase.ts`](src/firebase.ts). Firebase Auth est utilisé jusqu'à l'étape 1 du [plan d'architecture](docs/architecture.md), où il sera remplacé par Supabase Auth.
+Sans configuration Supabase, l'écran de connexion affiche un bandeau d'avertissement et les boutons d'auth lèvent une erreur claire — l'app reste utilisable techniquement mais aucun login n'est possible.
 
-Les fichiers `firebase.json`, `firestore.rules` et `storage.rules` à la racine définissent la configuration de déploiement et les règles de sécurité par défaut (deny-all tant que Firestore/Storage ne sont pas utilisés).
+### Setup en 5 étapes
 
-## Préparation Supabase (étape 0 ✅, étape 1 à venir)
-
-Le projet est en cours de migration vers Supabase (cf. [docs/architecture.md](docs/architecture.md) — décision validée le 2026-05-14).
-
-### Ce qui est prêt dès aujourd'hui
-
-- `supabase/migrations/0001_initial_schema.sql` — schéma Postgres complet (14 tables), RLS exhaustive, catégories système en seed.
-- `supabase/config.toml` — config Supabase locale (PostgREST, Realtime, Studio, Storage, Auth).
-- `.env.example` — variables attendues côté client (`VITE_SUPABASE_*`) et serveur (`SUPABASE_SERVICE_ROLE_KEY`).
-- `src/styles/tokens.css` — tokens design importés globalement, prêts à être consommés via `var(--pf-*)`.
-
-### Pour démarrer l'étape 1 (migration auth)
-
-1. Installer le CLI Supabase :
+1. **Installer le CLI Supabase** (macOS) :
 
    ```bash
    brew install supabase/tap/supabase
    ```
 
-2. Créer un projet Supabase EU (https://supabase.com → New project, region "Frankfurt").
-3. Récupérer `URL` et `anon key` dans Project Settings → API, les coller dans `.env.local`.
-4. Appliquer le schéma :
+2. **Créer un projet Supabase** : https://supabase.com → New project, region **Frankfurt** (EU, RGPD).
+
+3. **Récupérer les credentials** : Project Settings → API. Copier dans `.env.local` :
+
+   ```bash
+   VITE_SUPABASE_URL=https://<ref>.supabase.co
+   VITE_SUPABASE_ANON_KEY=<anon-key-publique>
+   ```
+
+4. **Appliquer le schéma** (14 tables + RLS + seed catégories) :
 
    ```bash
    supabase link --project-ref <project-ref>
    supabase db push
    ```
 
-5. Installer le SDK côté client : `npm install @supabase/supabase-js`.
-6. Suivre le plan de migration dans [docs/architecture.md](docs/architecture.md) §6.
+5. **(Optionnel) Activer Google OAuth** : Authentication → Providers → Google. Configurer client_id/secret depuis Google Cloud Console.
+
+### Migration depuis Firebase (utilisateurs existants)
+
+Les comptes Firebase ne sont **pas migrés automatiquement** vers Supabase. Les utilisateurs existants doivent :
+- Cliquer "Pas encore de compte ? S'inscrire" pour créer un compte Supabase avec le même email.
+- OU recevoir un email "réinitialisez votre mot de passe" pour les comptes pré-importés via `supabase admin`.
+
+Les **données métier** (transactions, comptes, objectifs, règles récurrentes) sont en localStorage : aucune migration nécessaire à l'étape 1, elles restent disponibles localement.
 
 ## Conventions
 

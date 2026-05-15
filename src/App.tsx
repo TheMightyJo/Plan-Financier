@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
-import { onAuthStateChanged, signOut } from 'firebase/auth'
-import { auth } from './firebase'
+import { supabase } from './supabase'
 import AuthScreen from './AuthScreen'
 import {
   Area,
@@ -1023,7 +1022,7 @@ function App() {
   const [profiles, setProfiles] = useState<UserProfile[]>(loadProfiles)
   const [activeSectionId, setActiveSectionId] = useState('overview')
   const [isSecurityReady, setIsSecurityReady] = useState(false)
-  const [firebaseAuthReady, setFirebaseAuthReady] = useState(false)
+  const [authProviderReady, setAuthProviderReady] = useState(false)
   const [sensitiveState, setSensitiveState] = useState<SensitiveState>(defaultSensitiveState)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [authRole, setAuthRole] = useState<AuthRole>('Parent')
@@ -2200,16 +2199,19 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     window.localStorage.setItem(DASHBOARD_WIDGETS_STORAGE_KEY, JSON.stringify(dashboardWidgetState))
   }, [dashboardWidgetState])
 
-  // ── Firebase auth listener ────────────────────────────────────
+  // ── Supabase auth listener ────────────────────────────────────
   useEffect(() => {
-    return onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setIsAuthenticated(true)
-      } else {
-        setIsAuthenticated(false)
-      }
-      setFirebaseAuthReady(true)
+    // Hydrate la session existante (cookie/storage) au premier mount
+    supabase.auth.getSession().then(({ data }) => {
+      setIsAuthenticated(!!data.session)
+      setAuthProviderReady(true)
     })
+    // Puis écoute les changements (signin/signout/refresh)
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session)
+      setAuthProviderReady(true)
+    })
+    return () => subscription.subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
@@ -3419,7 +3421,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
 
   const handleLogout = () => {
-    void signOut(auth)
+    void supabase.auth.signOut()
     closeSettingsPanel()
   }
 
@@ -4015,7 +4017,7 @@ Réponse attendue:
 
 
 
-  if (!isSecurityReady || !firebaseAuthReady) {
+  if (!isSecurityReady || !authProviderReady) {
     return (
       <main className="auth-shell auth-shell-loading">
         <section className="glass-card auth-card auth-card-loading" aria-busy="true" aria-live="polite">
