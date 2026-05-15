@@ -78,7 +78,19 @@ import { generateDueTransactions } from './lib/recurring'
 import { loadRecurringRules, saveRecurringRules } from './repos/recurringRulesRepo'
 import { RecurringRulesPanel } from './components/RecurringRulesPanel'
 import { FirstTransactionTour } from './components/FirstTransactionTour'
-import type { RecurringRule } from './types'
+import { AccountsPanel } from './components/AccountsPanel'
+import {
+  computeConsolidatedBalance,
+  balanceByAccountType,
+} from './lib/accounts'
+import {
+  loadAccounts,
+  saveAccounts,
+  migrateTransactionsToDefaultAccount,
+  ensureDefaultAccount,
+} from './repos/accountsRepo'
+import { ACCOUNT_TYPE_LABELS } from './types'
+import type { Account, RecurringRule } from './types'
 import {
   categories,
   categoryColors,
@@ -1051,6 +1063,8 @@ function App() {
   const [transactions, setTransactions] = useState<Transaction[]>(loadTransactions)
   const [recurringRules, setRecurringRules] = useState<RecurringRule[]>(loadRecurringRules)
   const [showRecurringPanel, setShowRecurringPanel] = useState(false)
+  const [accounts, setAccounts] = useState<Account[]>(loadAccounts)
+  const [showAccountsPanel, setShowAccountsPanel] = useState(false)
   const [showFirstTxTour, setShowFirstTxTour] = useState(
     () =>
       typeof window !== 'undefined' &&
@@ -2209,6 +2223,33 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   useEffect(() => {
     saveRecurringRules(recurringRules)
   }, [recurringRules])
+
+  // Persistance des comptes
+  useEffect(() => {
+    saveAccounts(accounts)
+  }, [accounts])
+
+  // Migration : transactions sans accountId → compte courant par défaut
+  // Auto-stable : après migration toutes les transactions ont un accountId,
+  // donc l'effet ne déclenche plus rien.
+  useEffect(() => {
+    const hasOrphans = transactions.some((t) => !t.accountId)
+    if (!hasOrphans) return
+    const result = migrateTransactionsToDefaultAccount(transactions, accounts)
+    if (result.changed) {
+      setTransactions(result.transactions)
+      setAccounts(result.accounts)
+    }
+  }, [transactions, accounts])
+
+  // Garantit un compte courant par défaut pour le profil actif (utile pour
+  // les nouveaux profils qui n'ont aucune transaction historique).
+  useEffect(() => {
+    const result = ensureDefaultAccount(accounts, selectedProfileId)
+    if (result.accounts !== accounts) {
+      setAccounts(result.accounts)
+    }
+  }, [selectedProfileId, accounts])
 
   // Génération idempotente des transactions dues depuis les règles récurrentes.
   // Re-run safe : si lastGeneratedOn est à jour, generateDueTransactions ne
@@ -6035,6 +6076,53 @@ Réponse attendue:
         </article>
         ) : null}
 
+        {isActiveView('pilotage') ? (
+        <article className="glass-card chart-card accounts-widget">
+          <div className="panel-title">
+            <div>
+              <h2>Comptes</h2>
+              <p>Solde consolidé pour {selectedProfileName.toLowerCase()}</p>
+            </div>
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => setShowAccountsPanel(true)}
+            >
+              <Landmark size={14} />
+              Gérer ({accounts.filter((a) => a.ownerMember === selectedProfileId && a.archivedAt === null).length})
+            </button>
+          </div>
+          {(() => {
+            const consolidated = computeConsolidatedBalance(accounts, transactions, selectedProfileId)
+            const breakdown = balanceByAccountType(accounts, transactions, selectedProfileId)
+            const nonZeroTypes = (Object.entries(breakdown) as Array<[keyof typeof breakdown, number]>)
+              .filter(([, amount]) => amount !== 0)
+            return (
+              <div className="accounts-widget-body">
+                <div className={`accounts-widget-total ${consolidated >= 0 ? 'is-positive' : 'is-negative'}`}>
+                  <span>{euroFormatter.format(consolidated)}</span>
+                  <small>Patrimoine net (hors investissement non liquide)</small>
+                </div>
+                {nonZeroTypes.length > 0 ? (
+                  <ul className="accounts-widget-breakdown">
+                    {nonZeroTypes.map(([type, amount]) => (
+                      <li key={type}>
+                        <span className="accounts-widget-type">{ACCOUNT_TYPE_LABELS[type]}</span>
+                        <span className={amount >= 0 ? 'is-positive' : 'is-negative'}>
+                          {euroFormatter.format(amount)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="auth-note">Aucun compte avec un solde non nul. Cliquez sur « Gérer » pour ajouter un compte.</p>
+                )}
+              </div>
+            )
+          })()}
+        </article>
+        ) : null}
+
         {isPilotageWidgetVisible('recurringCharges') && isActiveView('pilotage') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
@@ -6920,6 +7008,17 @@ Réponse attendue:
         member={selectedProfileId}
         onSubmit={(tx) => completeFirstTxTour(tx)}
         onSkip={() => completeFirstTxTour()}
+      />
+    ) : null}
+
+    {/* ── Panneau de gestion des comptes ─────────────────────────── */}
+    {showAccountsPanel ? (
+      <AccountsPanel
+        accounts={accounts}
+        transactions={transactions}
+        onChange={setAccounts}
+        member={selectedProfileId}
+        onClose={() => setShowAccountsPanel(false)}
       />
     ) : null}
     </>

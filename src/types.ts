@@ -28,6 +28,50 @@ export type Transaction = {
   date: string
   kind: TransactionKind
   envelope: Envelope
+  /**
+   * Compte sur lequel l'opération est imputée. Optionnel pour rétro-compat
+   * avec les anciennes transactions stockées avant l'introduction des
+   * comptes ; la migration `migrateTransactionsToDefaultAccount` les
+   * rebascule sur le compte par défaut au premier mount.
+   */
+  accountId?: string
+}
+
+// ── Comptes (mirror SQL accounts) ────────────────────────────────────────────
+// Quand on basculera sur Supabase (cf. supabase/migrations/0001_initial_schema.sql),
+// `ownerMember` deviendra `owner_user_id` (FK profiles).
+
+export const ACCOUNT_TYPES = [
+  'checking',     // compte courant
+  'savings',      // livret / épargne
+  'cash',         // espèces
+  'envelope',     // enveloppe budgétaire virtuelle
+  'credit_card',  // carte de crédit
+  'investment',   // investissement (PEA, AV, broker…)
+] as const
+export type AccountType = (typeof ACCOUNT_TYPES)[number]
+
+export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
+  checking: 'Compte courant',
+  savings: 'Livret / Épargne',
+  cash: 'Espèces',
+  envelope: 'Enveloppe',
+  credit_card: 'Carte de crédit',
+  investment: 'Investissement',
+}
+
+export type Account = {
+  id: string
+  ownerMember: FamilyMember
+  name: string
+  type: AccountType
+  currency: string             // ISO 4217, défaut 'EUR'
+  initialBalance: number       // solde d'ouverture (peut être négatif pour CC)
+  displayColor: string | null  // hex
+  displayIcon: string | null   // nom Tabler/Lucide icon
+  archivedAt: number | null
+  createdAt: number
+  updatedAt: number
 }
 
 export type SavingsGoals = Record<FamilyMember, Record<Category, number>>
