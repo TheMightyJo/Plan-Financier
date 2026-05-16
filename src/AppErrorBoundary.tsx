@@ -1,6 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { signOut } from 'firebase/auth'
-import { auth } from './firebase'
+import { supabase } from './supabase'
 
 type AppErrorBoundaryProps = {
   children: ReactNode
@@ -47,7 +46,7 @@ class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundary
 
   handleBackToLogin = async () => {
     try {
-      await signOut(auth)
+      await supabase.auth.signOut()
     } catch {
       // Si la deconnexion echoue, on force quand meme le retour a l'accueil.
     }

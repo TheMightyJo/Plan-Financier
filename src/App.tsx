@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
-import { onAuthStateChanged, signOut } from 'firebase/auth'
-import { auth } from './firebase'
+import { supabase } from './supabase'
 import AuthScreen from './AuthScreen'
 import {
   Area,
@@ -74,6 +73,25 @@ import {
   sanitizeProfileId,
 } from './lib/text'
 import { getDateDistanceInDays } from './lib/dates'
+import { generateDueTransactions } from './lib/recurring'
+import { loadRecurringRules, saveRecurringRules } from './repos/recurringRulesRepo'
+import { RecurringRulesPanel } from './components/RecurringRulesPanel'
+import { FirstTransactionTour } from './components/FirstTransactionTour'
+import { AccountsPanel } from './components/AccountsPanel'
+import { TransactionHistoryPanel } from './components/TransactionHistoryPanel'
+import { SavingsGoalsPanel } from './components/SavingsGoalsPanel'
+import {
+  computeConsolidatedBalance,
+  balanceByAccountType,
+} from './lib/accounts'
+import {
+  loadAccounts,
+  saveAccounts,
+  migrateTransactionsToDefaultAccount,
+  ensureDefaultAccount,
+} from './repos/accountsRepo'
+import { ACCOUNT_TYPE_LABELS } from './types'
+import type { Account, RecurringRule } from './types'
 import {
   categories,
   categoryColors,
@@ -122,6 +140,7 @@ const DEFAULT_PROFILE_STORAGE_KEY = 'plan-financier-default-profile-v1'
 const BACKUP_VERSION = 1
 const SAVINGS_TARGETS_STORAGE_KEY = 'plan-financier-savings-targets-v1'
 const ONBOARDING_DONE_KEY = 'plan-financier-onboarding-done-v1'
+const FIRST_TX_TOUR_DONE_KEY = 'plan-financier-first-tx-tour-done-v1'
 const THEME_STORAGE_KEY = 'plan-financier-theme-v1'
 const DASHBOARD_WIDGETS_STORAGE_KEY = 'plan-financier-dashboard-widgets-v1'
 const AI_PROVIDER_STORAGE_KEY = 'plan-financier-ai-provider-v1'
@@ -1003,7 +1022,7 @@ function App() {
   const [profiles, setProfiles] = useState<UserProfile[]>(loadProfiles)
   const [activeSectionId, setActiveSectionId] = useState('overview')
   const [isSecurityReady, setIsSecurityReady] = useState(false)
-  const [firebaseAuthReady, setFirebaseAuthReady] = useState(false)
+  const [authProviderReady, setAuthProviderReady] = useState(false)
   const [sensitiveState, setSensitiveState] = useState<SensitiveState>(defaultSensitiveState)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [authRole, setAuthRole] = useState<AuthRole>('Parent')
@@ -1043,6 +1062,17 @@ function App() {
     loadDefaultProfileId(loadProfiles()),
   )
   const [transactions, setTransactions] = useState<Transaction[]>(loadTransactions)
+  const [recurringRules, setRecurringRules] = useState<RecurringRule[]>(loadRecurringRules)
+  const [showRecurringPanel, setShowRecurringPanel] = useState(false)
+  const [accounts, setAccounts] = useState<Account[]>(loadAccounts)
+  const [showAccountsPanel, setShowAccountsPanel] = useState(false)
+  const [showHistoryPanel, setShowHistoryPanel] = useState(false)
+  const [showGoalsPanel, setShowGoalsPanel] = useState(false)
+  const [showFirstTxTour, setShowFirstTxTour] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      !window.localStorage.getItem(FIRST_TX_TOUR_DONE_KEY),
+  )
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoals>(() => loadSavingsGoals(loadProfiles()))
   const [rolloverState, setRolloverState] = useState<RolloverState>(() =>
     loadRolloverState(currentMonth, loadProfiles()),
@@ -1070,6 +1100,7 @@ function App() {
     date: new Date().toISOString().slice(0, 10),
     kind: 'depense' as TransactionKind,
     envelope: 'Maison' as Envelope,
+    accountId: '' as string,    // résolu vers le compte par défaut au mount via useEffect
   })
   const [editingTxId, setEditingTxId] = useState<number | null>(null)
   const [deletingTxId, setDeletingTxId] = useState<number | null>(null)
@@ -1631,6 +1662,15 @@ Règles :
   const skipOnboarding = () => {
     window.localStorage.setItem(ONBOARDING_DONE_KEY, '1')
     setShowOnboarding(false)
+    // Le tour de première transaction prend le relais (sauf si déjà fait).
+  }
+
+  const completeFirstTxTour = (transaction?: Transaction) => {
+    if (transaction) {
+      setTransactions((previous) => [...previous, transaction])
+    }
+    window.localStorage.setItem(FIRST_TX_TOUR_DONE_KEY, '1')
+    setShowFirstTxTour(false)
   }
 
   const saveAiProvider = (provider: AIProviderId) => {
@@ -2160,16 +2200,19 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     window.localStorage.setItem(DASHBOARD_WIDGETS_STORAGE_KEY, JSON.stringify(dashboardWidgetState))
   }, [dashboardWidgetState])
 
-  // ── Firebase auth listener ────────────────────────────────────
+  // ── Supabase auth listener ────────────────────────────────────
   useEffect(() => {
-    return onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setIsAuthenticated(true)
-      } else {
-        setIsAuthenticated(false)
-      }
-      setFirebaseAuthReady(true)
+    // Hydrate la session existante (cookie/storage) au premier mount
+    supabase.auth.getSession().then(({ data }) => {
+      setIsAuthenticated(!!data.session)
+      setAuthProviderReady(true)
     })
+    // Puis écoute les changements (signin/signout/refresh)
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session)
+      setAuthProviderReady(true)
+    })
+    return () => subscription.subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
@@ -2182,6 +2225,57 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       JSON.stringify(transactions),
     )
   }, [transactions])
+
+  // Persistance des règles récurrentes (localStorage v1, mappable Supabase plus tard)
+  useEffect(() => {
+    saveRecurringRules(recurringRules)
+  }, [recurringRules])
+
+  // Persistance des comptes
+  useEffect(() => {
+    saveAccounts(accounts)
+  }, [accounts])
+
+  // Migration : transactions sans accountId → compte courant par défaut
+  // Auto-stable : après migration toutes les transactions ont un accountId,
+  // donc l'effet ne déclenche plus rien.
+  useEffect(() => {
+    const hasOrphans = transactions.some((t) => !t.accountId)
+    if (!hasOrphans) return
+    const result = migrateTransactionsToDefaultAccount(transactions, accounts)
+    if (result.changed) {
+      setTransactions(result.transactions)
+      setAccounts(result.accounts)
+    }
+  }, [transactions, accounts])
+
+  // Garantit un compte courant par défaut pour le profil actif (utile pour
+  // les nouveaux profils qui n'ont aucune transaction historique).
+  useEffect(() => {
+    const result = ensureDefaultAccount(accounts, selectedProfileId)
+    if (result.accounts !== accounts) {
+      setAccounts(result.accounts)
+    }
+  }, [selectedProfileId, accounts])
+
+  // Génération idempotente des transactions dues depuis les règles récurrentes.
+  // Re-run safe : si lastGeneratedOn est à jour, generateDueTransactions ne
+  // produit rien et on n'appelle pas setState → pas de boucle.
+  useEffect(() => {
+    if (recurringRules.length === 0) return
+    const today = new Date().toISOString().slice(0, 10)
+    let counter = Date.now()
+    const generated: Transaction[] = []
+    const updatedRules = recurringRules.map((rule) => {
+      const result = generateDueTransactions(rule, today, () => counter++)
+      if (result.transactions.length === 0) return rule
+      generated.push(...result.transactions)
+      return { ...rule, lastGeneratedOn: result.lastGeneratedOn, updatedAt: Date.now() }
+    })
+    if (generated.length === 0) return
+    setTransactions((previous) => [...previous, ...generated])
+    setRecurringRules(updatedRules)
+  }, [recurringRules])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -2943,11 +3037,19 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return
     }
 
+    // Compte attaché : valeur du form OU défaut résolu du membre actif
+    const resolvedAccountId =
+      form.accountId ||
+      accounts.find(
+        (a) => a.ownerMember === form.member && a.type === 'checking' && a.archivedAt === null,
+      )?.id ||
+      undefined
+
     if (editingTxId !== null) {
       setTransactions((previous) =>
         previous.map((tx) =>
           tx.id === editingTxId
-            ? { ...tx, label: form.label.trim(), amount, category: form.category, member: form.member, date: form.date, kind: form.kind, envelope: form.envelope }
+            ? { ...tx, label: form.label.trim(), amount, category: form.category, member: form.member, date: form.date, kind: form.kind, envelope: form.envelope, accountId: resolvedAccountId }
             : tx
         )
       )
@@ -2963,6 +3065,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
         date: form.date,
         kind: form.kind,
         envelope: form.envelope,
+        accountId: resolvedAccountId,
       }
       setTransactions((previous) => [...previous, newTransaction])
       showToast(`${form.kind === 'revenu' ? 'Revenu' : 'Dépense'} ajouté·e`)
@@ -2987,6 +3090,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       date: tx.date,
       kind: tx.kind,
       envelope: tx.envelope,
+      accountId: tx.accountId ?? '',
     })
   }
 
@@ -3328,7 +3432,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
 
   const handleLogout = () => {
-    void signOut(auth)
+    void supabase.auth.signOut()
     closeSettingsPanel()
   }
 
@@ -3924,7 +4028,7 @@ Réponse attendue:
 
 
 
-  if (!isSecurityReady || !firebaseAuthReady) {
+  if (!isSecurityReady || !authProviderReady) {
     return (
       <main className="auth-shell auth-shell-loading">
         <section className="glass-card auth-card auth-card-loading" aria-busy="true" aria-live="polite">
@@ -5119,7 +5223,7 @@ Réponse attendue:
       </section>
       ) : null}
 
-      {orderedVisibleDashboardWidgets.length > 0 && isActiveView('pilotage') ? (
+      {orderedVisibleDashboardWidgets.length > 0 && isActiveView('operations') ? (
         <section className="glass-card widget-view-nav" aria-label="Navigation des vues widgets">
           <div className="widget-view-nav__top">
             <strong>Navigation vue par vue</strong>
@@ -5151,7 +5255,7 @@ Réponse attendue:
         </section>
       ) : null}
 
-      {isActiveView('pilotage') || isActiveView('budget') ? (
+      {isActiveView('operations') || isActiveView('budget') ? (
       <section id="pilotage" className="panel-grid">
         {isActiveView('budget') ? (
         <article id="budget" className={`glass-card chart-card wide-card${budgetSimpleMode ? ' budget-senior-mode' : ''}`} ref={budgetInfoScopeRef}>
@@ -5683,7 +5787,7 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('coaching') && isActiveView('pilotage') ? (
+        {isPilotageWidgetVisible('coaching') && isActiveView('operations') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
             <h2>Coaching financier</h2>
@@ -5731,7 +5835,7 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('csvImport') && isActiveView('pilotage') ? (
+        {isPilotageWidgetVisible('csvImport') && isActiveView('operations') ? (
         <article className="glass-card form-panel wide-card">
           <div className="panel-title">
             <h2>Import CSV bancaire</h2>
@@ -5912,7 +6016,7 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('alerts') && isActiveView('pilotage') ? (
+        {isPilotageWidgetVisible('alerts') && isActiveView('operations') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
             <h2>Alertes intelligentes</h2>
@@ -5935,7 +6039,7 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('savingsGoals') && isActiveView('pilotage') ? (
+        {isPilotageWidgetVisible('savingsGoals') && isActiveView('operations') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
             <h2>Objectifs d'épargne</h2>
@@ -5989,11 +6093,68 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('recurringCharges') && isActiveView('pilotage') ? (
+        {isActiveView('operations') ? (
+        <article className="glass-card chart-card accounts-widget">
+          <div className="panel-title">
+            <div>
+              <h2>Comptes</h2>
+              <p>Solde consolidé pour {selectedProfileName.toLowerCase()}</p>
+            </div>
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => setShowAccountsPanel(true)}
+            >
+              <Landmark size={14} />
+              Gérer ({accounts.filter((a) => a.ownerMember === selectedProfileId && a.archivedAt === null).length})
+            </button>
+          </div>
+          {(() => {
+            const consolidated = computeConsolidatedBalance(accounts, transactions, selectedProfileId)
+            const breakdown = balanceByAccountType(accounts, transactions, selectedProfileId)
+            const nonZeroTypes = (Object.entries(breakdown) as Array<[keyof typeof breakdown, number]>)
+              .filter(([, amount]) => amount !== 0)
+            return (
+              <div className="accounts-widget-body">
+                <div className={`accounts-widget-total ${consolidated >= 0 ? 'is-positive' : 'is-negative'}`}>
+                  <span>{euroFormatter.format(consolidated)}</span>
+                  <small>Patrimoine net (hors investissement non liquide)</small>
+                </div>
+                {nonZeroTypes.length > 0 ? (
+                  <ul className="accounts-widget-breakdown">
+                    {nonZeroTypes.map(([type, amount]) => (
+                      <li key={type}>
+                        <span className="accounts-widget-type">{ACCOUNT_TYPE_LABELS[type]}</span>
+                        <span className={amount >= 0 ? 'is-positive' : 'is-negative'}>
+                          {euroFormatter.format(amount)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="auth-note">Aucun compte avec un solde non nul. Cliquez sur « Gérer » pour ajouter un compte.</p>
+                )}
+              </div>
+            )
+          })()}
+        </article>
+        ) : null}
+
+        {isPilotageWidgetVisible('recurringCharges') && isActiveView('operations') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
-            <h2>Charges récurrentes</h2>
-            <p>Transactions détectées sur 2+ mois pour {selectedProfileName.toLowerCase()}</p>
+            <div>
+              <h2>Charges récurrentes</h2>
+              <p>Transactions détectées sur 2+ mois pour {selectedProfileName.toLowerCase()}</p>
+            </div>
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => setShowRecurringPanel(true)}
+            >
+              <Repeat2 size={14} />
+              Gérer les règles ({recurringRules.filter((r) => r.member === selectedProfileId).length})
+            </button>
           </div>
           {recurringItems.length === 0 ? (
             <p className="auth-note">Pas assez de données pour détecter des récurrences sur ce profil.</p>
@@ -6013,11 +6174,22 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('savingsProjects') && isActiveView('pilotage') ? (
+        {isPilotageWidgetVisible('savingsProjects') && isActiveView('operations') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
-            <h2>Objectifs d'épargne projet</h2>
-            <p>Projets financiers et leur progression estimée</p>
+            <div>
+              <h2>Objectifs d'épargne projet</h2>
+              <p>Projets financiers et leur progression estimée</p>
+            </div>
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => setShowGoalsPanel(true)}
+              title="Échéance, mensualité conseillée, lien vers un compte dédié"
+            >
+              <Target size={14} />
+              Gérer ({savingsTargets.length})
+            </button>
           </div>
           {savingsTargets.length > 0 ? (
             <ul className="savings-target-list">
@@ -6090,7 +6262,7 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('expenseCalendar') && isActiveView('pilotage') ? (
+        {isPilotageWidgetVisible('expenseCalendar') && isActiveView('operations') ? (
         <article className="glass-card chart-card wide-card">
           <div className="panel-title">
             <h2>Calendrier des dépenses</h2>
@@ -6114,7 +6286,7 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {dashboardWidgetState.visibleWidgets.length === 0 && isActiveView('pilotage') ? (
+        {dashboardWidgetState.visibleWidgets.length === 0 && isActiveView('operations') ? (
           <article className="glass-card chart-card wide-card">
             <div className="panel-title">
               <h2>Aucun widget actif</h2>
@@ -6282,8 +6454,19 @@ Réponse attendue:
 
         <article className="glass-card transaction-panel wide-card">
           <div className="panel-title">
-            <h2>Transactions du mois</h2>
-            <p>{txFiltered.length} opération{txFiltered.length !== 1 ? 's' : ''} · {formatMonth(selectedMonth)} · {selectedProfileName.toLowerCase()}</p>
+            <div>
+              <h2>Transactions du mois</h2>
+              <p>{txFiltered.length} opération{txFiltered.length !== 1 ? 's' : ''} · {formatMonth(selectedMonth)} · {selectedProfileName.toLowerCase()}</p>
+            </div>
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => setShowHistoryPanel(true)}
+              title="Recherche, filtres, édition, export CSV sur tout l'historique"
+            >
+              <Layers3 size={14} />
+              Voir tout l'historique
+            </button>
           </div>
           <div className="tx-summary-bar">
             <div className="tx-summary-card">
@@ -6492,6 +6675,9 @@ Réponse attendue:
                   setForm((previous) => ({
                     ...previous,
                     member: event.target.value,
+                    // Reset accountId : il sera re-résolvé vers le compte par défaut
+                    // du nouveau membre au submit (cf. resolvedAccountId).
+                    accountId: '',
                   }))
                 }
               >
@@ -6500,6 +6686,24 @@ Réponse attendue:
                     {profile.name}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label>
+              Compte
+              <select
+                value={form.accountId}
+                onChange={(event) =>
+                  setForm((previous) => ({ ...previous, accountId: event.target.value }))
+                }
+              >
+                <option value="">— compte par défaut —</option>
+                {accounts
+                  .filter((a) => a.ownerMember === form.member && a.archivedAt === null)
+                  .map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
               </select>
             </label>
             <label>
@@ -6846,6 +7050,62 @@ Réponse attendue:
       <div key={toast.key} className="app-toast" role="status" aria-live="polite">
         {toast.message}
       </div>
+    ) : null}
+
+    {/* ── Panneau de gestion des dépenses récurrentes ───────────── */}
+    {showRecurringPanel ? (
+      <RecurringRulesPanel
+        rules={recurringRules}
+        onChange={setRecurringRules}
+        member={selectedProfileId}
+        onClose={() => setShowRecurringPanel(false)}
+      />
+    ) : null}
+
+    {/* ── Tour de première transaction (onboarding final) ───────── */}
+    {showFirstTxTour && !showOnboarding ? (
+      <FirstTransactionTour
+        member={selectedProfileId}
+        onSubmit={(tx) => completeFirstTxTour(tx)}
+        onSkip={() => completeFirstTxTour()}
+      />
+    ) : null}
+
+    {/* ── Panneau de gestion des comptes ─────────────────────────── */}
+    {showAccountsPanel ? (
+      <AccountsPanel
+        accounts={accounts}
+        transactions={transactions}
+        onChange={setAccounts}
+        member={selectedProfileId}
+        onClose={() => setShowAccountsPanel(false)}
+      />
+    ) : null}
+
+    {/* ── Historique complet des transactions ────────────────────── */}
+    {showHistoryPanel ? (
+      <TransactionHistoryPanel
+        transactions={transactions}
+        accounts={accounts}
+        member={selectedProfileId}
+        onChange={setTransactions}
+        onClose={() => setShowHistoryPanel(false)}
+      />
+    ) : null}
+
+    {/* ── Panneau Objectifs d'épargne ─────────────────────────────── */}
+    {showGoalsPanel ? (
+      <SavingsGoalsPanel
+        goals={savingsTargets}
+        accounts={accounts}
+        transactions={transactions}
+        member={selectedProfileId}
+        onChange={(next) => {
+          setSavingsTargets(next)
+          window.localStorage.setItem(SAVINGS_TARGETS_STORAGE_KEY, JSON.stringify(next))
+        }}
+        onClose={() => setShowGoalsPanel(false)}
+      />
     ) : null}
     </>
   )

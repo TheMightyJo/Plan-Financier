@@ -22,6 +22,11 @@ coverage
 .env.*
 !.env.example
 
+# Claude Code — artefacts locaux (worktrees, sessions). On garde launch.json.
+.claude/worktrees/
+.claude/sessions/
+.claude/cache/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

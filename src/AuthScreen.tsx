@@ -1,12 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  createUserWithEmailAndPassword,
-  GoogleAuthProvider,
-  sendPasswordResetEmail,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-} from 'firebase/auth'
-import { auth } from './firebase'
+import { isSupabaseConfigured, SUPABASE_CONFIG_ERROR, supabase } from './supabase'
 
 type Mode = 'login' | 'signup' | 'forgot'
 
@@ -133,25 +126,35 @@ function FloatingBg() {
   )
 }
 
-const firebaseErrorMessage = (code: string): string => {
-  switch (code) {
-    case 'auth/user-not-found':
-    case 'auth/wrong-password':
-    case 'auth/invalid-credential':
-      return 'Email ou mot de passe incorrect.'
-    case 'auth/email-already-in-use':
-      return 'Un compte existe déjà avec cet email.'
-    case 'auth/weak-password':
-      return 'Mot de passe trop faible (8 caractères minimum).'
-    case 'auth/invalid-email':
-      return 'Adresse email invalide.'
-    case 'auth/too-many-requests':
-      return 'Trop de tentatives. Attendez quelques minutes avant de réessayer.'
-    case 'auth/network-request-failed':
-      return 'Problème réseau. Vérifiez votre connexion.'
-    default:
-      return 'Une erreur est survenue. Réessayez.'
+/**
+ * Mappe un message d'erreur Supabase Auth (en anglais, format libre) vers
+ * un texte FR utilisateur. On matche par mot-clé car Supabase ne renvoie
+ * pas de codes stables — uniquement des `message` strings.
+ */
+const supabaseAuthErrorMessage = (rawMessage: string): string => {
+  const m = rawMessage.toLowerCase()
+  if (m.includes('invalid login') || m.includes('invalid credentials')) {
+    return 'Email ou mot de passe incorrect.'
   }
+  if (m.includes('user already registered') || m.includes('already exists')) {
+    return 'Un compte existe déjà avec cet email.'
+  }
+  if (m.includes('password') && (m.includes('short') || m.includes('weak') || m.includes('6 characters'))) {
+    return 'Mot de passe trop faible (8 caractères minimum).'
+  }
+  if (m.includes('invalid email') || m.includes('invalid format')) {
+    return 'Adresse email invalide.'
+  }
+  if (m.includes('rate limit') || m.includes('too many')) {
+    return 'Trop de tentatives. Attendez quelques minutes avant de réessayer.'
+  }
+  if (m.includes('network') || m.includes('failed to fetch')) {
+    return 'Problème réseau. Vérifiez votre connexion.'
+  }
+  if (m.includes('email not confirmed')) {
+    return 'Email non confirmé. Vérifiez votre boîte mail.'
+  }
+  return 'Une erreur est survenue. Réessayez.'
 }
 
 export default function AuthScreen() {
@@ -171,14 +174,23 @@ export default function AuthScreen() {
 
   const handleGoogle = async () => {
     setError('')
+    if (!isSupabaseConfigured()) {
+      setError(SUPABASE_CONFIG_ERROR)
+      return
+    }
     setLoading(true)
     try {
-      await signInWithPopup(auth, new GoogleAuthProvider())
-    } catch (err) {
-      const code = (err as { code?: string }).code ?? ''
-      if (code !== 'auth/popup-closed-by-user') {
-        setError(firebaseErrorMessage(code))
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin },
+      })
+      if (oauthError) {
+        setError(supabaseAuthErrorMessage(oauthError.message))
       }
+      // Note : signInWithOAuth redirige hors de l'app — pas de finally setLoading
+      // côté succès (la page bascule sur Google).
+    } catch (err) {
+      setError(supabaseAuthErrorMessage(err instanceof Error ? err.message : ''))
     } finally {
       setLoading(false)
     }
@@ -188,6 +200,11 @@ export default function AuthScreen() {
     e.preventDefault()
     setError('')
     setSuccess('')
+
+    if (!isSupabaseConfigured()) {
+      setError(SUPABASE_CONFIG_ERROR)
+      return
+    }
 
     if (mode === 'signup') {
       if (password !== confirm) {
@@ -203,21 +220,33 @@ export default function AuthScreen() {
     setLoading(true)
     try {
       if (mode === 'login') {
-        await signInWithEmailAndPassword(auth, email.trim(), password)
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        })
+        if (signInError) throw signInError
       } else if (mode === 'signup') {
-        await createUserWithEmailAndPassword(auth, email.trim(), password)
+        const { error: signUpError } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+        })
+        if (signUpError) throw signUpError
       } else {
-        await sendPasswordResetEmail(auth, email.trim())
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: `${window.location.origin}/reset-password`,
+        })
+        if (resetError) throw resetError
         setSuccess('Email de réinitialisation envoyé. Vérifiez votre boîte mail.')
         reset('login')
       }
     } catch (err) {
-      const code = (err as { code?: string }).code ?? ''
-      setError(firebaseErrorMessage(code))
+      setError(supabaseAuthErrorMessage(err instanceof Error ? err.message : ''))
     } finally {
       setLoading(false)
     }
   }
+
+  const supabaseReady = isSupabaseConfigured()
 
   return (
     <main className="auth-shell">
@@ -229,6 +258,18 @@ export default function AuthScreen() {
             <img src="/logo.png" alt="Logo FP" />
           </div>
         </div>
+
+        {!supabaseReady ? (
+          <div className="auth-config-banner" role="alert">
+            <strong>Configuration requise.</strong>
+            <p>
+              Renseignez <code>VITE_SUPABASE_URL</code> et{' '}
+              <code>VITE_SUPABASE_ANON_KEY</code> dans <code>.env.local</code> pour activer
+              l'authentification. Voir <code>README.md</code> et{' '}
+              <code>docs/architecture.md</code> §6.
+            </p>
+          </div>
+        ) : null}
 
         <h1>
           {mode === 'login' ? 'Connexion' : mode === 'signup' ? 'Créer un compte' : 'Mot de passe oublié'}
