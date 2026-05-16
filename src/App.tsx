@@ -1100,6 +1100,7 @@ function App() {
     date: new Date().toISOString().slice(0, 10),
     kind: 'depense' as TransactionKind,
     envelope: 'Maison' as Envelope,
+    accountId: '' as string,    // résolu vers le compte par défaut au mount via useEffect
   })
   const [editingTxId, setEditingTxId] = useState<number | null>(null)
   const [deletingTxId, setDeletingTxId] = useState<number | null>(null)
@@ -3036,11 +3037,19 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return
     }
 
+    // Compte attaché : valeur du form OU défaut résolu du membre actif
+    const resolvedAccountId =
+      form.accountId ||
+      accounts.find(
+        (a) => a.ownerMember === form.member && a.type === 'checking' && a.archivedAt === null,
+      )?.id ||
+      undefined
+
     if (editingTxId !== null) {
       setTransactions((previous) =>
         previous.map((tx) =>
           tx.id === editingTxId
-            ? { ...tx, label: form.label.trim(), amount, category: form.category, member: form.member, date: form.date, kind: form.kind, envelope: form.envelope }
+            ? { ...tx, label: form.label.trim(), amount, category: form.category, member: form.member, date: form.date, kind: form.kind, envelope: form.envelope, accountId: resolvedAccountId }
             : tx
         )
       )
@@ -3056,6 +3065,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
         date: form.date,
         kind: form.kind,
         envelope: form.envelope,
+        accountId: resolvedAccountId,
       }
       setTransactions((previous) => [...previous, newTransaction])
       showToast(`${form.kind === 'revenu' ? 'Revenu' : 'Dépense'} ajouté·e`)
@@ -3080,6 +3090,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       date: tx.date,
       kind: tx.kind,
       envelope: tx.envelope,
+      accountId: tx.accountId ?? '',
     })
   }
 
@@ -5212,7 +5223,7 @@ Réponse attendue:
       </section>
       ) : null}
 
-      {orderedVisibleDashboardWidgets.length > 0 && isActiveView('pilotage') ? (
+      {orderedVisibleDashboardWidgets.length > 0 && isActiveView('operations') ? (
         <section className="glass-card widget-view-nav" aria-label="Navigation des vues widgets">
           <div className="widget-view-nav__top">
             <strong>Navigation vue par vue</strong>
@@ -5244,7 +5255,7 @@ Réponse attendue:
         </section>
       ) : null}
 
-      {isActiveView('pilotage') || isActiveView('budget') ? (
+      {isActiveView('operations') || isActiveView('budget') ? (
       <section id="pilotage" className="panel-grid">
         {isActiveView('budget') ? (
         <article id="budget" className={`glass-card chart-card wide-card${budgetSimpleMode ? ' budget-senior-mode' : ''}`} ref={budgetInfoScopeRef}>
@@ -5776,7 +5787,7 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('coaching') && isActiveView('pilotage') ? (
+        {isPilotageWidgetVisible('coaching') && isActiveView('operations') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
             <h2>Coaching financier</h2>
@@ -5824,7 +5835,7 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('csvImport') && isActiveView('pilotage') ? (
+        {isPilotageWidgetVisible('csvImport') && isActiveView('operations') ? (
         <article className="glass-card form-panel wide-card">
           <div className="panel-title">
             <h2>Import CSV bancaire</h2>
@@ -6005,7 +6016,7 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('alerts') && isActiveView('pilotage') ? (
+        {isPilotageWidgetVisible('alerts') && isActiveView('operations') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
             <h2>Alertes intelligentes</h2>
@@ -6028,7 +6039,7 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('savingsGoals') && isActiveView('pilotage') ? (
+        {isPilotageWidgetVisible('savingsGoals') && isActiveView('operations') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
             <h2>Objectifs d'épargne</h2>
@@ -6082,7 +6093,7 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isActiveView('pilotage') ? (
+        {isActiveView('operations') ? (
         <article className="glass-card chart-card accounts-widget">
           <div className="panel-title">
             <div>
@@ -6129,7 +6140,7 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('recurringCharges') && isActiveView('pilotage') ? (
+        {isPilotageWidgetVisible('recurringCharges') && isActiveView('operations') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
             <div>
@@ -6163,7 +6174,7 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('savingsProjects') && isActiveView('pilotage') ? (
+        {isPilotageWidgetVisible('savingsProjects') && isActiveView('operations') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
             <div>
@@ -6251,7 +6262,7 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('expenseCalendar') && isActiveView('pilotage') ? (
+        {isPilotageWidgetVisible('expenseCalendar') && isActiveView('operations') ? (
         <article className="glass-card chart-card wide-card">
           <div className="panel-title">
             <h2>Calendrier des dépenses</h2>
@@ -6275,7 +6286,7 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {dashboardWidgetState.visibleWidgets.length === 0 && isActiveView('pilotage') ? (
+        {dashboardWidgetState.visibleWidgets.length === 0 && isActiveView('operations') ? (
           <article className="glass-card chart-card wide-card">
             <div className="panel-title">
               <h2>Aucun widget actif</h2>
@@ -6664,6 +6675,9 @@ Réponse attendue:
                   setForm((previous) => ({
                     ...previous,
                     member: event.target.value,
+                    // Reset accountId : il sera re-résolvé vers le compte par défaut
+                    // du nouveau membre au submit (cf. resolvedAccountId).
+                    accountId: '',
                   }))
                 }
               >
@@ -6672,6 +6686,24 @@ Réponse attendue:
                     {profile.name}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label>
+              Compte
+              <select
+                value={form.accountId}
+                onChange={(event) =>
+                  setForm((previous) => ({ ...previous, accountId: event.target.value }))
+                }
+              >
+                <option value="">— compte par défaut —</option>
+                {accounts
+                  .filter((a) => a.ownerMember === form.member && a.archivedAt === null)
+                  .map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
               </select>
             </label>
             <label>
