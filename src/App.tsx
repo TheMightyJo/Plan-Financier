@@ -80,6 +80,9 @@ import { FirstTransactionTour } from './components/FirstTransactionTour'
 import { AccountsPanel } from './components/AccountsPanel'
 import { TransactionHistoryPanel } from './components/TransactionHistoryPanel'
 import { SavingsGoalsPanel } from './components/SavingsGoalsPanel'
+import { PrivacyPanel } from './components/PrivacyPanel'
+import { PrivacyPolicyModal } from './components/PrivacyPolicyModal'
+import { logAuditEvent } from './lib/auditLog'
 import {
   computeConsolidatedBalance,
   balanceByAccountType,
@@ -1068,6 +1071,9 @@ function App() {
   const [showAccountsPanel, setShowAccountsPanel] = useState(false)
   const [showHistoryPanel, setShowHistoryPanel] = useState(false)
   const [showGoalsPanel, setShowGoalsPanel] = useState(false)
+  const [showPrivacyPanel, setShowPrivacyPanel] = useState(false)
+  const [legalDoc, setLegalDoc] = useState<'privacy' | 'terms' | null>(null)
+  const [userEmail, setUserEmail] = useState<string>('')
   const [showFirstTxTour, setShowFirstTxTour] = useState(
     () =>
       typeof window !== 'undefined' &&
@@ -2205,11 +2211,13 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     // Hydrate la session existante (cookie/storage) au premier mount
     supabase.auth.getSession().then(({ data }) => {
       setIsAuthenticated(!!data.session)
+      setUserEmail(data.session?.user.email ?? '')
       setAuthProviderReady(true)
     })
     // Puis écoute les changements (signin/signout/refresh)
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsAuthenticated(!!session)
+      setUserEmail(session?.user.email ?? '')
       setAuthProviderReady(true)
     })
     return () => subscription.subscription.unsubscribe()
@@ -3432,7 +3440,10 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
 
   const handleLogout = () => {
-    void supabase.auth.signOut()
+    void (async () => {
+      await logAuditEvent('logout')
+      await supabase.auth.signOut()
+    })()
     closeSettingsPanel()
   }
 
@@ -3939,6 +3950,7 @@ Réponse attendue:
           parentPinChanged: hasParentUpdate,
         }),
       )
+      void logAuditEvent('pin_change')
     }
     setSettingsSuccess('Parametres de securite mis a jour avec succes.')
     setSettingsForm({
@@ -4341,6 +4353,14 @@ Réponse attendue:
             aria-label="Ouvrir les paramètres"
           >
             ⚙️ Paramètres
+          </button>
+          <button
+            type="button"
+            className="side-menu-settings-btn"
+            onClick={() => setShowPrivacyPanel(true)}
+            aria-label="Mes données RGPD"
+          >
+            🔒 Mes données RGPD
           </button>
           <button
             type="button"
@@ -7091,6 +7111,30 @@ Réponse attendue:
         onChange={setTransactions}
         onClose={() => setShowHistoryPanel(false)}
       />
+    ) : null}
+
+    {/* ── Panneau RGPD : export + suppression compte ─────────────── */}
+    {showPrivacyPanel ? (
+      <PrivacyPanel
+        userEmail={userEmail}
+        transactions={transactions}
+        accounts={accounts}
+        recurringRules={recurringRules}
+        savingsGoals={savingsTargets}
+        onAccountDeleted={() => {
+          setShowPrivacyPanel(false)
+          // signOut déjà fait dans le panel, l'auth listener bascule
+          // setIsAuthenticated à false → retour AuthScreen
+        }}
+        onOpenPrivacy={() => setLegalDoc('privacy')}
+        onOpenTerms={() => setLegalDoc('terms')}
+        onClose={() => setShowPrivacyPanel(false)}
+      />
+    ) : null}
+
+    {/* ── Modal Privacy Policy / CGU (accessible depuis PrivacyPanel) */}
+    {legalDoc ? (
+      <PrivacyPolicyModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
     ) : null}
 
     {/* ── Panneau Objectifs d'épargne ─────────────────────────────── */}

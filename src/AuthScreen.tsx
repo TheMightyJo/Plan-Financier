@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { isSupabaseConfigured, SUPABASE_CONFIG_ERROR, supabase } from './supabase'
+import { logAuditEvent } from './lib/auditLog'
+import { PrivacyPolicyModal } from './components/PrivacyPolicyModal'
 
 type Mode = 'login' | 'signup' | 'forgot'
 
@@ -225,6 +227,7 @@ export default function AuthScreen() {
           password,
         })
         if (signInError) throw signInError
+        await logAuditEvent('login')
       } else if (mode === 'signup') {
         const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email: email.trim(),
@@ -244,6 +247,9 @@ export default function AuthScreen() {
             `Compte créé pour ${email.trim()}. Vérifiez votre boîte mail pour activer votre compte (clic sur le lien reçu).`,
           )
           reset('login')
+        } else if (signUpData.session) {
+          // Confirmation email désactivée côté Supabase → user direct loggué
+          await logAuditEvent('signup')
         }
       } else {
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
@@ -261,6 +267,7 @@ export default function AuthScreen() {
   }
 
   const supabaseReady = isSupabaseConfigured()
+  const [legalDoc, setLegalDoc] = useState<'privacy' | 'terms' | null>(null)
 
   return (
     <main className="auth-shell">
@@ -367,11 +374,24 @@ export default function AuthScreen() {
           {mode === 'signup' ? (
             <p className="auth-rgpd">
               En créant un compte, vous acceptez nos{' '}
-              <a href="#" className="auth-rgpd-link">Conditions d'utilisation</a>{' '}et notre{' '}
-              <a href="#" className="auth-rgpd-link">Politique de confidentialité</a>.
-              Vos données (email, transactions) sont stockées localement sur cet appareil et
+              <button
+                type="button"
+                className="auth-rgpd-link"
+                onClick={() => setLegalDoc('terms')}
+              >
+                Conditions d'utilisation
+              </button>{' '}et notre{' '}
+              <button
+                type="button"
+                className="auth-rgpd-link"
+                onClick={() => setLegalDoc('privacy')}
+              >
+                Politique de confidentialité
+              </button>
+              . Vos données (email, transactions) sont stockées localement sur cet appareil et
               ne sont jamais transmises à des tiers. Vous pouvez supprimer votre compte et
-              l'ensemble de vos données à tout moment depuis les paramètres.
+              l'ensemble de vos données à tout moment depuis les paramètres
+              (<em>"Mes données RGPD"</em>).
             </p>
           ) : null}
 
@@ -407,6 +427,9 @@ export default function AuthScreen() {
           Vos données sont chiffrées et stockées localement sur cet appareil.
         </p>
       </section>
+      {legalDoc ? (
+        <PrivacyPolicyModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
+      ) : null}
     </main>
   )
 }
