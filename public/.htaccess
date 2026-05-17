@@ -1,0 +1,83 @@
+# =============================================================================
+# Plan Financier — Apache config pour hébergement OVH mutualisé (et compatible
+# tout Apache avec mod_rewrite + mod_headers + mod_deflate + mod_expires)
+# =============================================================================
+# Ce fichier doit être à la racine de planfinancier.app (uploadé avec le
+# contenu de dist/). Si l'hébergement OVH met l'app dans /www/, c'est ici
+# qu'on le pose.
+
+# Forcer HTTPS (OVH active Let's Encrypt → on bascule TOUT vers https)
+RewriteEngine On
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# --- Routing SPA : toute URL inconnue → index.html (sans casser les assets) -
+# Ne pas réécrire pour les vrais fichiers (assets/, logo.png, etc.)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+# Ne pas réécrire pour les fichiers spéciaux (sitemap, robots, manifest…)
+RewriteCond %{REQUEST_URI} !^/(robots\.txt|sitemap\.xml|manifest\.webmanifest|favicon\.ico|sw\.js)$
+RewriteRule ^ index.html [L]
+
+# --- Compression GZIP (réduit ~70% sur les JS/CSS texte) ---------------------
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css
+  AddOutputFilterByType DEFLATE application/javascript application/json
+  AddOutputFilterByType DEFLATE application/xml application/xml+rss
+  AddOutputFilterByType DEFLATE image/svg+xml font/woff2 font/woff
+</IfModule>
+
+# --- Cache long sur les assets hashés (filename change si contenu change) ---
+<IfModule mod_expires.c>
+  ExpiresActive On
+  # 1 an pour les assets hashés par Vite (filename porte le hash)
+  ExpiresByType application/javascript "access plus 1 year"
+  ExpiresByType text/css "access plus 1 year"
+  ExpiresByType image/png "access plus 1 year"
+  ExpiresByType image/jpeg "access plus 1 year"
+  ExpiresByType image/svg+xml "access plus 1 year"
+  ExpiresByType image/webp "access plus 1 year"
+  ExpiresByType font/woff2 "access plus 1 year"
+  ExpiresByType font/woff "access plus 1 year"
+  # JAMAIS de cache long sur index.html (sinon les nouvelles versions
+  # ne sont pas vues par les users) — on force revalidation
+  ExpiresByType text/html "access plus 0 seconds"
+</IfModule>
+
+<IfModule mod_headers.c>
+  # index.html : no-cache strict
+  <FilesMatch "\.(html)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </FilesMatch>
+
+  # Assets hashés : cache immutable 1 an
+  <FilesMatch "\.(js|css|woff2|woff|png|jpg|jpeg|svg|webp|ico)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+
+  # --- Headers de sécurité ---------------------------------------------------
+  # X-Content-Type-Options : empêche le MIME-sniffing
+  Header set X-Content-Type-Options "nosniff"
+  # X-Frame-Options : pas d'embedding (anti-clickjacking)
+  Header set X-Frame-Options "DENY"
+  # Referrer-Policy : ne pas leaker la page d'origine vers les tiers
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+  # Permissions-Policy : désactive les API sensibles non utilisées
+  Header set Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+  # HSTS : force HTTPS pendant 1 an (à activer SEULEMENT quand le site
+  # est confirmé OK en HTTPS, sinon impossible de revenir en HTTP pour
+  # debug). Décommenter quand prêt :
+  # Header set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+</IfModule>
+
+# --- 404 → SPA (au cas où l'utilisateur tape une URL random) ----------------
+ErrorDocument 404 /index.html
+
+# --- Désactiver le directory listing -----------------------------------------
+Options -Indexes
+
+# --- Forcer le bon charset par défaut ----------------------------------------
+AddDefaultCharset UTF-8
