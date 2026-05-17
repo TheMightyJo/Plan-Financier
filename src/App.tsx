@@ -3243,15 +3243,27 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       import('jspdf-autotable'),
     ])
 
+    // Palette charte Plan Financier (cf. src/styles/tokens.css)
+    const COFFEE = [61, 43, 31] as const         // #3D2B1F — texte / fond couverture
+    const COFFEE_DARK = [42, 24, 16] as const    // #2A1810 — surface élevée sur fond café
+    const CREAM = [253, 250, 246] as const       // #FDFAF6 — texte clair sur café
+    const LIN = [214, 197, 176] as const         // #D6C5B0 — meta / sous-titres
+    const CARAMEL = [160, 128, 96] as const      // #A08060 — texte secondaire page blanche
+    const SAND_LIGHT = [245, 239, 230] as const  // #F5EFE6 — fond cards (option claire)
+    const TERRE = [139, 108, 82] as const        // #8B6C52 — primaire (Budget)
+    const TERRACOTTA = [192, 92, 42] as const    // #C05C2A — dépenses
+    const VERT = [58, 125, 68] as const          // #3A7D44 — revenus
+    const AMBRE = [184, 150, 62] as const        // #B8963E — solde/warning
+
     const document = new JsPdf()
     const reportDate = new Date().toLocaleDateString('fr-FR')
     const pageWidth = document.internal.pageSize.getWidth()
     const summaryCards = [
-      { title: 'Budget', value: euroFormatter.format(budget), color: [249, 115, 22] as const },
-      { title: 'Depenses', value: euroFormatter.format(monthlyExpense), color: [244, 63, 94] as const },
-      { title: 'Revenus', value: euroFormatter.format(monthlyIncome), color: [34, 197, 94] as const },
-      { title: 'Solde', value: euroFormatter.format(monthlyNet), color: [14, 165, 233] as const },
-    ]
+      { title: 'Budget', value: euroFormatter.format(budget), color: TERRE },
+      { title: 'Depenses', value: euroFormatter.format(monthlyExpense), color: TERRACOTTA },
+      { title: 'Revenus', value: euroFormatter.format(monthlyIncome), color: VERT },
+      { title: 'Solde', value: euroFormatter.format(monthlyNet), color: AMBRE },
+    ] as const
     const categoryRows = goalProgress.map((goal) => [
       goal.category,
       euroFormatter.format(goal.spent),
@@ -3269,32 +3281,33 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
         euroFormatter.format(item.amount),
       ])
 
-    document.setFillColor(11, 16, 32)
+    // ─── Page 1 : couverture café + KPI cards ────────────────────────
+    document.setFillColor(COFFEE[0], COFFEE[1], COFFEE[2])
     document.rect(0, 0, pageWidth, 297, 'F')
-    document.setTextColor(255, 255, 255)
+    document.setTextColor(CREAM[0], CREAM[1], CREAM[2])
     document.setFontSize(11)
     document.text('PLAN FINANCIER', 14, 16)
     document.setFontSize(24)
-    document.text(`Bilan premium - ${selectedProfileName}`, 14, 30)
+    document.text(`Bilan mensuel — ${selectedProfileName}`, 14, 30)
     document.setFontSize(10)
-    document.setTextColor(212, 212, 216)
+    document.setTextColor(LIN[0], LIN[1], LIN[2])
     document.text(`Periode ${currentMonth}  •  Genere le ${reportDate}`, 14, 38)
-    document.text('Synthese budget, objectifs, depenses et import intelligent.', 14, 45)
+    document.text('Synthese budget, objectifs, depenses et alertes.', 14, 45)
 
     summaryCards.forEach((card, index) => {
       const x = 14 + index * 46
-      document.setFillColor(20, 28, 48)
+      document.setFillColor(COFFEE_DARK[0], COFFEE_DARK[1], COFFEE_DARK[2])
       document.roundedRect(x, 56, 40, 28, 4, 4, 'F')
       document.setFillColor(card.color[0], card.color[1], card.color[2])
       document.roundedRect(x, 56, 40, 5, 4, 4, 'F')
-      document.setTextColor(255, 255, 255)
+      document.setTextColor(CREAM[0], CREAM[1], CREAM[2])
       document.setFontSize(9)
       document.text(card.title, x + 3, 67)
       document.setFontSize(12)
       document.text(card.value, x + 3, 77)
     })
 
-    document.setTextColor(255, 255, 255)
+    document.setTextColor(CREAM[0], CREAM[1], CREAM[2])
     document.setFontSize(12)
     document.text('Top categories du mois', 14, 98)
 
@@ -3302,42 +3315,51 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       const y = 108 + index * 14
       const barWidth = Math.min(120, (goal.spent / Math.max(goal.target, 1)) * 120)
       const color = categoryColors[goal.category]
-      const rgb = color.match(/[0-9a-f]{2}/gi)?.map((value) => parseInt(value, 16)) ?? [249, 115, 22]
-      document.setTextColor(212, 212, 216)
+      const rgb = color.match(/[0-9a-f]{2}/gi)?.map((value) => parseInt(value, 16)) ?? [
+        TERRE[0],
+        TERRE[1],
+        TERRE[2],
+      ]
+      document.setTextColor(LIN[0], LIN[1], LIN[2])
       document.setFontSize(9)
       document.text(goal.category, 14, y)
-      document.setFillColor(40, 48, 68)
+      document.setFillColor(COFFEE_DARK[0], COFFEE_DARK[1], COFFEE_DARK[2])
       document.roundedRect(52, y - 4, 120, 5, 2, 2, 'F')
       document.setFillColor(rgb[0], rgb[1], rgb[2])
       document.roundedRect(52, y - 4, Math.max(6, barWidth), 5, 2, 2, 'F')
       document.text(`${euroFormatter.format(goal.spent)} / ${euroFormatter.format(goal.target)}`, 177, y)
     })
 
-    document.setTextColor(255, 255, 255)
+    document.setTextColor(CREAM[0], CREAM[1], CREAM[2])
     document.setFontSize(12)
     document.text('Alertes et points de vigilance', 14, 188)
     document.setFontSize(9)
     ;(alertMessages.length > 0 ? alertMessages.map((a) => a.message) : ['Aucune alerte active sur la periode.']).forEach(
       (message, index) => {
-        document.setTextColor(212, 212, 216)
+        document.setTextColor(LIN[0], LIN[1], LIN[2])
         document.text(`• ${message}`, 18, 198 + index * 8)
       },
     )
 
+    // ─── Page 2 : tables crème détail ────────────────────────────────
     document.addPage()
+    // Fond crème pour les tables
+    document.setFillColor(SAND_LIGHT[0], SAND_LIGHT[1], SAND_LIGHT[2])
+    document.rect(0, 0, pageWidth, 297, 'F')
     document.setFontSize(18)
-    document.setTextColor(20, 23, 31)
-    document.text(`Detail mensuel - ${selectedProfileName}`, 14, 18)
+    document.setTextColor(COFFEE[0], COFFEE[1], COFFEE[2])
+    document.text(`Detail mensuel — ${selectedProfileName}`, 14, 18)
     document.setFontSize(10)
-    document.setTextColor(100, 116, 139)
+    document.setTextColor(CARAMEL[0], CARAMEL[1], CARAMEL[2])
     document.text(`Objectifs, transactions et analyse au ${reportDate}`, 14, 25)
 
     autoTable(document, {
       startY: 34,
       head: [['Categorie', 'Depense', 'Objectif', 'Progression']],
       body: categoryRows,
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [249, 115, 22] },
+      styles: { fontSize: 9, textColor: [61, 43, 31] },
+      headStyles: { fillColor: [TERRE[0], TERRE[1], TERRE[2]], textColor: [253, 250, 246] },
+      alternateRowStyles: { fillColor: [253, 250, 246] },
     })
 
     const lastTableY = (document as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY
@@ -3345,8 +3367,29 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       startY: lastTableY ? lastTableY + 8 : 96,
       head: [['Date', 'Libelle', 'Categorie', 'Type', 'Montant']],
       body: transactionRows.length > 0 ? transactionRows : [['-', 'Aucune operation', '-', '-', '-']],
-      styles: { fontSize: 8.5 },
-      headStyles: { fillColor: [34, 197, 94] },
+      styles: { fontSize: 8.5, textColor: [61, 43, 31] },
+      headStyles: { fillColor: [VERT[0], VERT[1], VERT[2]], textColor: [253, 250, 246] },
+      alternateRowStyles: { fillColor: [253, 250, 246] },
+    })
+
+    // Footer privacy mention
+    const finalY = (document as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? 270
+    if (finalY < 280) {
+      document.setFontSize(8)
+      document.setTextColor(CARAMEL[0], CARAMEL[1], CARAMEL[2])
+      document.text(
+        'Confidentialite : ce bilan est genere localement. Aucune donnee envoyee a un tiers.',
+        14,
+        Math.min(finalY + 10, 290),
+      )
+    }
+
+    void logAuditEvent('export', {
+      metadata: {
+        kind: 'pdf_monthly',
+        period: currentMonth,
+        member: selectedProfileName,
+      },
     })
 
     document.save(`bilan-${selectedProfileName.toLowerCase().replace(/\s+/g, '-')}-${currentMonth}.pdf`)
