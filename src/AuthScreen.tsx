@@ -226,11 +226,25 @@ export default function AuthScreen() {
         })
         if (signInError) throw signInError
       } else if (mode === 'signup') {
-        const { error: signUpError } = await supabase.auth.signUp({
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email: email.trim(),
           password,
+          options: {
+            emailRedirectTo: window.location.origin,
+          },
         })
         if (signUpError) throw signUpError
+        // Si la confirmation email est activée côté Supabase (cas par défaut),
+        // signUp renvoie un user MAIS pas de session. L'utilisateur doit
+        // cliquer le lien reçu par email avant de pouvoir se connecter.
+        // Si la confirmation est désactivée, une session est créée directement
+        // et le onAuthStateChange dans App.tsx prend le relais.
+        if (signUpData.user && !signUpData.session) {
+          setSuccess(
+            `Compte créé pour ${email.trim()}. Vérifiez votre boîte mail pour activer votre compte (clic sur le lien reçu).`,
+          )
+          reset('login')
+        }
       } else {
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
           redirectTo: `${window.location.origin}/reset-password`,
