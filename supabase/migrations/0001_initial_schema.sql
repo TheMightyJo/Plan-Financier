@@ -27,6 +27,13 @@ create extension if not exists "citext";     -- emails case-insensitive si besoi
 -- -----------------------------------------------------------------------------
 -- Helpers (fonctions sécurité)
 -- -----------------------------------------------------------------------------
+-- On désactive la vérification des refs dans les corps de fonction le temps de
+-- la migration : les helpers ci-dessous référencent `public.family_memberships`
+-- qui n'est créée que plus bas. Sans ce flag, le `create function` échoue car
+-- Postgres veut résoudre la table à la création. Les vérifs reprendront
+-- normalement après la migration (chaque exécution de la fonction valide les
+-- refs au runtime).
+set local check_function_bodies = off;
 
 -- Renvoie true si l'utilisateur courant est membre actif du family_group donné.
 create or replace function public.is_family_member(target_family_id uuid)
