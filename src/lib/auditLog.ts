@@ -26,6 +26,8 @@ export type AuditAction =
   | 'ai_consent_revoked'
   | 'transaction_delete_bulk'
   | 'share_account'
+  | 'profile_update'
+  | 'email_change_requested'
 
 export type AuditMetadata = Record<string, unknown>
 

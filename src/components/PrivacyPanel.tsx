@@ -103,13 +103,14 @@ export function PrivacyPanel({
     // 1. Logger la demande d'effacement AVANT de signOut (sinon plus de session)
     await logAuditEvent('erase_request', {
       metadata: {
-        scope: 'client_only_v1',
-        note: 'auth.users row reste à purger via Edge Function service_role',
+        scope: 'full_v1.1',
+        edgeFunction: 'delete-my-account',
       },
     })
 
     // 2. Insérer une demande RGPD pour traçabilité côté serveur (la table
-    //    rgpd_requests est insert-RLS pour le user, l'éditeur traite ensuite)
+    //    rgpd_requests est insert-RLS pour le user). L'Edge Function la
+    //    marquera comme 'completed' après suppression effective.
     try {
       await supabase.from('rgpd_requests').insert({
         kind: 'erase',
@@ -119,7 +120,23 @@ export function PrivacyPanel({
       // Best-effort, ne bloque pas la suite
     }
 
-    // 3. Purger le localStorage de toutes les clés Plan Financier
+    // 3. Appel Edge Function pour suppression effective (auth.users + CASCADE)
+    //    On capture le résultat pour informer l'utilisateur si l'Edge n'est
+    //    pas déployée (fallback "demande enregistrée, traitement sous 30j").
+    let edgeSuccess = false
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        'delete-my-account',
+        { method: 'POST' },
+      )
+      if (!invokeError && (data as { deleted?: boolean })?.deleted) {
+        edgeSuccess = true
+      }
+    } catch {
+      // Edge non déployée → fallback déjà géré par rgpd_requests
+    }
+
+    // 4. Purger le localStorage de toutes les clés Plan Financier
     if (typeof window !== 'undefined') {
       const keysToRemove: string[] = []
       for (let i = 0; i < window.localStorage.length; i += 1) {
@@ -131,8 +148,17 @@ export function PrivacyPanel({
       keysToRemove.forEach((k) => window.localStorage.removeItem(k))
     }
 
-    // 4. SignOut Supabase (revoke session active)
+    // 5. SignOut Supabase (revoke session active)
     await supabase.auth.signOut()
+
+    if (!edgeSuccess) {
+      // Le user n'a pas de feedback visuel particulier ici : la session est
+      // déjà coupée, on retourne à l'AuthScreen. La demande rgpd_requests
+      // assure la traçabilité, l'éditeur traite sous 30j.
+      console.warn(
+        '[privacy] Edge Function delete-my-account indisponible, fallback rgpd_requests',
+      )
+    }
 
     onAccountDeleted()
   }

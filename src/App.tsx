@@ -82,6 +82,7 @@ import { TransactionHistoryPanel } from './components/TransactionHistoryPanel'
 import { SavingsGoalsPanel } from './components/SavingsGoalsPanel'
 import { PrivacyPanel } from './components/PrivacyPanel'
 import { PrivacyPolicyModal } from './components/PrivacyPolicyModal'
+import { ProfilePanel } from './components/ProfilePanel'
 import { logAuditEvent } from './lib/auditLog'
 import {
   computeConsolidatedBalance,
@@ -1072,6 +1073,7 @@ function App() {
   const [showHistoryPanel, setShowHistoryPanel] = useState(false)
   const [showGoalsPanel, setShowGoalsPanel] = useState(false)
   const [showPrivacyPanel, setShowPrivacyPanel] = useState(false)
+  const [showProfilePanel, setShowProfilePanel] = useState(false)
   const [legalDoc, setLegalDoc] = useState<'privacy' | 'terms' | null>(null)
   const [userEmail, setUserEmail] = useState<string>('')
   const [showFirstTxTour, setShowFirstTxTour] = useState(
@@ -4357,6 +4359,14 @@ Réponse attendue:
           <button
             type="button"
             className="side-menu-settings-btn"
+            onClick={() => setShowProfilePanel(true)}
+            aria-label="Mon profil"
+          >
+            👤 Mon profil
+          </button>
+          <button
+            type="button"
+            className="side-menu-settings-btn"
             onClick={() => setShowPrivacyPanel(true)}
             aria-label="Mes données RGPD"
           >
@@ -7135,6 +7145,20 @@ Réponse attendue:
     {/* ── Modal Privacy Policy / CGU (accessible depuis PrivacyPanel) */}
     {legalDoc ? (
       <PrivacyPolicyModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
+    ) : null}
+
+    {/* ── Panneau Profil (Art. 16 — rectification email/display_name) */}
+    {showProfilePanel ? (
+      <ProfilePanel
+        userEmail={userEmail}
+        onEmailChanged={(newEmail) => {
+          // Optimistic UI : on met à jour l'email affiché en local.
+          // Tant que l'user n'a pas confirmé via les 2 emails, la session
+          // garde l'ancien email côté Supabase.
+          setUserEmail(newEmail)
+        }}
+        onClose={() => setShowProfilePanel(false)}
+      />
     ) : null}
 
     {/* ── Panneau Objectifs d'épargne ─────────────────────────────── */}
