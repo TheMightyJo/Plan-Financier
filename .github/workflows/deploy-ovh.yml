@@ -1,0 +1,91 @@
+# =============================================================================
+# Workflow : déploiement automatique vers planfinancier.app (OVH mutualisé)
+# =============================================================================
+# Déclenché à chaque push sur main. Build Vite + upload SFTP via lftp.
+#
+# Secrets requis (Settings → Secrets and variables → Actions → New repository secret) :
+#   OVH_SFTP_HOST     : ex. ftp.cluster0XX.hosting.ovh.net
+#   OVH_SFTP_USER     : ex. monlogin-ovh
+#   OVH_SFTP_PASS     : mot de passe SFTP OVH
+#   OVH_REMOTE_PATH   : chemin distant (ex. /www ou /home/<login>/www)
+#   VITE_SUPABASE_URL       : URL Supabase (https://<ref>.supabase.co)
+#   VITE_SUPABASE_ANON_KEY  : clé anon publique Supabase
+#
+# Optionnel : déclencher manuellement via "Run workflow" depuis l'onglet Actions.
+# =============================================================================
+
+name: Deploy → OVH (planfinancier.app)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Annule un déploiement en cours si un nouveau push arrive
+concurrency:
+  group: deploy-ovh-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build production bundle
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run build
+
+      - name: Verify .htaccess in dist
+        run: |
+          if [ ! -f dist/.htaccess ]; then
+            echo "::error::dist/.htaccess manquant — vérifier public/.htaccess"
+            exit 1
+          fi
+          echo "✓ dist/.htaccess présent ($(wc -c < dist/.htaccess) bytes)"
+
+      - name: Install lftp
+        run: sudo apt-get update && sudo apt-get install -y lftp
+
+      - name: Deploy via SFTP (mirror, delete remote files not in source)
+        env:
+          SFTP_HOST: ${{ secrets.OVH_SFTP_HOST }}
+          SFTP_USER: ${{ secrets.OVH_SFTP_USER }}
+          SFTP_PASS: ${{ secrets.OVH_SFTP_PASS }}
+          REMOTE_PATH: ${{ secrets.OVH_REMOTE_PATH }}
+        run: |
+          lftp -c "
+            set sftp:auto-confirm yes;
+            set net:max-retries 3;
+            set net:reconnect-interval-base 5;
+            open sftp://${SFTP_USER}:${SFTP_PASS}@${SFTP_HOST};
+            mirror --reverse --delete --verbose --parallel=4 --exclude-glob .git/ --exclude-glob .DS_Store ./dist/ ${REMOTE_PATH}/;
+            bye;
+          "
+
+      - name: Summary
+        run: |
+          echo "## ✅ Déploiement terminé" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit : \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Branche : \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- URL : https://planfinancier.app" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Vérifier : index.html doit afficher le nouveau hash dans \`<script src='/assets/...'>\`" >> $GITHUB_STEP_SUMMARY

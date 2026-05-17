@@ -135,9 +135,30 @@ rsync -avz --delete \
   <login>-ovh@ftp.cluster0XX.hosting.ovh.net:/home/<login>/www/
 ```
 
-### Option C — GitHub Actions auto-deploy (recommandé long terme)
+### Option C — GitHub Actions auto-deploy (livré ✅)
 
-Workflow `.github/workflows/deploy-ovh.yml` qui build + upload via SFTP à chaque push sur `main`. Je peux te le préparer si tu veux — dis-moi quand.
+Workflow [`.github/workflows/deploy-ovh.yml`](../.github/workflows/deploy-ovh.yml) qui build + tests + upload via SFTP (lftp) à chaque push sur `main`. Déclenchable aussi manuellement via l'onglet Actions.
+
+**Secrets GitHub à configurer** (Settings → Secrets and variables → Actions → New repository secret) :
+
+| Secret | Valeur | Où le trouver |
+|---|---|---|
+| `OVH_SFTP_HOST` | `ftp.cluster0XX.hosting.ovh.net` | OVH → Hébergements → FTP-SSH → Hôte |
+| `OVH_SFTP_USER` | `<login>-ovh` | OVH → Hébergements → FTP-SSH → Identifiant |
+| `OVH_SFTP_PASS` | mot de passe SFTP | défini à la création ou réinitialisable côté OVH |
+| `OVH_REMOTE_PATH` | `/www` (ou `/home/<login>/www` selon le cluster) | tester en SFTP manuel d'abord |
+| `VITE_SUPABASE_URL` | `https://lgcprvjpemvphjicubaf.supabase.co` | Supabase → Project Settings → API |
+| `VITE_SUPABASE_ANON_KEY` | clé `anon public` | Supabase → Project Settings → API |
+
+**Comportement** :
+- À chaque `git push origin main` : workflow tourne (~3-5 min)
+- Lance `npm test` (échec → pas de deploy)
+- Build avec les env vars Supabase
+- Vérifie que `dist/.htaccess` est bien là
+- Upload via `lftp mirror --reverse --delete --parallel=4` (suppression des fichiers obsolètes côté serveur)
+- Concurrency : annule un deploy en cours si nouveau push
+
+**Premier run** : Settings → Actions → autoriser les workflows. Puis push un commit ou déclencher manuellement via "Run workflow".
 
 ---
 
@@ -206,7 +227,30 @@ Et compléter les meta Open Graph (Facebook, LinkedIn, WhatsApp share previews) 
 <meta name="twitter:card" content="summary_large_image" />
 ```
 
-À créer : `public/og-image.png` (1200×630, fond crème + logo FP + slogan).
+### Générer `og-image.png` depuis le template fourni
+
+Template HTML pré-stylé aux couleurs charte : [`public/og-image.html`](../public/og-image.html). 3 méthodes pour générer le PNG :
+
+**Méthode 1 — Chrome DevTools (manuel, 30 sec)**
+1. Lancer `npm run dev`
+2. Ouvrir http://localhost:5173/og-image.html
+3. DevTools (`F12`) → onglet **Elements** → clic droit sur `<div class="og-frame">` → **Capture node screenshot**
+4. Renommer en `og-image.png`, copier dans `public/`
+
+**Méthode 2 — Playwright headless (automatisable)**
+```bash
+npx playwright install chromium
+npx playwright screenshot \
+  --viewport-size=1200,630 \
+  --full-page \
+  file://$(pwd)/public/og-image.html \
+  public/og-image.png
+```
+
+**Méthode 3 — Service en ligne**
+Coller le HTML dans [htmlcsstoimage.com](https://htmlcsstoimage.com/) ou similaire, télécharger le PNG en 1200×630.
+
+Une fois `og-image.png` dans `public/`, il sera auto-copié dans `dist/` au build et accessible à `https://planfinancier.app/og-image.png`.
 
 ---
 
