@@ -11,10 +11,10 @@
 
 ## 1. Qui est responsable du traitement de vos données ?
 
-**Éditeur** : [À COMPLÉTER — nom de l'éditeur (toi en perso, ton asso, ta société)]
-**Adresse** : [À COMPLÉTER]
-**Contact** : [À COMPLÉTER — email de contact RGPD, ex. `privacy@plan-financier.fr`]
-**Représentant légal** : [À COMPLÉTER]
+**Éditeur** : Johan Quille (auto-entrepreneur)
+**Adresse** : 59 voie des sculpteurs, 92800 Puteaux, France
+**Contact** : contact@protojo.fr
+**Représentant légal** : Johan Quille
 
 Vous pouvez contacter notre responsable de traitement à tout moment à l'adresse ci-dessus pour exercer vos droits (cf. §7).
 
@@ -178,7 +178,7 @@ Cette politique peut être mise à jour. Toute modification substantielle vous s
 
 Pour toute question relative à cette politique ou à l'exercice de vos droits :
 
-📧 [À COMPLÉTER — email de contact]
-📬 [À COMPLÉTER — adresse postale si applicable]
+📧 contact@protojo.fr
+📬 Johan Quille — 59 voie des sculpteurs, 92800 Puteaux, France
 
-**Délégué à la Protection des Données (DPO)** : [À COMPLÉTER — nom du DPO si désigné, ou indiquer "non applicable - structure < 250 employés"]
+**Délégué à la Protection des Données (DPO)** : non applicable (structure individuelle, < 250 employés). Les demandes RGPD sont traitées directement par l'éditeur à l'adresse ci-dessus.

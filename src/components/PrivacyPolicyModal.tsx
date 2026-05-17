@@ -55,18 +55,23 @@ function PrivacyContent() {
   return (
     <>
       <p className="legal-note">
-        Ce document est une <strong>version V1</strong> ; elle sera ajustée avec les
-        coordonnées définitives de l'éditeur et validée juridiquement avant le
-        lancement public. Si vous accédez à Plan Financier dans un contexte de test,
-        ces termes s'appliquent par défaut.
+        Ce document est une <strong>version V1</strong> couvrant les obligations
+        RGPD principales. Pour une activité commerciale soutenue, faire valider
+        par un juriste.
       </p>
 
       <h3>1. Responsable du traitement</h3>
       <p>
-        L'éditeur de Plan Financier collecte et traite vos données dans le seul but
-        de fournir le service. Pour exercer vos droits ou nous contacter, écrivez à
-        l'adresse fournie dans les paramètres de votre espace, sous-section
-        "Mes données RGPD".
+        <strong>Éditeur :</strong> Johan Quille (auto-entrepreneur)<br />
+        <strong>Adresse :</strong> 59 voie des sculpteurs, 92800 Puteaux, France<br />
+        <strong>Contact RGPD :</strong>{' '}
+        <a href="mailto:contact@protojo.fr">contact@protojo.fr</a>
+      </p>
+      <p>
+        Plan Financier collecte et traite vos données dans le seul but de fournir
+        le service. Vous pouvez exercer vos droits (accès, rectification,
+        effacement, portabilité) directement depuis l'app — Settings →{' '}
+        <em>Mes données RGPD</em> — ou par email à l'adresse ci-dessus.
       </p>
 
       <h3>2. Données collectées</h3>
@@ -185,9 +190,14 @@ function PrivacyContent() {
 
       <h3>11. Contact</h3>
       <p>
-        Pour toute question : <em>adresse à compléter avant lancement</em>.
-        En attendant, ouvrez un ticket sur le repo GitHub du projet ou contactez
-        directement l'éditeur via les coordonnées qu'il vous a fournies.
+        Pour toute question relative à cette politique ou à l'exercice de vos
+        droits :<br />
+        📧 <a href="mailto:contact@protojo.fr">contact@protojo.fr</a><br />
+        📬 Johan Quille — 59 voie des sculpteurs, 92800 Puteaux, France
+      </p>
+      <p>
+        <strong>DPO :</strong> non applicable (structure individuelle &lt; 250
+        employés). Les demandes RGPD sont traitées directement par l'éditeur.
       </p>
     </>
   )
@@ -278,6 +288,21 @@ function TermsContent() {
       <p>
         Les présentes conditions sont régies par le droit français. Tout litige
         sera porté devant les tribunaux français compétents.
+      </p>
+
+      <h3>10. Mentions légales</h3>
+      <p>
+        <strong>Éditeur :</strong> Johan Quille (auto-entrepreneur)<br />
+        <strong>Adresse :</strong> 59 voie des sculpteurs, 92800 Puteaux, France
+        <br />
+        <strong>Contact :</strong>{' '}
+        <a href="mailto:contact@protojo.fr">contact@protojo.fr</a>
+        <br />
+        <strong>Hébergement :</strong> OVHcloud SAS, 2 rue Kellermann, 59100
+        Roubaix, France
+        <br />
+        <strong>Auth + données :</strong> Supabase Inc., région Frankfurt
+        (Allemagne, UE)
       </p>
     </>
   )
