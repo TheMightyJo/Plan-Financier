@@ -985,13 +985,23 @@ function App() {
     return s.charAt(0).toUpperCase() + s.slice(1)
   }
   // ── Toast notifications ─────────────────────────────────────────────
-  const [toast, setToast] = useState<{ message: string; key: number } | null>(null)
-  const showToast = (message: string) => setToast({ message, key: Date.now() })
+  type ToastLevel = 'info' | 'warning' | 'danger'
+  const [toast, setToast] = useState<{ message: string; key: number; level: ToastLevel } | null>(null)
+  const showToast = (message: string, level: ToastLevel = 'info') =>
+    setToast({ message, key: Date.now(), level })
   useEffect(() => {
     if (!toast) return
-    const t = window.setTimeout(() => setToast(null), 2800)
+    // Toasts d'alerte tiennent plus longtemps (l'utilisateur doit pouvoir lire)
+    const duration = toast.level === 'info' ? 2800 : 4500
+    const t = window.setTimeout(() => setToast(null), duration)
     return () => window.clearTimeout(t)
   }, [toast])
+
+  // ── Notifications budget : détection franchissement de seuil ─────────
+  // Track le dernier seuil notifié par couple (mois, profil) via un ref
+  // pour ne déclencher le toast qu'au moment du franchissement (pas à
+  // chaque render).
+  const lastBudgetThresholdRef = useRef<{ key: string; level: number } | null>(null)
 
   // ── Raccourcis clavier ←→ pour navigation mois ───────────────────────
   useEffect(() => {
@@ -2452,6 +2462,45 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const usageRateRaw = budget > 0 ? (monthlyExpense / budget) * 100 : 0
   const incomeRate = budget > 0 ? (monthlyIncome / budget) * 100 : 0
   const usageRate = Math.min(100, usageRateRaw)
+
+  // Notification du franchissement de seuil budget (80% / 100% / 120%).
+  // Idempotent : on track la dernière notif (mois + profil + niveau) via ref
+  // pour ne déclencher le toast qu'au passage haut, jamais à chaque render.
+  // Au premier mount d'un nouveau mois/profil, on initialise sans toast
+  // (sinon spam de l'utilisateur qui ouvre l'app à mi-mois déjà à 90 %).
+  useEffect(() => {
+    if (budget <= 0) return
+    const periodKey = `${currentMonth}-${selectedProfileId}`
+    const currentLevel =
+      usageRateRaw >= 120 ? 120 : usageRateRaw >= 100 ? 100 : usageRateRaw >= 80 ? 80 : 0
+
+    const previous = lastBudgetThresholdRef.current
+    if (!previous || previous.key !== periodKey) {
+      // Init silencieuse au premier mount pour ce mois/profil
+      lastBudgetThresholdRef.current = { key: periodKey, level: currentLevel }
+      return
+    }
+
+    if (currentLevel > previous.level) {
+      // Franchissement haut → toast
+      if (currentLevel === 120) {
+        showToast(
+          `⚠️ Budget dépassé de ${Math.round(usageRateRaw - 100)} %. Pensez à ajuster vos prochaines dépenses.`,
+          'danger',
+        )
+      } else if (currentLevel === 100) {
+        showToast('⚠️ Budget atteint à 100 %. Toute dépense supplémentaire creuse le mois.', 'danger')
+      } else if (currentLevel === 80) {
+        showToast(
+          `💡 Vous avez consommé 80 % du budget mensuel — il reste ${euroFormatter.format(Math.max(0, remaining))}.`,
+          'warning',
+        )
+      }
+    }
+    // Que le franchissement soit haut ou bas, on update pour permettre
+    // une re-notification en cas de re-franchissement futur.
+    lastBudgetThresholdRef.current = { key: periodKey, level: currentLevel }
+  }, [monthlyExpense, budget, currentMonth, selectedProfileId, remaining, usageRateRaw])
   const budgetSimpleMessage =
     remaining < 0
       ? 'Vous avez dépassé votre budget ce mois-ci. Réduisez une catégorie aujourd’hui.'
@@ -4398,6 +4447,18 @@ Réponse attendue:
             aria-label="Ouvrir les paramètres"
           >
             ⚙️ Paramètres
+          </button>
+          <button
+            type="button"
+            className="side-menu-settings-btn"
+            onClick={() => {
+              const cycle = { dark: 'light', light: 'system', system: 'dark' } as const
+              setTheme(cycle[theme])
+            }}
+            aria-label={`Thème actuel : ${theme === 'dark' ? 'Sombre' : theme === 'light' ? 'Clair' : 'Système'}. Cliquer pour changer.`}
+            title="Changer le thème"
+          >
+            {theme === 'dark' ? '🌙 Sombre' : theme === 'light' ? '☀️ Clair' : '💻 Système'}
           </button>
           <button
             type="button"
@@ -7120,7 +7181,12 @@ Réponse attendue:
 
     {/* ── Toast notifications ───────────────────────────────────── */}
     {toast ? (
-      <div key={toast.key} className="app-toast" role="status" aria-live="polite">
+      <div
+        key={toast.key}
+        className={`app-toast app-toast--${toast.level}`}
+        role={toast.level === 'info' ? 'status' : 'alert'}
+        aria-live={toast.level === 'info' ? 'polite' : 'assertive'}
+      >
         {toast.message}
       </div>
     ) : null}

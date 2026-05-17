@@ -7145,19 +7145,52 @@ h1 {
   left: 50%;
   transform: translateX(-50%);
   z-index: 10000;
-  background: rgba(30, 30, 35, 0.95);
-  border: 1px solid rgba(255,255,255,0.12);
-  color: #e4e4e7;
+  background: rgba(61, 43, 31, 0.95);
+  border: 1px solid var(--border);
+  color: var(--pf-color-bg);
   font-size: 0.875rem;
   font-weight: 500;
   padding: 0.6rem 1.25rem;
   border-radius: 999px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  box-shadow: 0 8px 24px rgba(20, 12, 8, 0.4);
   backdrop-filter: blur(8px);
   animation: toast-in 0.2s ease forwards;
   pointer-events: none;
-  white-space: nowrap;
-  max-width: min(480px, calc(100vw - 2rem));
+  max-width: min(560px, calc(100vw - 2rem));
+  text-align: center;
+  line-height: 1.4;
+}
+
+.app-toast--info {
+  /* défaut : café charte */
+}
+
+.app-toast--warning {
+  background: var(--pf-color-warning);
+  color: var(--pf-color-bg);
+  border-color: var(--pf-color-warning-border);
+  /* texte sur 2 lignes possible pour les messages plus longs */
+  white-space: normal;
+  padding: 0.8rem 1.4rem;
+}
+
+.app-toast--danger {
+  background: var(--pf-color-negative);
+  color: var(--pf-color-bg);
+  border-color: var(--pf-color-negative-border);
+  white-space: normal;
+  padding: 0.8rem 1.4rem;
+}
+
+@media (max-width: 480px) {
+  .app-toast {
+    bottom: 1rem;
+    left: 1rem;
+    right: 1rem;
+    transform: none;
+    max-width: none;
+    white-space: normal;
+  }
 }
 
 /* ── Onboarding choice grid ──────────────────────────────── */
