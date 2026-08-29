@@ -4,6 +4,12 @@ export type UserProfile = {
   id: string
   name: string
   monthlyBudget: number
+  /**
+   * Avatar optionnel : `emoji:💰` (preset libre de droit) ou data URI
+   * `data:image/…` (photo importée, redimensionnée côté client).
+   * Absent = pastille initiales + couleur dérivée de l'id.
+   */
+  avatar?: string
 }
 
 export type TransactionKind = 'depense' | 'revenu'
@@ -193,7 +199,6 @@ export type DashboardWidgetId =
   | 'savingsGoals'
   | 'recurringCharges'
   | 'savingsProjects'
-  | 'expenseCalendar'
 
 export type DashboardWidgetTemplateId = 'essentiel' | 'equilibre' | 'analytique' | 'custom'
 export type DashboardWidgetSize = 'compact' | 'medium' | 'large'

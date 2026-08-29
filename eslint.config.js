@@ -18,5 +18,11 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // L'app est en français : les espaces insécables (U+00A0) dans le texte
+      // JSX sont voulus (typographie « avant : », « 1 000 € »). On les tolère
+      // dans le texte JSX tout en gardant la règle active partout ailleurs.
+      'no-irregular-whitespace': ['error', { skipJSXText: true }],
+    },
   },
 ])

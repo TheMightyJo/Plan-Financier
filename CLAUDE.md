@@ -3,13 +3,14 @@
 ## Contexte du projet
 
 Application web de planification financière en React + TypeScript + Vite.
-Le projet utilise Firebase pour l’authentification, Recharts pour les graphiques, Lucide pour les icônes et jsPDF pour les exports.
+Le projet utilise Supabase pour l’authentification et la base de données (Postgres + RLS), Recharts pour les graphiques, Lucide pour les icônes et jsPDF pour les exports.
 
 Les points d’entrée et fichiers sensibles à connaître sont :
 - [src/App.tsx](src/App.tsx) pour l’interface principale et la logique de l’application.
 - [src/AuthScreen.tsx](src/AuthScreen.tsx) pour l’écran d’authentification.
-- [src/firebase.ts](src/firebase.ts) pour l’initialisation Firebase.
-- [src/security.ts](src/security.ts) pour le stockage local chiffré et les données sensibles.
+- [src/supabase.ts](src/supabase.ts) pour l’initialisation du client Supabase.
+- [src/security.ts](src/security.ts) pour le stockage local chiffré (PIN parent) et les données sensibles.
+- [supabase/migrations/](supabase/migrations/) pour le schéma Postgres et les policies RLS.
 
 ## Règles de travail
 
@@ -17,8 +18,12 @@ Les points d’entrée et fichiers sensibles à connaître sont :
 2. Éviter les refactors larges non demandés.
 3. Préserver les comportements existants de navigation, d’authentification et de persistance locale.
 4. Ne jamais exposer de secrets dans les logs, les erreurs ou les réponses.
-5. Conserver les patterns déjà en place pour Firebase, localStorage et la gestion d’état.
+5. Conserver les patterns déjà en place pour Supabase, localStorage et la gestion d’état.
 6. Quand une modification touche la sécurité ou les données sensibles, vérifier d’abord le flux existant dans [src/security.ts](src/security.ts).
+7. Lire les fichiers concernés avant de modifier.
+8. Écrire une solution complète (pas de version partielle ou de placeholder).
+9. Tester une seule fois, pas de boucles de vérification superflues.
+10. Pas de sur-ingénierie : la solution la plus simple qui répond à la demande.
 
 ## Conventions techniques
 

@@ -2,8 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { isSupabaseConfigured, SUPABASE_CONFIG_ERROR, supabase } from './supabase'
 import { logAuditEvent } from './lib/auditLog'
 import { PrivacyPolicyModal } from './components/PrivacyPolicyModal'
+import { TurnstileWidget } from './components/TurnstileWidget'
 
 type Mode = 'login' | 'signup' | 'forgot'
+
+// Clé publique Cloudflare Turnstile. Si absente, la protection anti-robot est
+// simplement désactivée côté app (utile quand le CAPTCHA n'est pas activé dans
+// Supabase). Doit correspondre au provider configuré dans Supabase Auth.
+const TURNSTILE_SITE_KEY = (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '') as string
 
 const PAIRS = [
   { emoji: '💰', word: 'Argent' },
@@ -34,9 +40,11 @@ interface FloaterState {
 function FloatingBg() {
   const itemRefs = useRef<(HTMLSpanElement | null)[]>([])
   const stateRef = useRef<FloaterState[]>(
+    // Répartition initiale déterministe (suite du nombre d'or) : bien dispersée
+    // comme un aléatoire, mais pure — évite Math.random() pendant le render.
     EXTENDED_PAIRS.map((_, i) => ({
-      x: Math.random() * window.innerWidth,
-      y: Math.random() * window.innerHeight,
+      x: (((i + 1) * 0.61803398875) % 1) * window.innerWidth,
+      y: (((i + 1) * 0.38196601125) % 1) * window.innerHeight,
       vx: (25 + (i % 4) * 10) * (i % 2 === 0 ? 1 : -1),
       vy: (20 + (i % 3) * 9) * (i % 3 === 0 ? 1 : -1),
       showWord: i % 2 === 0,
@@ -135,6 +143,15 @@ function FloatingBg() {
  */
 const supabaseAuthErrorMessage = (rawMessage: string): string => {
   const m = rawMessage.toLowerCase()
+  if (m.includes('captcha')) {
+    return 'Vérification anti-robot requise ou échouée. Validez la case de sécurité puis réessayez.'
+  }
+  if (m.includes('signups not allowed') || m.includes('signup is disabled')) {
+    return "Les inscriptions sont désactivées sur ce serveur."
+  }
+  if (m.includes('email logins are disabled') || m.includes('email provider') ) {
+    return "La connexion par email est désactivée côté serveur."
+  }
   if (m.includes('invalid login') || m.includes('invalid credentials')) {
     return 'Email ou mot de passe incorrect.'
   }
@@ -167,6 +184,18 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [captchaToken, setCaptchaToken] = useState('')
+  // Incrémenté après chaque tentative pour remonter le widget Turnstile
+  // (token à usage unique) via sa `key`.
+  const [captchaNonce, setCaptchaNonce] = useState(0)
+
+  const captchaEnabled = Boolean(TURNSTILE_SITE_KEY)
+
+  const resetCaptcha = () => {
+    if (!captchaEnabled) return
+    setCaptchaToken('')
+    setCaptchaNonce((nonce) => nonce + 1)
+  }
 
   const reset = (next: Mode) => {
     setMode(next)
@@ -219,12 +248,18 @@ export default function AuthScreen() {
       }
     }
 
+    if (captchaEnabled && !captchaToken) {
+      setError('Veuillez valider la vérification anti-robot avant de continuer.')
+      return
+    }
+
     setLoading(true)
     try {
       if (mode === 'login') {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email: email.trim(),
           password,
+          options: captchaEnabled ? { captchaToken } : undefined,
         })
         if (signInError) throw signInError
         await logAuditEvent('login')
@@ -234,6 +269,7 @@ export default function AuthScreen() {
           password,
           options: {
             emailRedirectTo: window.location.origin,
+            ...(captchaEnabled ? { captchaToken } : {}),
           },
         })
         if (signUpError) throw signUpError
@@ -243,10 +279,11 @@ export default function AuthScreen() {
         // Si la confirmation est désactivée, une session est créée directement
         // et le onAuthStateChange dans App.tsx prend le relais.
         if (signUpData.user && !signUpData.session) {
+          // reset() efface success : repasser en login PUIS poser le message.
+          reset('login')
           setSuccess(
             `Compte créé pour ${email.trim()}. Vérifiez votre boîte mail pour activer votre compte (clic sur le lien reçu).`,
           )
-          reset('login')
         } else if (signUpData.session) {
           // Confirmation email désactivée côté Supabase → user direct loggué
           await logAuditEvent('signup')
@@ -254,15 +291,21 @@ export default function AuthScreen() {
       } else {
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
           redirectTo: `${window.location.origin}/reset-password`,
+          ...(captchaEnabled ? { captchaToken } : {}),
         })
         if (resetError) throw resetError
-        setSuccess('Email de réinitialisation envoyé. Vérifiez votre boîte mail.')
+        // reset() efface success/error : on repasse en mode login PUIS on pose
+        // le message, sinon il serait immédiatement effacé.
         reset('login')
+        setSuccess('Email de réinitialisation envoyé. Vérifiez votre boîte mail.')
       }
     } catch (err) {
       setError(supabaseAuthErrorMessage(err instanceof Error ? err.message : ''))
     } finally {
       setLoading(false)
+      // Token Turnstile à usage unique : on en régénère un pour la prochaine
+      // tentative (succès comme échec).
+      resetCaptcha()
     }
   }
 
@@ -368,6 +411,14 @@ export default function AuthScreen() {
             </label>
           ) : null}
 
+          {captchaEnabled && supabaseReady ? (
+            <TurnstileWidget
+              key={captchaNonce}
+              siteKey={TURNSTILE_SITE_KEY}
+              onToken={setCaptchaToken}
+            />
+          ) : null}
+
           {error ? <p className="auth-error">{error}</p> : null}
           {success ? <p className="auth-success">{success}</p> : null}
 
@@ -412,7 +463,7 @@ export default function AuthScreen() {
                   Mot de passe oublié ?
                 </button>
                 <button type="button" className="auth-link-button auth-link-button--primary" onClick={() => reset('signup')}>
-                  Pas encore de compte ? <strong>S'inscrire</strong>
+                  Pas encore de compte&nbsp;?{' '}<strong>S'inscrire</strong>
                 </button>
               </>
             ) : (
@@ -422,10 +473,6 @@ export default function AuthScreen() {
             )}
           </div>
         </form>
-
-        <p className="auth-legal">
-          Vos données sont chiffrées et stockées localement sur cet appareil.
-        </p>
       </section>
       {legalDoc ? (
         <PrivacyPolicyModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
