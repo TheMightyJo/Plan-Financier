@@ -34,9 +34,12 @@ export const transactionsSupabaseRepo: SyncRepo<Transaction> = {
     const auth = await requireUser()
     if (!auth || !auth.result.ok) return { data: [], result: auth?.result ?? { ok: false, error: 'unknown' } }
 
+    // Scope explicite : la RLS familiale (migration 0002) rend visibles les
+    // lignes des autres membres — la synchro PERSO ne doit lister que les siennes.
     const { data, error } = await supabase
       .from(TABLE)
       .select('*')
+      .eq('created_by_user_id', auth.userId)
       .is('deleted_at', null)
       .order('occurred_at', { ascending: false })
 

@@ -152,6 +152,7 @@ type TransactionMeta = {
   member: FamilyMember
   localId: number
   rec?: string
+  tags?: string[]
 }
 
 const encodeTransactionMeta = (transaction: Transaction): string =>
@@ -162,6 +163,7 @@ const encodeTransactionMeta = (transaction: Transaction): string =>
     member: transaction.member,
     localId: transaction.id,
     ...(transaction.recurringRuleId ? { rec: transaction.recurringRuleId } : {}),
+    ...(transaction.tags && transaction.tags.length > 0 ? { tags: transaction.tags } : {}),
   } satisfies TransactionMeta)
 
 const decodeTransactionMeta = (notes: string | null): Partial<TransactionMeta> => {
@@ -223,6 +225,7 @@ export const transactionFromRow = (row: TransactionRow): Transaction => {
     kind: kindFromRow(row.kind),
     envelope: meta.env ?? ('Perso' as Envelope),
     ...(meta.rec ? { recurringRuleId: meta.rec } : {}),
+    ...(Array.isArray(meta.tags) && meta.tags.length > 0 ? { tags: meta.tags } : {}),
     accountId: row.account_id,
   }
 }

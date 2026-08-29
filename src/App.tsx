@@ -96,6 +96,14 @@ import { PrivacyPolicyModal } from './components/PrivacyPolicyModal'
 import { ProfilePanel } from './components/ProfilePanel'
 import { logAuditEvent } from './lib/auditLog'
 import { pushToCloud, syncWithCloud } from './lib/cloudSync'
+import {
+  acceptInvite,
+  listFamilyPeers,
+  listPendingInvites,
+  type FamilyInvite,
+  type FamilyPeer,
+} from './repos/familyRepo'
+import { FamilyView } from './components/FamilyView'
 import { shiftMonth } from './lib/calendar'
 import {
   computeConsolidatedBalance,
@@ -108,7 +116,7 @@ import {
   ensureDefaultAccount,
 } from './repos/accountsRepo'
 import { ACCOUNT_TYPE_LABELS } from './types'
-import type { Account, RecurringRule } from './types'
+import type { Account, RecurringFrequency, RecurringRule } from './types'
 import {
   categories,
   categoryColors,
@@ -570,6 +578,13 @@ const normalizeTransaction = (value: unknown, knownProfileIds?: Set<string>): Tr
     ...(typeof (value as { recurringRuleId?: unknown }).recurringRuleId === 'string'
       ? { recurringRuleId: (value as { recurringRuleId: string }).recurringRuleId }
       : {}),
+    ...(Array.isArray((value as { tags?: unknown }).tags)
+      ? {
+          tags: ((value as { tags: unknown[] }).tags)
+            .filter((tag): tag is string => typeof tag === 'string' && tag.length > 0)
+            .slice(0, 8),
+        }
+      : {}),
   }
 }
 
@@ -797,13 +812,20 @@ function App() {
   }, [currentMonth])
 
   const backupRestoreInputRef = useRef<HTMLInputElement | null>(null)
+  // ── Famille (comptes reliés) ──
+  const [familyPeers, setFamilyPeers] = useState<FamilyPeer[]>([])
+  const [pendingInvites, setPendingInvites] = useState<FamilyInvite[]>([])
+  const [myUserId, setMyUserId] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteBusy, setInviteBusy] = useState(false)
   const navItems = useMemo(
     () => [
       { id: 'overview',    label: '🏠 Accueil' },
       { id: 'operations',  label: '💳 Dépenses' },
       { id: 'budget',      label: '📅 Budget' },
+      ...(familyPeers.length >= 2 ? [{ id: 'family', label: '👨‍👩‍👧 Famille' }] : []),
     ],
-    [],
+    [familyPeers.length],
   )
   const isActiveView = (sectionId: string) => activeSectionId === sectionId
   const navigateToSection = (sectionId: string) => {
@@ -2019,6 +2041,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   useEffect(() => {
     if (!isAuthenticated) {
       cloudSyncReadyRef.current = false
+      // Reset du statut à la déconnexion (état piloté par événement).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCloudSyncStatus('idle')
       return
     }
@@ -2072,6 +2096,67 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       }
     }
   }, [transactions, accounts, isAuthenticated])
+
+  // Chargement des infos famille au login (pairs + invitations en attente).
+  const refreshFamily = async () => {
+    const [peers, invites, session] = await Promise.all([
+      listFamilyPeers(),
+      listPendingInvites(),
+      supabase.auth.getSession(),
+    ])
+    setFamilyPeers(peers)
+    setPendingInvites(invites)
+    setMyUserId(session.data.session?.user.id ?? '')
+  }
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      // Reset des données famille à la déconnexion.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setFamilyPeers([])
+      setPendingInvites([])
+      return
+    }
+    void refreshFamily()
+  }, [isAuthenticated])
+
+  const handleSendFamilyInvite = async () => {
+    const email = inviteEmail.trim().toLowerCase()
+    if (!email || inviteBusy) return
+    setInviteBusy(true)
+    setSettingsError('')
+    setSettingsSuccess('')
+    try {
+      const { data, error } = await supabase.functions.invoke('invite-family-member', {
+        body: { email },
+      })
+      if (error || !data?.ok) {
+        setSettingsError(
+          "L'invitation n'a pas pu partir. Vérifiez l'adresse, ou réessayez plus tard.",
+        )
+      } else if (data.outcome === 'invited_new_user') {
+        setSettingsSuccess(`Invitation envoyée à ${email} — cette personne va recevoir un email pour créer son compte.`)
+        setInviteEmail('')
+      } else {
+        setSettingsSuccess(`${email} a déjà un compte : l'invitation apparaîtra à sa prochaine connexion.`)
+        setInviteEmail('')
+      }
+    } catch {
+      setSettingsError("L'invitation n'a pas pu partir (fonction non déployée ?).")
+    } finally {
+      setInviteBusy(false)
+    }
+  }
+
+  const handleAcceptInvite = async (invite: FamilyInvite) => {
+    const ok = await acceptInvite(invite.membershipId)
+    if (ok) {
+      showToast(`Bienvenue dans « ${invite.groupName} » 👨‍👩‍👧`)
+      await refreshFamily()
+    } else {
+      showToast('Impossible d\'accepter l\'invitation — réessayez.', 'danger')
+    }
+  }
 
   // ── Theme ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -2644,7 +2729,9 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       const q = txSearch.toLowerCase()
       list = list.filter(
         (item) =>
-          item.label.toLowerCase().includes(q) || item.category.toLowerCase().includes(q),
+          item.label.toLowerCase().includes(q) ||
+          item.category.toLowerCase().includes(q) ||
+          (item.tags ?? []).some((tag) => tag.toLowerCase().includes(q)),
       )
     }
     list.sort((a, b) =>
@@ -2964,13 +3051,15 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     amount: '',
     category: 'Courses' as Category,
     envelope: 'Maison' as Envelope,
+    tags: '',
+    recurrence: 'none' as 'none' | RecurringFrequency,
   })
 
   // Null = création ; sinon id de la transaction en cours de modification.
   const [quickAddEditingId, setQuickAddEditingId] = useState<number | null>(null)
 
   const openQuickAdd = (date: string) => {
-    setQuickAddForm({ label: '', amount: '', category: 'Courses', envelope: 'Maison' })
+    setQuickAddForm({ label: '', amount: '', category: 'Courses', envelope: 'Maison', tags: '', recurrence: 'none' })
     setQuickAddEditingId(null)
     setQuickAddDate(date)
   }
@@ -2981,6 +3070,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       amount: String(tx.amount).replace('.', ','),
       category: tx.category,
       envelope: tx.envelope,
+      tags: (tx.tags ?? []).join(', '),
+      recurrence: 'none',
     })
     setQuickAddEditingId(tx.id)
     setQuickAddDate(tx.date)
@@ -2997,6 +3088,12 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     const amount = Number(quickAddForm.amount.replace(',', '.'))
     if (!quickAddForm.label.trim() || Number.isNaN(amount) || amount <= 0) return
 
+    const parsedTags = quickAddForm.tags
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean)
+      .slice(0, 8)
+
     if (quickAddEditingId !== null) {
       setTransactions((previous) =>
         previous.map((tx) =>
@@ -3008,6 +3105,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
                 category: quickAddForm.category,
                 envelope: quickAddForm.envelope,
                 date: quickAddDate,
+                ...(parsedTags.length > 0 ? { tags: parsedTags } : { tags: undefined }),
               }
             : tx,
         ),
@@ -3015,6 +3113,36 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       showToast('Dépense mise à jour')
       closeQuickAdd()
       return
+    }
+
+    // Récurrence demandée → on crée la règle : les prochaines échéances seront
+    // générées automatiquement (la dépense saisie couvre l'occurrence du jour).
+    let createdRuleId: string | undefined
+    if (quickAddForm.recurrence !== 'none') {
+      const frequency = quickAddForm.recurrence
+      const dayOfPeriod =
+        frequency === 'weekly'
+          ? ((new Date(`${quickAddDate}T12:00:00`).getDay() + 6) % 7) + 1
+          : Number(quickAddDate.slice(8, 10))
+      const rule: RecurringRule = {
+        id: `rule-${Date.now()}`,
+        member: selectedProfileId,
+        category: quickAddForm.category,
+        envelope: quickAddForm.envelope,
+        label: quickAddForm.label.trim(),
+        amount,
+        kind: 'depense',
+        frequency,
+        dayOfPeriod,
+        startDate: quickAddDate,
+        endDate: null,
+        lastGeneratedOn: quickAddDate,
+        pausedAt: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
+      setRecurringRules((previous) => [...previous, rule])
+      createdRuleId = rule.id
     }
 
     const resolvedAccountId =
@@ -3031,10 +3159,12 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       date: quickAddDate,
       kind: 'depense',
       envelope: quickAddForm.envelope,
+      ...(parsedTags.length > 0 ? { tags: parsedTags } : {}),
+      ...(createdRuleId ? { recurringRuleId: createdRuleId } : {}),
       accountId: resolvedAccountId,
     }
     setTransactions((previous) => [...previous, newTransaction])
-    showToast('Dépense ajoutée')
+    showToast(createdRuleId ? 'Dépense ajoutée — elle se répétera automatiquement' : 'Dépense ajoutée')
     closeQuickAdd()
   }
 
@@ -4087,6 +4217,17 @@ Réponse attendue:
         </button>
       </div>
     ) : null}
+    {pendingInvites.map((invite) => (
+      <div key={invite.membershipId} className="invite-banner" role="status">
+        <span>
+          🤝 <strong>{invite.inviterName}</strong> vous invite à rejoindre « {invite.groupName} »
+          pour partager vos budgets.
+        </span>
+        <button type="button" onClick={() => void handleAcceptInvite(invite)}>
+          Accepter
+        </button>
+      </div>
+    ))}
     {/* ── Onboarding wizard (première utilisation) ──────────────────── */}
     {showOnboarding ? (
       <div className="onboarding-overlay" role="dialog" aria-modal="true" aria-label="Configuration initiale">
@@ -4592,6 +4733,9 @@ Réponse attendue:
                 <span className="recent-tx-label">
                   {tx.label}
                   {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
+                  {(tx.tags ?? []).map((tag) => (
+                    <span key={tag} className="tx-tag">#{tag}</span>
+                  ))}
                 </span>
                 <span className="recent-tx-meta">
                   {new Date(`${tx.date}T12:00:00`).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })} · {tx.category}
@@ -4640,6 +4784,10 @@ Réponse attendue:
           </div>
         </section>
         ) : null}
+
+      {isActiveView('family') ? (
+        <FamilyView month={selectedMonth} peers={familyPeers} myUserId={myUserId} />
+      ) : null}
 
       {isActiveView('envelopes') ? (
       <section id="envelopes" className="glass-card envelope-strip">
@@ -4772,6 +4920,31 @@ Réponse attendue:
                         <button type="submit">Ajouter le profil</button>
                         <p className="auth-note">Bascule ensuite dans le header pour piloter le bon contexte.</p>
                       </form>
+                      <div className="family-invite-block">
+                        <h3>🤝 Inviter un proche</h3>
+                        <p className="auth-note">
+                          Cette personne recevra un email pour créer son propre compte. Une fois
+                          l'invitation acceptée, un onglet « Famille » fusionnera vos budgets
+                          et dépenses (chacun garde la main sur les siens).
+                        </p>
+                        <div className="family-invite-row">
+                          <input
+                            type="email"
+                            value={inviteEmail}
+                            onChange={(event) => setInviteEmail(event.target.value)}
+                            placeholder="email@exemple.fr"
+                            disabled={inviteBusy}
+                          />
+                          <button
+                            type="button"
+                            className="hero-cta-button"
+                            onClick={() => void handleSendFamilyInvite()}
+                            disabled={inviteBusy || !inviteEmail.trim()}
+                          >
+                            {inviteBusy ? 'Envoi…' : 'Inviter'}
+                          </button>
+                        </div>
+                      </div>
                     </article>
 
                     <article className="glass-card settings-section-card form-panel">
@@ -5407,6 +5580,9 @@ Réponse attendue:
                     </p>
                     <small>
                       {item.date} · {item.category} · {item.envelope}
+                      {(item.tags ?? []).map((tag) => (
+                        <span key={tag} className="tx-tag">#{tag}</span>
+                      ))}
                     </small>
                   </div>
                   {deletingTxId === item.id ? (
@@ -7204,6 +7380,34 @@ Réponse attendue:
                 </select>
               </label>
             </div>
+            <label>
+              Tags <small className="quick-add-hint">(optionnel, séparés par des virgules)</small>
+              <input
+                value={quickAddForm.tags}
+                onChange={(event) => setQuickAddForm((previous) => ({ ...previous, tags: event.target.value }))}
+                placeholder="Ex: vacances, remboursable"
+              />
+            </label>
+            {quickAddEditingId === null ? (
+              <label>
+                Répéter
+                <select
+                  value={quickAddForm.recurrence}
+                  onChange={(event) =>
+                    setQuickAddForm((previous) => ({
+                      ...previous,
+                      recurrence: event.target.value as 'none' | RecurringFrequency,
+                    }))
+                  }
+                >
+                  <option value="none">Jamais (dépense unique)</option>
+                  <option value="weekly">Chaque semaine</option>
+                  <option value="monthly">Chaque mois</option>
+                  <option value="quarterly">Chaque trimestre</option>
+                  <option value="yearly">Chaque année</option>
+                </select>
+              </label>
+            ) : null}
             <div className="quick-add-actions">
               <button type="button" className="ghost-button" onClick={closeQuickAdd}>
                 Annuler

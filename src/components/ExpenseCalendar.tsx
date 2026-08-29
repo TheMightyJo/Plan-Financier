@@ -236,6 +236,9 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
                   <span className="expense-calendar__day-label">
                     {tx.label}
                     {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement">🔁</span> : null}
+                    {(tx.tags ?? []).map((tag) => (
+                      <span key={tag} className="tx-tag">#{tag}</span>
+                    ))}
                   </span>
                   <span className="expense-calendar__day-cat">{tx.category}</span>
                   <span className={tx.kind === 'depense' ? 'expense-calendar__spent' : 'expense-calendar__income'}>

@@ -36,6 +36,8 @@ export type Transaction = {
   envelope: Envelope
   /** Présent si la transaction a été générée par une règle récurrente. */
   recurringRuleId?: string
+  /** Étiquettes libres saisies par l'utilisateur (ex. « vacances », « remboursable »). */
+  tags?: string[]
   /**
    * Compte sur lequel l'opération est imputée. Optionnel pour rétro-compat
    * avec les anciennes transactions stockées avant l'introduction des

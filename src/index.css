@@ -9007,3 +9007,146 @@ h1 {
   width: 100%;
   margin-top: 0.8rem;
 }
+
+/* Étiquettes libres sur les transactions. */
+.tx-tag {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.14);
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  color: var(--text-1);
+  font-size: 0.68rem;
+  font-weight: 700;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.quick-add-hint {
+  font-weight: 600;
+  color: var(--text-2);
+  font-size: var(--text-2xs);
+}
+
+/* ── Famille : bannière d'invitation, vue fusionnée, carte d'invitation ── */
+.invite-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1190;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 1rem;
+  background: linear-gradient(130deg, #3A7D44, #6B5B8A);
+  color: #FFF8F0;
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+
+.invite-banner button {
+  appearance: none;
+  border: 1px solid rgba(255, 248, 240, 0.6);
+  background: rgba(255, 248, 240, 0.15);
+  color: #FFF8F0;
+  border-radius: 999px;
+  padding: 0.3rem 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.family-view {
+  padding: 1.2rem 1.35rem;
+  margin-bottom: 1rem;
+}
+
+.family-members-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin: 0.4rem 0 0.9rem;
+}
+
+.family-member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.8rem 0.45rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+}
+
+.family-member-chip strong {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--text-1);
+}
+
+.family-member-chip small {
+  color: var(--kpi-danger);
+  font-weight: 700;
+}
+
+.family-totals {
+  display: flex;
+  gap: 1.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+}
+
+.family-totals span {
+  display: block;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.family-totals strong {
+  font-size: 1.25rem;
+}
+
+.member-avatar--tiny {
+  width: 1.45rem;
+  height: 1.45rem;
+  font-size: 0.6rem;
+}
+
+.family-tx-list li {
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+}
+
+.family-invite-block {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.family-invite-block h3 {
+  margin: 0 0 0.3rem;
+  font-size: var(--text-base);
+  color: var(--text-1);
+}
+
+.family-invite-row {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+}
+
+.family-invite-row input {
+  flex: 1 1 200px;
+  border-radius: 0.7rem;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  color: var(--text-1);
+  padding: 0.6rem 0.7rem;
+}
+
+@media (max-width: 560px) {
+  .family-tx-list .recent-tx-meta { display: none; }
+  .family-tx-list li { grid-template-columns: auto auto minmax(0, 1fr) auto; }
+}

@@ -34,9 +34,12 @@ export const accountsSupabaseRepo: SyncRepo<Account> = {
     const auth = await requireUser()
     if (!auth || !auth.result.ok) return { data: [], result: auth?.result ?? { ok: false, error: 'unknown' } }
 
+    // Scope explicite : ne lister que ses propres comptes (la RLS familiale
+    // de la migration 0002 expose aussi ceux des autres membres).
     const { data, error } = await supabase
       .from(TABLE)
       .select('*')
+      .eq('owner_user_id', auth.userId)
       .is('deleted_at', null)
       .order('created_at', { ascending: true })
 
