@@ -818,6 +818,7 @@ function App() {
   const [myUserId, setMyUserId] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteBusy, setInviteBusy] = useState(false)
+  const [inviteFeedback, setInviteFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const navItems = useMemo(
     () => [
       { id: 'overview',    label: '🏠 Accueil' },
@@ -2124,25 +2125,34 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     const email = inviteEmail.trim().toLowerCase()
     if (!email || inviteBusy) return
     setInviteBusy(true)
-    setSettingsError('')
-    setSettingsSuccess('')
+    setInviteFeedback(null)
     try {
       const { data, error } = await supabase.functions.invoke('invite-family-member', {
         body: { email },
       })
       if (error || !data?.ok) {
-        setSettingsError(
-          "L'invitation n'a pas pu partir. Vérifiez l'adresse, ou réessayez plus tard.",
-        )
+        setInviteFeedback({
+          kind: 'error',
+          text: "L'invitation n'a pas pu partir. Vérifiez l'adresse, ou réessayez plus tard.",
+        })
       } else if (data.outcome === 'invited_new_user') {
-        setSettingsSuccess(`Invitation envoyée à ${email} — cette personne va recevoir un email pour créer son compte.`)
+        setInviteFeedback({
+          kind: 'ok',
+          text: `✅ Invitation envoyée à ${email} — cette personne va recevoir un email pour créer son compte.`,
+        })
         setInviteEmail('')
       } else {
-        setSettingsSuccess(`${email} a déjà un compte : l'invitation apparaîtra à sa prochaine connexion.`)
+        setInviteFeedback({
+          kind: 'ok',
+          text: `✅ ${email} a déjà un compte : l'invitation lui sera proposée à sa prochaine connexion.`,
+        })
         setInviteEmail('')
       }
     } catch {
-      setSettingsError("L'invitation n'a pas pu partir (fonction non déployée ?).")
+      setInviteFeedback({
+        kind: 'error',
+        text: "L'invitation n'a pas pu partir (la fonction invite-family-member est-elle déployée ?).",
+      })
     } finally {
       setInviteBusy(false)
     }
@@ -4944,6 +4954,11 @@ Réponse attendue:
                             {inviteBusy ? 'Envoi…' : 'Inviter'}
                           </button>
                         </div>
+                        {inviteFeedback ? (
+                          <p className={inviteFeedback.kind === 'ok' ? 'auth-success' : 'auth-error'}>
+                            {inviteFeedback.text}
+                          </p>
+                        ) : null}
                       </div>
                     </article>
 
