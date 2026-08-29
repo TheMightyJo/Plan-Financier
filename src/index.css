@@ -9209,3 +9209,27 @@ h1 {
 .sent-invite-btn--danger {
   color: var(--danger);
 }
+
+/* Pied de page légal du panneau Paramètres. */
+.settings-legal-footer {
+  padding: 0.6rem 0 0;
+  margin-top: 0.4rem;
+  border-top: 1px solid var(--border-soft);
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+/* Mon compte intégré aux Paramètres. */
+.settings-section-grid--single {
+  grid-template-columns: 1fr;
+}
+
+.profile-modal--inline {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  width: 100%;
+  max-height: none;
+}

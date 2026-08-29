@@ -4619,7 +4619,7 @@ Réponse attendue:
       </div>
     ) : null}
 
-    <main className={`dashboard-shell${isActiveView('budget') || isActiveView('overview') ? ' dashboard-shell--three-columns' : ''}`} id="app-main" aria-label="Tableau de bord budgétaire">
+    <main className={`dashboard-shell${isActiveView('budget') || isActiveView('overview') || isActiveView('operations') || isActiveView('family') ? ' dashboard-shell--three-columns' : ''}`} id="app-main" aria-label="Tableau de bord budgétaire">
       <h1 className="sr-only">Plan Financier — Tableau de bord</h1>
       <aside className="glass-card side-menu" aria-label="Navigation principale">
         <div className="side-menu-profiles" role="tablist" aria-label="Sélection du profil">
@@ -4641,9 +4641,6 @@ Réponse attendue:
                 }}
               >
                 {profileAvatarNode(profile)}
-                {profile.id === defaultProfileId ? (
-                  <span className="side-menu-profiles__star" aria-hidden="true">★</span>
-                ) : null}
               </button>
             ))}
           </div>
@@ -5440,19 +5437,13 @@ Réponse attendue:
                 ) : null}
 
                 {settingsSection === 'account' ? (
-                  <div className="settings-section-grid">
-                    <article className="glass-card settings-section-card form-panel">
-                      <div className="panel-title">
-                        <h2>Mon compte</h2>
-                        <p>Nom d'affichage, adresse email et informations de connexion.</p>
-                      </div>
-                      <button
-                        type="button"
-                        className="hero-cta-button"
-                        onClick={() => setShowProfilePanel(true)}
-                      >
-                        👤 Ouvrir mon compte
-                      </button>
+                  <div className="settings-section-grid settings-section-grid--single">
+                    <article className="glass-card settings-section-card">
+                      <ProfilePanel
+                        inline
+                        userEmail={userEmail}
+                        onEmailChanged={(newEmail) => setUserEmail(newEmail)}
+                      />
                     </article>
                   </div>
                 ) : null}
@@ -5510,6 +5501,15 @@ Réponse attendue:
                 ) : null}
               </div>
             </div>
+            <footer className="settings-legal-footer">
+              <button type="button" className="auth-rgpd-link" onClick={() => setLegalDoc('terms')}>
+                Conditions d'utilisation
+              </button>
+              {' · '}
+              <button type="button" className="auth-rgpd-link" onClick={() => setLegalDoc('privacy')}>
+                Politique de confidentialité &amp; mentions légales
+              </button>
+            </footer>
           </section>
         </div>
       ) : null}
@@ -7082,7 +7082,7 @@ Réponse attendue:
 
       </div>
 
-      {isActiveView('overview') ? (
+      {isActiveView('overview') || isActiveView('operations') || isActiveView('family') ? (
       <aside className="glass-card budget-advice-rail dashboard-right-rail overview-coaching-rail" aria-label="Assistant">
         {!isBudgetAiConfigured ? (
           <>

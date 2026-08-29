@@ -6,7 +6,9 @@ import { logAuditEvent } from '../lib/auditLog'
 type Props = {
   userEmail: string
   onEmailChanged: (newEmail: string) => void
-  onClose: () => void
+  onClose?: () => void
+  /** Rendu intégré (dans les Paramètres) : pas d'overlay ni de bouton fermer. */
+  inline?: boolean
 }
 
 /**
@@ -16,7 +18,7 @@ type Props = {
  *   confirmation à l'ancien ET au nouveau ; le changement est effectif
  *   après confirmation côté Supabase.
  */
-export function ProfilePanel({ userEmail, onEmailChanged, onClose }: Props) {
+export function ProfilePanel({ userEmail, onEmailChanged, onClose, inline = false }: Props) {
   const [displayName, setDisplayName] = useState('')
   const [initialDisplayName, setInitialDisplayName] = useState('')
   const [email, setEmail] = useState(userEmail)
@@ -130,14 +132,8 @@ export function ProfilePanel({ userEmail, onEmailChanged, onClose }: Props) {
 
   const displayNameDirty = displayName.trim() !== initialDisplayName
 
-  return (
-    <div
-      className="profile-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Mon profil"
-    >
-      <div className="profile-modal glass-card">
+  const card = (
+      <div className={inline ? 'profile-modal profile-modal--inline' : 'profile-modal glass-card'}>
         <header className="profile-header">
           <div>
             <span className="eyebrow">
@@ -150,14 +146,16 @@ export function ProfilePanel({ userEmail, onEmailChanged, onClose }: Props) {
               et nouvelle adresse).
             </p>
           </div>
-          <button
-            type="button"
-            className="profile-close"
-            onClick={onClose}
-            aria-label="Fermer"
-          >
-            <X size={18} />
-          </button>
+          {!inline ? (
+            <button
+              type="button"
+              className="profile-close"
+              onClick={onClose}
+              aria-label="Fermer"
+            >
+              <X size={18} />
+            </button>
+          ) : null}
         </header>
 
         {error ? <p className="profile-error">{error}</p> : null}
@@ -221,6 +219,13 @@ export function ProfilePanel({ userEmail, onEmailChanged, onClose }: Props) {
           </form>
         </section>
       </div>
+  )
+
+  if (inline) return card
+
+  return (
+    <div className="profile-overlay" role="dialog" aria-modal="true" aria-label="Mon profil">
+      {card}
     </div>
   )
 }
