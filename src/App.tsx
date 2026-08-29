@@ -5054,8 +5054,14 @@ Réponse attendue:
                               return (
                                 <li key={invite.membershipId}>
                                   <div className="sent-invite-info">
-                                    <strong>{invite.displayName}</strong>
-                                    <small>{invite.email}</small>
+                                    {invite.accepted ? (
+                                      <>
+                                        <strong>{invite.displayName}</strong>
+                                        <small>{invite.email}</small>
+                                      </>
+                                    ) : (
+                                      <strong>{invite.email}</strong>
+                                    )}
                                   </div>
                                   {invite.accepted ? (
                                     <span className="sent-invite-status sent-invite-status--ok">A rejoint ✓</span>
