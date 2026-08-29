@@ -34,6 +34,8 @@ export type Transaction = {
   date: string
   kind: TransactionKind
   envelope: Envelope
+  /** Présent si la transaction a été générée par une règle récurrente. */
+  recurringRuleId?: string
   /**
    * Compte sur lequel l'opération est imputée. Optionnel pour rétro-compat
    * avec les anciennes transactions stockées avant l'introduction des

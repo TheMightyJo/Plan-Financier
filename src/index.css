@@ -3542,6 +3542,25 @@ h1 {
   font-size: var(--text-sm);
 }
 
+/* Indicateur de synchronisation cloud (pied du menu). */
+.cloud-sync-badge {
+  margin: 0 0 0.4rem;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-2);
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.5rem;
+  cursor: default;
+}
+
+.cloud-sync-badge--ok { color: var(--kpi-positive); }
+.cloud-sync-badge--error { color: var(--kpi-warn); }
+.cloud-sync-badge--syncing { animation: cloud-pulse 1.2s ease-in-out infinite; }
+
+@keyframes cloud-pulse {
+  50% { opacity: 0.45; }
+}
+
 /* ── Éditeur d'avatar (Paramètres → Profil actif) ────────────────── */
 .avatar-editor {
   display: flex;
@@ -8856,4 +8875,135 @@ h1 {
   border-color: rgba(var(--accent-rgb), 0.62);
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.2);
   background: var(--ui-btn-bg-hover);
+}
+
+/* Badge « générée automatiquement » (charges récurrentes). */
+.recurring-badge {
+  margin-left: 0.3rem;
+  font-size: 0.75em;
+  opacity: 0.8;
+  cursor: help;
+}
+
+/* ── Bilan du mois (Accueil) ─────────────────────────────────────── */
+.month-summary-card {
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.month-summary-rows {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.month-summary-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.month-summary-row > span:first-child {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  min-width: 7.5rem;
+}
+
+.month-summary-spent { color: var(--kpi-danger); font-size: 1.1rem; }
+.month-summary-income { color: var(--kpi-positive); font-size: 1.1rem; }
+
+.month-summary-row small.negative { color: var(--kpi-danger); }
+.month-summary-row small.positive { color: var(--kpi-positive); }
+
+.month-summary-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.month-summary-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-1);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+}
+
+/* ── Jauges animées + célébration d'objectif atteint ─────────────── */
+.kpi-progress-fill,
+.budget-health-fill,
+.budget-simple-progress__fill,
+.hero-budget-bar__fill {
+  transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.kpi-card--celebrate {
+  border-color: rgba(58, 125, 68, 0.55);
+  box-shadow: 0 0 0 2px rgba(58, 125, 68, 0.25);
+}
+
+.kpi-celebrate-emoji {
+  display: inline-block;
+  animation: celebrate-pop 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    celebrate-wiggle 2.4s ease-in-out 1s infinite;
+}
+
+@keyframes celebrate-pop {
+  from { transform: scale(0); }
+  60% { transform: scale(1.5); }
+  to { transform: scale(1); }
+}
+
+@keyframes celebrate-wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-12deg); }
+  75% { transform: rotate(12deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kpi-celebrate-emoji { animation: none; }
+  .kpi-progress-fill,
+  .budget-health-fill,
+  .budget-simple-progress__fill,
+  .hero-budget-bar__fill { transition: none; }
+}
+
+/* ── Mode démo ───────────────────────────────────────────────────── */
+.demo-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(130deg, #C05C2A, #B8963E);
+  color: #FFF8F0;
+  font-weight: 700;
+  font-size: var(--text-sm);
+}
+
+.demo-banner button {
+  appearance: none;
+  border: 1px solid rgba(255, 248, 240, 0.6);
+  background: rgba(255, 248, 240, 0.15);
+  color: #FFF8F0;
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  font-weight: 800;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.auth-demo-btn {
+  width: 100%;
+  margin-top: 0.8rem;
 }

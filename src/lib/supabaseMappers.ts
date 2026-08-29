@@ -125,7 +125,7 @@ export type TransactionRow = {
   account_id: string
   category_id: string | null  // null en V1 (catégories système non liées via FK)
   amount: number
-  kind: TransactionKind
+  kind: 'debit' | 'credit' | 'transfer'  // contrainte CHECK côté SQL
   occurred_at: string  // YYYY-MM-DD
   label: string
   notes: string | null
@@ -141,15 +141,50 @@ export type TransactionRow = {
 }
 
 /**
+ * Métadonnées client rangées dans `notes` (colonne text libre du schéma) pour
+ * garantir un aller-retour SANS PERTE : catégorie, enveloppe, profil local et
+ * id numérique d'origine (le schéma SQL n'a pas (encore) ces colonnes).
+ */
+type TransactionMeta = {
+  pf: 1
+  cat: Category
+  env: Envelope
+  member: FamilyMember
+  localId: number
+  rec?: string
+}
+
+const encodeTransactionMeta = (transaction: Transaction): string =>
+  JSON.stringify({
+    pf: 1,
+    cat: transaction.category,
+    env: transaction.envelope,
+    member: transaction.member,
+    localId: transaction.id,
+    ...(transaction.recurringRuleId ? { rec: transaction.recurringRuleId } : {}),
+  } satisfies TransactionMeta)
+
+const decodeTransactionMeta = (notes: string | null): Partial<TransactionMeta> => {
+  if (!notes) return {}
+  try {
+    const parsed = JSON.parse(notes) as Partial<TransactionMeta>
+    return parsed && parsed.pf === 1 ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+/** Mapping kind local ↔ contrainte CHECK SQL (debit/credit/transfer). */
+const kindToRow = (kind: TransactionKind): 'debit' | 'credit' =>
+  kind === 'revenu' ? 'credit' : 'debit'
+
+const kindFromRow = (kind: TransactionRow['kind']): TransactionKind =>
+  kind === 'credit' ? 'revenu' : 'depense'
+
+/**
  * Convertit une Transaction TS vers le format Postgres.
- *
- * Limitations V2.A :
- *   - `category` (string énuméré côté TS) → `category_id` est mis à `null`
- *     car nos catégories TS ne correspondent pas aux uuid des catégories
- *     SQL (qui ont des id générés). Étape 2.B : on stockera la catégorie
- *     dans une colonne dédiée ou on créera la map.
- *   - `envelope` côté TS n'existe pas dans le schéma SQL (à ajouter en 2.B
- *     comme colonne `envelope text`)
+ * category/envelope/member/id d'origine voyagent dans `notes` (JSON) —
+ * cf. TransactionMeta — en attendant des colonnes dédiées (étape 2.B).
  */
 export const transactionToRow = (
   transaction: Transaction,
@@ -157,12 +192,12 @@ export const transactionToRow = (
 ): Omit<TransactionRow, 'created_at' | 'updated_at'> => ({
   id: ensureUuid(transaction.id),
   account_id: transaction.accountId ? ensureUuid(transaction.accountId) : ensureUuid('orphan'),
-  category_id: null, // Cf. limitation 2.A
+  category_id: null, // FK catégories SQL non mappée en 2.A
   amount: transaction.amount,
-  kind: transaction.kind,
+  kind: kindToRow(transaction.kind),
   occurred_at: transaction.date,
   label: transaction.label,
-  notes: null,
+  notes: encodeTransactionMeta(transaction),
   paid_by_user_id: createdByUserId, // V1 mono-profil = même user que créateur
   created_by_user_id: createdByUserId,
   recurring_rule_id: null,
@@ -172,21 +207,25 @@ export const transactionToRow = (
 })
 
 /**
- * Convertit une row Postgres en Transaction TS.
- * Pour 2.A : on perd la catégorie sémantique (mappée vers 'Autre' par défaut)
- * et l'enveloppe ('Perso' par défaut). Sera affiné en 2.B.
+ * Convertit une row Postgres en Transaction TS. Les métadonnées `notes`
+ * restaurent catégorie/enveloppe/profil/id d'origine ; fallbacks sûrs pour
+ * les rows écrites sans meta (anciens pushes 2.A).
  */
-export const transactionFromRow = (row: TransactionRow): Transaction => ({
-  id: hashUuidToNumber(row.id), // ⚠️ legacy : voir doc migration ID en 2.B
-  label: row.label,
-  amount: Number(row.amount),
-  category: 'Autre' as Category, // Fallback 2.A
-  member: row.paid_by_user_id ?? '',
-  date: row.occurred_at,
-  kind: row.kind,
-  envelope: 'Perso' as Envelope, // Fallback 2.A
-  accountId: row.account_id,
-})
+export const transactionFromRow = (row: TransactionRow): Transaction => {
+  const meta = decodeTransactionMeta(row.notes)
+  return {
+    id: typeof meta.localId === 'number' ? meta.localId : hashUuidToNumber(row.id),
+    label: row.label,
+    amount: Number(row.amount),
+    category: meta.cat ?? ('Autre' as Category),
+    member: meta.member ?? '',
+    date: row.occurred_at,
+    kind: kindFromRow(row.kind),
+    envelope: meta.env ?? ('Perso' as Envelope),
+    ...(meta.rec ? { recurringRuleId: meta.rec } : {}),
+    accountId: row.account_id,
+  }
+}
 
 /**
  * Hash déterministe uuid → number stable (pour la rétrocompatibilité avec

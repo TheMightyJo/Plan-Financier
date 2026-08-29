@@ -233,7 +233,10 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
               {dayTransactions.map((tx) => (
                 <li key={tx.id}>
                   <span className="recent-tx-dot" style={{ background: categoryColors[tx.category] }} aria-hidden="true" />
-                  <span className="expense-calendar__day-label">{tx.label}</span>
+                  <span className="expense-calendar__day-label">
+                    {tx.label}
+                    {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement">🔁</span> : null}
+                  </span>
                   <span className="expense-calendar__day-cat">{tx.category}</span>
                   <span className={tx.kind === 'depense' ? 'expense-calendar__spent' : 'expense-calendar__income'}>
                     {tx.kind === 'depense' ? '−' : '+'}{euroFormatter.format(tx.amount)}

@@ -182,6 +182,7 @@ export const generateDueTransactions = (
     date,
     kind: rule.kind,
     envelope: rule.envelope,
+    recurringRuleId: rule.id,
   }))
 
   const lastGeneratedOn = dates.length > 0 ? dates[dates.length - 1] : rule.lastGeneratedOn

@@ -135,9 +135,22 @@ describe('Transaction mapper', () => {
     expect(row.account_id).toBe(ACCOUNT_UUID)
     expect(row.amount).toBe(1200)
     expect(row.occurred_at).toBe('2026-05-05')
-    expect(row.kind).toBe('depense')
+    // kind local mappé vers la contrainte CHECK SQL (depense → debit)
+    expect(row.kind).toBe('debit')
     expect(row.created_by_user_id).toBe(USER_ID)
     expect(row.transfer_group_id).toBeNull()
+  })
+
+  it('round-trip complet via meta notes : category/envelope/member/id restaurés', () => {
+    const row = transactionToRow(tx, USER_ID)
+    const back = transactionFromRow({ ...row } as TransactionRow)
+    expect(back.id).toBe(42)
+    expect(back.category).toBe('Maison')
+    expect(back.envelope).toBe('Maison')
+    expect(back.member).toBe('principal')
+    expect(back.kind).toBe('depense')
+    expect(back.amount).toBe(1200)
+    expect(back.date).toBe('2026-05-05')
   })
 
   it('tx sans accountId → row.account_id = uuid "orphan" (fallback temporaire)', () => {
@@ -150,13 +163,13 @@ describe('Transaction mapper', () => {
     expect(row2.account_id).toBe(row.account_id)
   })
 
-  it('row → tx : fallback category="Autre" + envelope="Perso" en 2.A', () => {
+  it('row sans meta (ancien push 2.A) : fallbacks sûrs', () => {
     const row: TransactionRow = {
       id: ACCOUNT_UUID,
       account_id: ACCOUNT_UUID,
       category_id: null,
       amount: 50,
-      kind: 'revenu',
+      kind: 'credit',
       occurred_at: '2026-05-10',
       label: 'Salaire',
       notes: null,
@@ -171,9 +184,8 @@ describe('Transaction mapper', () => {
     expect(t.label).toBe('Salaire')
     expect(t.category).toBe('Autre')
     expect(t.envelope).toBe('Perso')
-    expect(t.member).toBe(USER_ID)
     expect(t.kind).toBe('revenu')
-    expect(typeof t.id).toBe('number') // legacy compatibility 2.A
+    expect(typeof t.id).toBe('number') // hash de secours
   })
 })
 

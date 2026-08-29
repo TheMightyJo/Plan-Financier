@@ -176,7 +176,12 @@ const supabaseAuthErrorMessage = (rawMessage: string): string => {
   return 'Une erreur est survenue. Réessayez.'
 }
 
-export default function AuthScreen() {
+type AuthScreenProps = {
+  /** Si fourni : bouton « Essayer sans compte » qui lance le mode démo. */
+  onTryDemo?: () => void
+}
+
+export default function AuthScreen({ onTryDemo }: AuthScreenProps = {}) {
   const [mode, setMode] = useState<Mode>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -473,6 +478,11 @@ export default function AuthScreen() {
             )}
           </div>
         </form>
+        {onTryDemo ? (
+          <button type="button" className="ghost-button auth-demo-btn" onClick={onTryDemo}>
+            🎬 Essayer sans compte (démo)
+          </button>
+        ) : null}
       </section>
       {legalDoc ? (
         <PrivacyPolicyModal doc={legalDoc} onClose={() => setLegalDoc(null)} />

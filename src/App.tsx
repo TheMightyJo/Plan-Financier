@@ -95,6 +95,8 @@ import { PrivacyPanel } from './components/PrivacyPanel'
 import { PrivacyPolicyModal } from './components/PrivacyPolicyModal'
 import { ProfilePanel } from './components/ProfilePanel'
 import { logAuditEvent } from './lib/auditLog'
+import { pushToCloud, syncWithCloud } from './lib/cloudSync'
+import { shiftMonth } from './lib/calendar'
 import {
   computeConsolidatedBalance,
   balanceByAccountType,
@@ -565,6 +567,9 @@ const normalizeTransaction = (value: unknown, knownProfileIds?: Set<string>): Tr
     date: candidate.date,
     kind: candidate.kind === 'revenu' ? 'revenu' : 'depense',
     envelope,
+    ...(typeof (value as { recurringRuleId?: unknown }).recurringRuleId === 'string'
+      ? { recurringRuleId: (value as { recurringRuleId: string }).recurringRuleId }
+      : {}),
   }
 }
 
@@ -813,6 +818,9 @@ function App() {
   // (saveSensitiveState) — plus aucune lecture depuis la fin des sessions locales.
   const [, setSensitiveState] = useState<SensitiveState>(defaultSensitiveState)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  // Mode démo : visite guidée sans compte — données en mémoire uniquement
+  // (toutes les persistances localStorage sont désactivées tant qu'il est actif).
+  const [demoMode, setDemoMode] = useState(false)
   const [authRole, setAuthRole] = useState<AuthRole>('Parent')
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>(
     () => (window.localStorage.getItem(THEME_STORAGE_KEY) as 'dark' | 'light' | 'system') ?? 'system'
@@ -1360,6 +1368,38 @@ Règles :
     if (transactions.length === 0) {
       setShowFirstTxTour(true)
     }
+  }
+
+  // Entrée en mode démo : jeu de données réaliste, en mémoire seulement.
+  const enterDemoMode = () => {
+    const d = (day: number) => `${currentMonth}-${String(day).padStart(2, '0')}`
+    const demoProfiles: UserProfile[] = [
+      { id: 'demo', name: 'Démo', monthlyBudget: 2200, avatar: 'emoji:💰' },
+    ]
+    const demoTransactions: Transaction[] = [
+      { id: 1, label: 'Salaire', amount: 2450, category: 'Autre', member: 'demo', date: d(2), kind: 'revenu', envelope: 'Perso' },
+      { id: 2, label: 'Loyer', amount: 850, category: 'Maison', member: 'demo', date: d(3), kind: 'depense', envelope: 'Maison' },
+      { id: 3, label: 'Courses Carrefour', amount: 96.4, category: 'Courses', member: 'demo', date: d(4), kind: 'depense', envelope: 'Maison' },
+      { id: 4, label: 'Pass Navigo', amount: 86.4, category: 'Transport', member: 'demo', date: d(5), kind: 'depense', envelope: 'Perso' },
+      { id: 5, label: 'Restaurant entre amis', amount: 54, category: 'Loisirs', member: 'demo', date: d(8), kind: 'depense', envelope: 'Perso' },
+      { id: 6, label: 'Pharmacie', amount: 18.9, category: 'Sante', member: 'demo', date: d(10), kind: 'depense', envelope: 'Maison' },
+      { id: 7, label: 'Courses Lidl', amount: 72.3, category: 'Courses', member: 'demo', date: d(12), kind: 'depense', envelope: 'Maison' },
+      { id: 8, label: 'Essence', amount: 65, category: 'Transport', member: 'demo', date: d(15), kind: 'depense', envelope: 'Perso' },
+      { id: 9, label: 'Cinéma', amount: 24, category: 'Loisirs', member: 'demo', date: d(16), kind: 'depense', envelope: 'Vacances' },
+      { id: 10, label: 'Courses marché', amount: 43.5, category: 'Courses', member: 'demo', date: d(19), kind: 'depense', envelope: 'Maison' },
+      { id: 11, label: 'Électricité', amount: 78, category: 'Maison', member: 'demo', date: d(20), kind: 'depense', envelope: 'Maison' },
+      { id: 12, label: 'Cantine des enfants', amount: 62, category: 'Ecole', member: 'demo', date: d(22), kind: 'depense', envelope: 'Maison' },
+    ]
+    setProfiles(demoProfiles)
+    setSelectedMember('demo')
+    setDefaultProfileId('demo')
+    setTransactions(demoTransactions)
+    setSavingsTargets([
+      { id: 'demo-goal', label: 'Épargne de précaution', targetAmount: 3000, currentSaved: 1450, displayColor: '#3A7D44', member: 'demo' },
+    ])
+    setShowOnboarding(false)
+    setShowFirstTxTour(false)
+    setDemoMode(true)
   }
 
   const skipOnboarding = () => {
@@ -1969,6 +2009,70 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     void initializeSecurity()
   }, [])
 
+  // ── Synchronisation cloud ─────────────────────────────────────
+  // Au login : fusion local↔distant puis convergence. Ensuite : push debouncé
+  // à chaque modification. Réfs pour éviter les courses (état au moment T).
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle')
+  const cloudSyncReadyRef = useRef(false)
+  const cloudPushTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      cloudSyncReadyRef.current = false
+      setCloudSyncStatus('idle')
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const { data } = await supabase.auth.getSession()
+      const userId = data.session?.user.id
+      if (!userId || cancelled) return
+      setCloudSyncStatus('syncing')
+      const report = await syncWithCloud(userId, accounts, transactions, defaultProfileId)
+      if (cancelled) return
+      if (!report.ok) {
+        setCloudSyncStatus('error')
+        return
+      }
+      if (report.transactions && report.transactions.addedFromRemote > 0) {
+        setTransactions(report.transactions.merged)
+      }
+      if (report.accounts && report.accounts.addedFromRemote > 0) {
+        setAccounts(report.accounts.merged)
+      }
+      cloudSyncReadyRef.current = true
+      setCloudSyncStatus('ok')
+      const recovered = (report.transactions?.addedFromRemote ?? 0)
+      if (recovered > 0) {
+        showToast(`☁️ ${recovered} opération${recovered > 1 ? 's' : ''} récupérée${recovered > 1 ? 's' : ''} depuis le cloud`)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // Volontairement déclenché sur le seul login : l'état local du moment sert
+    // de base à la fusion ; les changements suivants passent par le push.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated])
+
+  useEffect(() => {
+    if (!cloudSyncReadyRef.current || !isAuthenticated) return
+    if (cloudPushTimerRef.current !== null) window.clearTimeout(cloudPushTimerRef.current)
+    cloudPushTimerRef.current = window.setTimeout(() => {
+      cloudPushTimerRef.current = null
+      setCloudSyncStatus('syncing')
+      void pushToCloud(accounts, transactions).then((result) => {
+        setCloudSyncStatus(result.ok ? 'ok' : 'error')
+      })
+    }, 2500)
+    return () => {
+      if (cloudPushTimerRef.current !== null) {
+        window.clearTimeout(cloudPushTimerRef.current)
+        cloudPushTimerRef.current = null
+      }
+    }
+  }, [transactions, accounts, isAuthenticated])
+
   // ── Theme ─────────────────────────────────────────────────────
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -2006,21 +2110,24 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return
     }
 
+    if (demoMode) return
     window.localStorage.setItem(
       TRANSACTIONS_STORAGE_KEY,
       JSON.stringify(transactions),
     )
-  }, [transactions])
+  }, [transactions, demoMode])
 
   // Persistance des règles récurrentes (localStorage v1, mappable Supabase plus tard)
   useEffect(() => {
+    if (demoMode) return
     saveRecurringRules(recurringRules)
-  }, [recurringRules])
+  }, [recurringRules, demoMode])
 
   // Persistance des comptes
   useEffect(() => {
+    if (demoMode) return
     saveAccounts(accounts)
-  }, [accounts])
+  }, [accounts, demoMode])
 
   // Migration : transactions sans accountId → compte courant par défaut
   // Auto-stable : après migration toutes les transactions ont un accountId,
@@ -2074,28 +2181,32 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return
     }
 
+    if (demoMode) return
     window.localStorage.setItem(GOALS_STORAGE_KEY, JSON.stringify(savingsGoals))
-  }, [savingsGoals])
+  }, [savingsGoals, demoMode])
 
   useEffect(() => {
+    if (demoMode) return
     saveProfiles(profiles)
-  }, [profiles])
+  }, [profiles, demoMode])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
       return
     }
 
+    if (demoMode) return
     window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, selectedProfileId)
-  }, [selectedProfileId])
+  }, [selectedProfileId, demoMode])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
       return
     }
 
+    if (demoMode) return
     window.localStorage.setItem(DEFAULT_PROFILE_STORAGE_KEY, defaultProfileId)
-  }, [defaultProfileId])
+  }, [defaultProfileId, demoMode])
 
   useEffect(() => {
     if (profiles.some((profile) => profile.id === selectedMember)) {
@@ -2170,8 +2281,9 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return
     }
 
+    if (demoMode) return
     window.localStorage.setItem(ROLLOVER_STORAGE_KEY, JSON.stringify(rolloverState))
-  }, [rolloverState])
+  }, [rolloverState, demoMode])
 
   useEffect(() => {
     if (rolloverState.month === currentMonth) {
@@ -2405,6 +2517,24 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     () => [...activeMonthTransactions].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5),
     [activeMonthTransactions],
   )
+  // Bilan du mois affiché vs mois précédent (carte Accueil).
+  const monthSummary = useMemo(() => {
+    const previousMonth = shiftMonth(selectedMonth, -1)
+    const inMonth = (month: string) => activeTransactions.filter((t) => t.date.startsWith(month))
+    const sum = (list: Transaction[], kind: TransactionKind) =>
+      list.filter((t) => t.kind === kind).reduce((total, t) => total + t.amount, 0)
+    const current = inMonth(selectedMonth)
+    const spent = sum(current, 'depense')
+    const income = sum(current, 'revenu')
+    const previousSpent = sum(inMonth(previousMonth), 'depense')
+    const byCategory = new Map<Category, number>()
+    current
+      .filter((t) => t.kind === 'depense')
+      .forEach((t) => byCategory.set(t.category, (byCategory.get(t.category) ?? 0) + t.amount))
+    const topCategories = [...byCategory.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+    return { spent, income, previousSpent, delta: spent - previousSpent, topCategories }
+  }, [activeTransactions, selectedMonth])
+
   const primarySavingsTarget = savingsTargets[0] ?? null
   const primarySavingsProgress = primarySavingsTarget
     ? Math.min(100, Math.round(((primarySavingsTarget.currentSaved ?? 0) / primarySavingsTarget.targetAmount) * 100))
@@ -2605,13 +2735,22 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
 
     goalProgress.forEach((goal) => {
-      if (goal.rate >= 100) {
-        alerts.push({ message: `Objectif ${goal.category} dépassé pour ${selectedProfileName}.`, level: 'danger' })
+      if (goal.target <= 0) return
+      if (goal.spent > goal.target) {
+        alerts.push({
+          message: `${goal.category} : ${Math.round(goal.spent)} € dépensés — budget de ${Math.round(goal.target)} € dépassé.`,
+          level: 'danger',
+        })
+      } else if (goal.rate >= 85) {
+        alerts.push({
+          message: `${goal.category} : ${Math.round(goal.spent)} € sur ${Math.round(goal.target)} € (${goal.rate.toFixed(0)}%).`,
+          level: 'warning',
+        })
       }
     })
 
     return alerts.slice(0, 5)
-  }, [activeMonthTransactions, envelopeBreakdown, goalProgress, monthlyExpense, selectedProfileName, usageRate])
+  }, [activeMonthTransactions, envelopeBreakdown, goalProgress, monthlyExpense, usageRate])
 
   const annualTrendData = useMemo(() => {
     const now = new Date()
@@ -3934,12 +4073,20 @@ Réponse attendue:
     )
   }
 
-  if (!isAuthenticated) {
-    return <AuthScreen />
+  if (!isAuthenticated && !demoMode) {
+    return <AuthScreen onTryDemo={enterDemoMode} />
   }
 
   return (
     <>
+    {demoMode ? (
+      <div className="demo-banner" role="status">
+        <span>🎬 Mode démo — explorez librement, rien n'est enregistré.</span>
+        <button type="button" onClick={() => window.location.reload()}>
+          Quitter la démo
+        </button>
+      </div>
+    ) : null}
     {/* ── Onboarding wizard (première utilisation) ──────────────────── */}
     {showOnboarding ? (
       <div className="onboarding-overlay" role="dialog" aria-modal="true" aria-label="Configuration initiale">
@@ -4265,7 +4412,6 @@ Réponse attendue:
           </div>
           <p className="side-menu-profiles__name">{selectedProfile.name}</p>
         </div>
-        <p className="eyebrow">Navigation</p>
         <nav>
           {navItems.map((item) => (
             <button
@@ -4279,6 +4425,23 @@ Réponse attendue:
           ))}
         </nav>
         <div className="side-menu-footer">
+          <p
+            className={`cloud-sync-badge cloud-sync-badge--${cloudSyncStatus}`}
+            title={
+              cloudSyncStatus === 'ok'
+                ? 'Vos données sont synchronisées dans le cloud.'
+                : cloudSyncStatus === 'syncing'
+                ? 'Synchronisation en cours…'
+                : cloudSyncStatus === 'error'
+                ? 'Synchronisation impossible — vos données restent enregistrées sur cet appareil.'
+                : 'Synchronisation en attente de connexion.'
+            }
+          >
+            {cloudSyncStatus === 'ok' && '☁️ Synchronisé'}
+            {cloudSyncStatus === 'syncing' && '☁️ Synchronisation…'}
+            {cloudSyncStatus === 'error' && '☁️ Hors ligne'}
+            {cloudSyncStatus === 'idle' && '☁️ En attente'}
+          </p>
           <button
             type="button"
             className="side-menu-settings-btn"
@@ -4374,8 +4537,11 @@ Réponse attendue:
             </div>
           </div>
           {primarySavingsTarget ? (
-            <div className="kpi-card kpi-card--accent">
-              <div className="kpi-card-label">{primarySavingsTarget.label}</div>
+            <div className={`kpi-card kpi-card--accent${primarySavingsProgress >= 100 ? ' kpi-card--celebrate' : ''}`}>
+              <div className="kpi-card-label">
+                {primarySavingsTarget.label}
+                {primarySavingsProgress >= 100 ? <span className="kpi-celebrate-emoji" aria-hidden="true"> 🎉</span> : null}
+              </div>
               <div className="kpi-card-value">{euroFormatter.format(primarySavingsTarget.targetAmount)}</div>
               <div className="kpi-card-change">
                 <span className="kpi-progress-track" aria-hidden="true">
@@ -4423,7 +4589,10 @@ Réponse attendue:
             {recentTransactions.map((tx) => (
               <li key={tx.id}>
                 <span className="recent-tx-dot" style={{ background: categoryColors[tx.category] }} aria-hidden="true" />
-                <span className="recent-tx-label">{tx.label}</span>
+                <span className="recent-tx-label">
+                  {tx.label}
+                  {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
+                </span>
                 <span className="recent-tx-meta">
                   {new Date(`${tx.date}T12:00:00`).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })} · {tx.category}
                 </span>
@@ -4433,6 +4602,42 @@ Réponse attendue:
               </li>
             ))}
           </ul>
+        </section>
+        ) : null}
+
+        {isActiveView('overview') && (monthSummary.spent > 0 || monthSummary.income > 0) ? (
+        <section className="glass-card month-summary-card" aria-label="Bilan du mois">
+          <div className="panel-title">
+            <h2>Bilan · {formatMonth(selectedMonth)}</h2>
+          </div>
+          <div className="month-summary-rows">
+            <div className="month-summary-row">
+              <span>Dépensé</span>
+              <strong className="month-summary-spent">−{euroFormatter.format(monthSummary.spent)}</strong>
+              {monthSummary.previousSpent > 0 ? (
+                <small className={monthSummary.delta > 0 ? 'negative' : 'positive'}>
+                  {monthSummary.delta > 0 ? '+' : ''}{euroFormatter.format(monthSummary.delta)} vs mois dernier
+                </small>
+              ) : null}
+            </div>
+            <div className="month-summary-row">
+              <span>Reçu</span>
+              <strong className="month-summary-income">+{euroFormatter.format(monthSummary.income)}</strong>
+            </div>
+            {monthSummary.topCategories.length > 0 ? (
+              <div className="month-summary-row month-summary-row--cats">
+                <span>Top catégories</span>
+                <div className="month-summary-cats">
+                  {monthSummary.topCategories.map(([category, total]) => (
+                    <span key={category} className="month-summary-cat">
+                      <span className="recent-tx-dot" style={{ background: categoryColors[category] }} aria-hidden="true" />
+                      {category} · {euroFormatter.format(total)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
         </section>
         ) : null}
 
@@ -5196,7 +5401,10 @@ Réponse attendue:
                   }
                 >
                   <div>
-                    <p>{item.label}</p>
+                    <p>
+                      {item.label}
+                      {item.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
+                    </p>
                     <small>
                       {item.date} · {item.category} · {item.envelope}
                     </small>
