@@ -9150,3 +9150,62 @@ h1 {
   .family-tx-list .recent-tx-meta { display: none; }
   .family-tx-list li { grid-template-columns: auto auto minmax(0, 1fr) auto; }
 }
+
+/* Liste des invitations envoyées (carte « Inviter un proche »). */
+.sent-invites-list {
+  list-style: none;
+  margin: 0.8rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.sent-invites-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  background: var(--surface-soft);
+}
+
+.sent-invite-info {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sent-invite-info strong {
+  display: block;
+  color: var(--text-1);
+  font-size: var(--text-sm);
+}
+
+.sent-invite-info small {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.sent-invite-status {
+  font-size: var(--text-2xs);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--kpi-warn);
+  white-space: nowrap;
+}
+
+.sent-invite-status--ok {
+  color: var(--kpi-positive);
+}
+
+.sent-invite-btn {
+  min-height: 2rem;
+  padding: 0.3rem 0.7rem;
+  font-size: var(--text-xs);
+}
+
+.sent-invite-btn--danger {
+  color: var(--danger);
+}

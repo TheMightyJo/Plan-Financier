@@ -98,10 +98,13 @@ import { logAuditEvent } from './lib/auditLog'
 import { pushToCloud, syncWithCloud } from './lib/cloudSync'
 import {
   acceptInvite,
+  cancelSentInvite,
   listFamilyPeers,
   listPendingInvites,
+  listSentInvites,
   type FamilyInvite,
   type FamilyPeer,
+  type SentInvite,
 } from './repos/familyRepo'
 import { FamilyView } from './components/FamilyView'
 import { shiftMonth } from './lib/calendar'
@@ -819,6 +822,9 @@ function App() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteFeedback, setInviteFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  const [sentInvites, setSentInvites] = useState<SentInvite[]>([])
+  // Cadre de relance : 1× par 24 h et par invitation (horodatage local).
+  const [relanceTick, setRelanceTick] = useState(0)
   const navItems = useMemo(
     () => [
       { id: 'overview',    label: '🏠 Accueil' },
@@ -2100,14 +2106,78 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
   // Chargement des infos famille au login (pairs + invitations en attente).
   const refreshFamily = async () => {
-    const [peers, invites, session] = await Promise.all([
+    const [peers, invites, sent, session] = await Promise.all([
       listFamilyPeers(),
       listPendingInvites(),
+      listSentInvites(),
       supabase.auth.getSession(),
     ])
     setFamilyPeers(peers)
     setPendingInvites(invites)
+    setSentInvites(sent)
     setMyUserId(session.data.session?.user.id ?? '')
+  }
+
+  const RELANCE_COOLDOWN_MS = 24 * 60 * 60 * 1000
+  const relanceKey = (membershipId: string) => `plan-financier-relance-${membershipId}`
+  // Disponibilité des relances, calculée hors rendu (horloge + localStorage) et
+  // rafraîchie via relanceTick après chaque relance.
+  const relanceInfo = useMemo(() => {
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now()
+    return new Map(
+      sentInvites.map((invite) => {
+        const raw = window.localStorage.getItem(relanceKey(invite.membershipId))
+        const availableAt = (raw ? Number(raw) : 0) + RELANCE_COOLDOWN_MS
+        return [
+          invite.membershipId,
+          {
+            canRelance: now >= availableAt,
+            hoursLeft: Math.max(1, Math.ceil((availableAt - now) / 3_600_000)),
+          },
+        ] as const
+      }),
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sentInvites, relanceTick])
+
+  const handleResendInvite = async (invite: SentInvite) => {
+    if (inviteBusy) return
+    setInviteBusy(true)
+    setInviteFeedback(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('invite-family-member', {
+        body: { email: invite.email, action: 'resend' },
+      })
+      if (error || !data?.ok) {
+        setInviteFeedback({ kind: 'error', text: `La relance vers ${invite.email} a échoué — réessayez plus tard.` })
+      } else if (data.outcome === 'already_active') {
+        setInviteFeedback({
+          kind: 'ok',
+          text: `${invite.email} a déjà activé son compte : l'invitation l'attend à sa prochaine connexion (aucun email renvoyé).`,
+        })
+      } else {
+        window.localStorage.setItem(relanceKey(invite.membershipId), String(Date.now()))
+        setRelanceTick((tick) => tick + 1)
+        setInviteFeedback({ kind: 'ok', text: `📨 Invitation renvoyée à ${invite.email}.` })
+        showToast(`📨 Relance envoyée à ${invite.email}`)
+        await refreshFamily()
+      }
+    } catch {
+      setInviteFeedback({ kind: 'error', text: 'La relance a échoué (fonction indisponible).' })
+    } finally {
+      setInviteBusy(false)
+    }
+  }
+
+  const handleCancelInvite = async (invite: SentInvite) => {
+    const ok = await cancelSentInvite(invite.membershipId)
+    if (ok) {
+      showToast(`Invitation de ${invite.email} annulée`)
+      await refreshFamily()
+    } else {
+      setInviteFeedback({ kind: 'error', text: "L'annulation a échoué — réessayez." })
+    }
   }
 
   useEffect(() => {
@@ -4974,6 +5044,47 @@ Réponse attendue:
                           <p className={inviteFeedback.kind === 'ok' ? 'auth-success' : 'auth-error'}>
                             {inviteFeedback.text}
                           </p>
+                        ) : null}
+                        {sentInvites.length > 0 ? (
+                          <ul className="sent-invites-list" data-relance-tick={relanceTick}>
+                            {sentInvites.map((invite) => {
+                              const info = relanceInfo.get(invite.membershipId)
+                              const canRelance = info?.canRelance ?? true
+                              const hoursLeft = info?.hoursLeft ?? 1
+                              return (
+                                <li key={invite.membershipId}>
+                                  <div className="sent-invite-info">
+                                    <strong>{invite.displayName}</strong>
+                                    <small>{invite.email}</small>
+                                  </div>
+                                  {invite.accepted ? (
+                                    <span className="sent-invite-status sent-invite-status--ok">A rejoint ✓</span>
+                                  ) : (
+                                    <>
+                                      <span className="sent-invite-status">En attente</span>
+                                      <button
+                                        type="button"
+                                        className="ghost-button sent-invite-btn"
+                                        onClick={() => void handleResendInvite(invite)}
+                                        disabled={inviteBusy || !canRelance}
+                                        title={canRelance ? 'Renvoyer l\'email d\'invitation' : `Relance possible dans ${hoursLeft} h (1 relance par 24 h)`}
+                                      >
+                                        {canRelance ? 'Relancer' : `Relancé — ${hoursLeft} h`}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="ghost-button sent-invite-btn sent-invite-btn--danger"
+                                        onClick={() => void handleCancelInvite(invite)}
+                                        disabled={inviteBusy}
+                                      >
+                                        Annuler
+                                      </button>
+                                    </>
+                                  )}
+                                </li>
+                              )
+                            })}
+                          </ul>
                         ) : null}
                       </div>
                     </article>

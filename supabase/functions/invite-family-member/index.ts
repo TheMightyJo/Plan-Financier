@@ -62,10 +62,12 @@ Deno.serve(async (req) => {
   }
   const inviter = userData.user
 
-  let email = ''
+  let email: string
+  let action: 'invite' | 'resend' = 'invite'
   try {
     const body = await req.json()
     email = String(body.email ?? '').trim().toLowerCase()
+    if (body.action === 'resend') action = 'resend'
   } catch {
     return json(400, { error: 'invalid_body' })
   }
@@ -106,6 +108,28 @@ Deno.serve(async (req) => {
       return json(500, { error: 'group_creation_failed', detail: groupError?.message })
     }
     groupId = createdGroup.id
+  }
+
+  // Relance : possible uniquement si l'invité n'a JAMAIS activé son compte
+  // (on recrée l'invitation, ce qui renvoie l'email). Sinon, rien à envoyer.
+  if (action === 'resend') {
+    const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+      type: 'magiclink',
+      email,
+    })
+    if (linkError || !linkData?.user) {
+      return json(404, { error: 'user_not_found' })
+    }
+    const target = linkData.user
+    if (target.email_confirmed_at && target.last_sign_in_at) {
+      return json(200, { ok: true, outcome: 'already_active' })
+    }
+    // Compte jamais activé : suppression + ré-invitation (nouvel email envoyé).
+    const { error: deleteError } = await admin.auth.admin.deleteUser(target.id)
+    if (deleteError) {
+      return json(500, { error: 'resend_failed', detail: deleteError.message })
+    }
+    // La suite du flux (invite + membership) recrée tout proprement.
   }
 
   // 3. Utilisateur invité : email d'invitation (nouveau) ou compte existant

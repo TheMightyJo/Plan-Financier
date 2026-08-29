@@ -38,6 +38,37 @@ export const acceptInvite = async (membershipId: string): Promise<boolean> => {
   return !error
 }
 
+export type SentInvite = {
+  membershipId: string
+  email: string
+  displayName: string
+  invitedAt: string
+  accepted: boolean
+}
+
+/** Invitations que J'AI envoyées (groupes dont je suis propriétaire). */
+export const listSentInvites = async (): Promise<SentInvite[]> => {
+  if (!isSupabaseConfigured()) return []
+  const { data, error } = await supabase.rpc('family_sent_invites')
+  if (error || !data) return []
+  return (data as Array<Record<string, string | null>>).map((row) => ({
+    membershipId: row.membership_id ?? '',
+    email: row.invited_email ?? '',
+    displayName: row.display_name ?? row.invited_email ?? 'Invité·e',
+    invitedAt: row.invited_at ?? '',
+    accepted: row.accepted_at !== null,
+  }))
+}
+
+/** Annule une invitation (le propriétaire supprime la membership). */
+export const cancelSentInvite = async (membershipId: string): Promise<boolean> => {
+  const { error } = await supabase
+    .from('family_memberships')
+    .delete()
+    .eq('id', membershipId)
+  return !error
+}
+
 /** Membres acceptés de ma famille (moi inclus), avec noms d'affichage. */
 export const listFamilyPeers = async (): Promise<FamilyPeer[]> => {
   if (!isSupabaseConfigured()) return []
