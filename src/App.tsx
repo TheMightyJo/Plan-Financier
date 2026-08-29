@@ -2131,9 +2131,23 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
         body: { email },
       })
       if (error || !data?.ok) {
+        // La fonction renvoie { error, detail } dans le corps même en 4xx/5xx :
+        // on le lit pour afficher la vraie cause au lieu d'un message générique.
+        let detail = ''
+        const context = (error as { context?: Response } | null)?.context
+        if (context && typeof context.json === 'function') {
+          try {
+            const body = (await context.json()) as { error?: string; detail?: string }
+            detail = [body.error, body.detail].filter(Boolean).join(' — ')
+          } catch {
+            /* corps illisible */
+          }
+        }
         setInviteFeedback({
           kind: 'error',
-          text: "L'invitation n'a pas pu partir. Vérifiez l'adresse, ou réessayez plus tard.",
+          text: detail
+            ? `L'invitation n'a pas pu partir : ${detail}`
+            : "L'invitation n'a pas pu partir. Vérifiez l'adresse, ou réessayez plus tard.",
         })
       } else if (data.outcome === 'invited_new_user') {
         setInviteFeedback({
