@@ -2154,12 +2154,14 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
           kind: 'ok',
           text: `✅ Invitation envoyée à ${email} — cette personne va recevoir un email pour créer son compte.`,
         })
+        showToast(`📨 Invitation envoyée à ${email}`)
         setInviteEmail('')
       } else {
         setInviteFeedback({
           kind: 'ok',
           text: `✅ ${email} a déjà un compte : l'invitation lui sera proposée à sa prochaine connexion.`,
         })
+        showToast(`🤝 ${email} sera invité·e à sa prochaine connexion`)
         setInviteEmail('')
       }
     } catch {
