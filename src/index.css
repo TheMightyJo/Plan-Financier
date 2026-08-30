@@ -4909,8 +4909,16 @@ h1 {
      défile en interne (sinon la zone de question devient inaccessible). */
   max-height: calc(100vh - 2rem);
   max-height: calc(100dvh - 2rem);
+  /* Pas de barre visible : les réponses sont contraintes pour tenir ;
+     le défilement ne sert que d'ultime filet de sécurité. */
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
   overscroll-behavior: contain;
+}
+
+.dashboard-right-rail::-webkit-scrollbar {
+  display: none;
 }
 
 .budget-advice-rail {
