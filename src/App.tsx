@@ -6448,6 +6448,7 @@ Réponse attendue:
               <button type="button" className="auth-rgpd-link" onClick={() => setLegalDoc('privacy')}>
                 Politique de confidentialité &amp; mentions légales
               </button>
+              <span className="settings-legal-credit"> · Fait par ProtoJo Digital</span>
             </footer>
           </section>
         </div>

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { PrivacyPolicyModal } from './PrivacyPolicyModal'
 
 type Props = {
   /** Ouvre l'écran de connexion / inscription. */
@@ -107,6 +108,7 @@ const FAQ = [
 
 export function LandingPage({ onLogin, onTryDemo }: Props) {
   const [openFaq, setOpenFaq] = useState<number | null>(null)
+  const [legalDoc, setLegalDoc] = useState<'terms' | 'privacy' | null>(null)
 
   return (
     <div className="landing">
@@ -246,9 +248,19 @@ export function LandingPage({ onLogin, onTryDemo }: Props) {
       </section>
 
       <footer className="landing-footer">
-        <span>💰 Plan Financier</span>
-        <span>Fait en France 🇫🇷 · Vos données restent les vôtres</span>
+        <div className="landing-footer-brand">
+          <span>💰 Plan Financier</span>
+          <span>Fait en France 🇫🇷 par <strong>ProtoJo Digital</strong></span>
+        </div>
+        <nav className="landing-footer-links" aria-label="Liens légaux">
+          <button type="button" onClick={() => setLegalDoc('terms')}>Conditions d'utilisation</button>
+          <button type="button" onClick={() => setLegalDoc('privacy')}>
+            Mentions légales · Confidentialité · Cookies
+          </button>
+        </nav>
       </footer>
+
+      {legalDoc ? <PrivacyPolicyModal doc={legalDoc} onClose={() => setLegalDoc(null)} /> : null}
     </div>
   )
 }
