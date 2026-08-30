@@ -6675,12 +6675,24 @@ h1 {
 
 .settings-section-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
+  /* auto-fit : une carte seule occupe toute la largeur, deux cartes se
+     partagent l'espace — plus de moitié droite vide. */
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+  gap: 1.1rem;
 }
 
 .settings-section-card {
-  padding: 1rem;
+  padding: 1.35rem 1.5rem;
+}
+
+/* Respiration des formulaires et rangées d'actions dans les Paramètres. */
+.settings-section-card form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.settings-inline-actions {
+  gap: 0.75rem;
 }
 
 /* Titre + sous-titre empilés dans toutes les cartes de paramètres (le flex
@@ -6798,15 +6810,15 @@ h1 {
 
 .theme-picker {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
 }
 
 /* Sélecteur de palette d'accent. */
 .palette-picker {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0.75rem;
 }
 
 .palette-option {
