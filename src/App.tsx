@@ -8377,6 +8377,7 @@ Réponse attendue:
                   disabled={chatLoading}
                 >
                   <Trash2 size={14} />
+                  <span>Effacer</span>
                 </button>
               ) : null}
             </div>
