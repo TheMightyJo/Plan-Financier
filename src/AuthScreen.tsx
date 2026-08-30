@@ -322,12 +322,6 @@ export default function AuthScreen({ onTryDemo }: AuthScreenProps = {}) {
       <FloatingBg />
       <section className="glass-card auth-card">
 
-        <div className="auth-brand">
-          <div className="auth-brand-icon">
-            <img src="/logo.png" alt="Logo FP" />
-          </div>
-        </div>
-
         {!supabaseReady ? (
           <div className="auth-config-banner" role="alert">
             <strong>Configuration requise.</strong>
