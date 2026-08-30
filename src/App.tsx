@@ -83,7 +83,7 @@ import {
   MONEY_AVATAR_PRESETS,
   readAndResizeImage,
 } from './lib/avatar'
-import { isValidTxIcon, suggestMerchantIcon } from './lib/merchantIcons'
+import { isValidTxIcon, suggestMerchantDomain, suggestMerchantIcon } from './lib/merchantIcons'
 import { generateDueTransactions, getOccurrencesBetween } from './lib/recurring'
 import { loadRecurringRules, saveRecurringRules } from './repos/recurringRulesRepo'
 import { RecurringRulesPanel } from './components/RecurringRulesPanel'
@@ -109,6 +109,7 @@ import {
 } from './repos/familyRepo'
 import { FamilyView } from './components/FamilyView'
 import { GroupedSearchSelect } from './components/GroupedSearchSelect'
+import { MerchantLogo } from './components/MerchantLogo'
 import { NotesView, type ExtractedTx, type NoteItem } from './components/NotesView'
 import {
   defaultReportPrefs,
@@ -5284,8 +5285,8 @@ Réponse attendue:
                   onClick={() => openQuickEdit(tx)}
                   aria-label={`Modifier ${tx.label}`}
                 >
-                  {tx.icon ? (
-                    <span className="tx-merchant-icon" aria-hidden="true">{tx.icon}</span>
+                  {tx.icon || suggestMerchantDomain(tx.label) ? (
+                    <MerchantLogo label={tx.label} fallbackIcon={tx.icon} />
                   ) : (
                     <span className="recent-tx-dot" style={{ background: colorForCategory(tx.category) }} aria-hidden="true" />
                   )}
@@ -6428,7 +6429,7 @@ Réponse attendue:
                 >
                   <div>
                     <p>
-                      {item.icon ? <span className="tx-merchant-icon" aria-hidden="true">{item.icon}</span> : null}
+                      <MerchantLogo label={item.label} fallbackIcon={item.icon} />
                       {item.label}
                       {item.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
                     </p>
@@ -7764,7 +7765,7 @@ Réponse attendue:
             <ul className="ops-rail__list">
               {topExpensesMonth.map((tx) => (
                 <li key={tx.id}>
-                  <span className="ops-rail__icon" aria-hidden="true">{tx.icon ?? '💳'}</span>
+                  <MerchantLogo label={tx.label} fallbackIcon={tx.icon ?? '💳'} className="ops-rail__icon" />
                   <span className="ops-rail__label">
                     {tx.label}
                     <small>{tx.category}</small>

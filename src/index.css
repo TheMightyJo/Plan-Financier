@@ -10192,3 +10192,14 @@ h1 {
 .quick-add-modal--revenu {
   background: color-mix(in srgb, var(--bg-2) 80%, #3A7D44) !important;
 }
+
+/* ── Logos de marchands (favicons officiels) ──────────────────────── */
+.merchant-logo {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0.3rem;
+  object-fit: contain;
+  vertical-align: -0.2em;
+  background: #fff;
+  flex-shrink: 0;
+}
