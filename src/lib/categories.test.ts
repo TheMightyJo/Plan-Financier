@@ -36,7 +36,15 @@ describe('inferEnvelope', () => {
 
   it('Reste → enveloppe Perso', () => {
     expect(inferEnvelope('Transport')).toBe('Perso')
-    expect(inferEnvelope('Ecole')).toBe('Perso')
     expect(inferEnvelope('Sante')).toBe('Perso')
+    expect(inferEnvelope('Catégorie inconnue')).toBe('Perso')
+  })
+
+  it('Grand catalogue → poche du groupe', () => {
+    expect(inferEnvelope('Ecole')).toBe('Enfants')
+    expect(inferEnvelope("Garde d'enfants")).toBe('Enfants')
+    expect(inferEnvelope('Loyer / Crédit immobilier')).toBe('Maison')
+    expect(inferEnvelope('Abonnements & streaming')).toBe('Vacances')
+    expect(inferEnvelope('Épargne & investissement')).toBe('Épargne')
   })
 })

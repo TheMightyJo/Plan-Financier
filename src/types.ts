@@ -14,16 +14,16 @@ export type UserProfile = {
 
 export type TransactionKind = 'depense' | 'revenu'
 
-export type Category =
-  | 'Courses'
-  | 'Transport'
-  | 'Ecole'
-  | 'Loisirs'
-  | 'Sante'
-  | 'Maison'
-  | 'Autre'
+/**
+ * Catégorie d'une opération. Chaîne libre depuis l'introduction du grand
+ * catalogue (cf. src/lib/categories.ts) — les 7 catégories historiques
+ * (Courses, Transport, Ecole, Loisirs, Sante, Maison, Autre) restent les
+ * « principales » utilisées par les objectifs et les graphiques.
+ */
+export type Category = string
 
-export type Envelope = 'Perso' | 'Maison' | 'Vacances'
+/** Poche budgétaire — chaîne libre (catalogue dans src/lib/categories.ts). */
+export type Envelope = string
 
 export type Transaction = {
   id: number

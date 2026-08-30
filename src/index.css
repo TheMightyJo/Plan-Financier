@@ -9924,3 +9924,44 @@ h1 {
 .quick-add-modal--revenu .quick-add-form button[type='submit'] {
   color: #fff;
 }
+
+/* ── Sélecteur groupé avec recherche (Catégorie / Poche) ──────────── */
+.grouped-select {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.grouped-select__search {
+  width: 100%;
+  border-radius: 0.6rem;
+  border: 1px solid var(--border-soft);
+  background: var(--field-bg);
+  color: var(--text-1);
+  padding: 0.4rem 0.55rem;
+  font-size: var(--text-xs);
+  outline: none;
+}
+
+.grouped-select__search:focus {
+  border-color: rgba(var(--accent-rgb), 0.7);
+}
+
+.grouped-select select {
+  width: 100%;
+}
+
+.grouped-select select[size] {
+  border-radius: 0.6rem;
+  padding: 0.3rem;
+}
+
+.grouped-select select optgroup {
+  font-weight: 800;
+  color: var(--text-2);
+}
+
+.grouped-select__empty {
+  color: var(--text-2);
+  font-size: var(--text-2xs);
+}

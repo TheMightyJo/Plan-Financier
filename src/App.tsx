@@ -108,6 +108,7 @@ import {
   type SentInvite,
 } from './repos/familyRepo'
 import { FamilyView } from './components/FamilyView'
+import { GroupedSearchSelect } from './components/GroupedSearchSelect'
 import { NotesView, type ExtractedTx, type NoteItem } from './components/NotesView'
 import {
   defaultReportPrefs,
@@ -131,8 +132,12 @@ import {
 import { ACCOUNT_TYPE_LABELS } from './types'
 import type { Account, RecurringFrequency, RecurringRule } from './types'
 import {
+  ENVELOPE_GROUPS,
+  EXPENSE_CATEGORY_GROUPS,
+  INCOME_CATEGORY_GROUPS,
+  allExpenseCategories,
   categories,
-  categoryColors,
+  colorForCategory,
   envelopes,
   envelopeColors,
   inferEnvelope,
@@ -612,15 +617,13 @@ const normalizeTransaction = (value: unknown, knownProfileIds?: Set<string>): Tr
     legacyMember === 'moi' && !knownProfileIds?.has('moi')
       ? defaultProfile.id
       : sanitizeProfileId(candidate.member)
-  const category = categories.includes(candidate.category as Category)
-    ? (candidate.category as Category)
-    : 'Autre'
+  // Catégorie/poche : chaînes libres depuis le grand catalogue — on borne
+  // juste la longueur et on retombe sur un défaut si vide.
+  const category = candidate.category.trim() ? candidate.category.trim().slice(0, 60) : 'Autre'
   const rawEnvelopeValue = (value as { envelope?: unknown }).envelope
-  const rawEnvelope = typeof rawEnvelopeValue === 'string' ? rawEnvelopeValue : undefined
-  const normalizedEnvelope = rawEnvelope === 'Fille' ? undefined : rawEnvelope
-  const envelope = envelopes.includes(normalizedEnvelope as Envelope)
-    ? (normalizedEnvelope as Envelope)
-    : inferEnvelope(category)
+  const rawEnvelope = typeof rawEnvelopeValue === 'string' ? rawEnvelopeValue.trim() : ''
+  const normalizedEnvelope = rawEnvelope === 'Fille' ? '' : rawEnvelope
+  const envelope = normalizedEnvelope ? normalizedEnvelope.slice(0, 60) : inferEnvelope(category)
 
   return {
     id: candidate.id,
@@ -3406,7 +3409,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 120,
           system:
-            'Tu classes une dépense de budget familial français. Réponds UNIQUEMENT un objet JSON de la forme {"category": "...", "tags": ["..."], "icon": "🛒"} sans autre texte. category doit être exactement une valeur parmi: Courses, Transport, Ecole, Loisirs, Sante, Maison, Autre. tags: 0 à 3 étiquettes courtes en minuscules, utiles et non redondantes avec la catégorie, sinon tableau vide. icon: UN SEUL emoji représentant au mieux le marchand ou la dépense (jamais de texte).',
+            'Tu classes une dépense de budget familial français. Réponds UNIQUEMENT un objet JSON de la forme {"category": "...", "tags": ["..."], "icon": "🛒"} sans autre texte. category doit être exactement une valeur parmi: ' + allExpenseCategories.join(', ') + '. tags: 0 à 3 étiquettes courtes en minuscules, utiles et non redondantes avec la catégorie, sinon tableau vide. icon: UN SEUL emoji représentant au mieux le marchand ou la dépense (jamais de texte).',
           messages: [{ role: 'user', content: label }],
         }),
       })
@@ -3417,7 +3420,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       if (!match) return
       const parsed = JSON.parse(match[0]) as { category?: string; tags?: unknown; icon?: unknown }
       if (isValidTxIcon(parsed.icon)) quickAddAiIconRef.current = parsed.icon
-      const aiCategory = categories.includes(parsed.category as Category)
+      const aiCategory = allExpenseCategories.includes(parsed.category as string)
         ? (parsed.category as Category)
         : null
       const aiTags = Array.isArray(parsed.tags)
@@ -3827,7 +3830,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     goalProgress.slice(0, 5).forEach((goal, index) => {
       const y = 108 + index * 14
       const barWidth = Math.min(120, (goal.spent / Math.max(goal.target, 1)) * 120)
-      const color = categoryColors[goal.category]
+      const color = colorForCategory(goal.category)
       const rgb = color.match(/[0-9a-f]{2}/gi)?.map((value) => parseInt(value, 16)) ?? [
         TERRE[0],
         TERRE[1],
@@ -5163,7 +5166,7 @@ Réponse attendue:
                   {tx.icon ? (
                     <span className="tx-merchant-icon" aria-hidden="true">{tx.icon}</span>
                   ) : (
-                    <span className="recent-tx-dot" style={{ background: categoryColors[tx.category] }} aria-hidden="true" />
+                    <span className="recent-tx-dot" style={{ background: colorForCategory(tx.category) }} aria-hidden="true" />
                   )}
                   <span className="recent-tx-label">
                     {tx.label}
@@ -5210,7 +5213,7 @@ Réponse attendue:
                 <div className="month-summary-cats">
                   {monthSummary.topCategories.map(([category, total]) => (
                     <span key={category} className="month-summary-cat">
-                      <span className="recent-tx-dot" style={{ background: categoryColors[category] }} aria-hidden="true" />
+                      <span className="recent-tx-dot" style={{ background: colorForCategory(category) }} aria-hidden="true" />
                       {category} · {euroFormatter.format(total)}
                     </span>
                   ))}
@@ -7538,7 +7541,7 @@ Réponse attendue:
                   paddingAngle={3}
                 >
                   {pieData.map((entry) => (
-                    <Cell key={entry.name} fill={categoryColors[entry.name as Category]} />
+                    <Cell key={entry.name} fill={colorForCategory(entry.name)} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(value) => formatTooltipValue(value)} />
@@ -8079,7 +8082,13 @@ Réponse attendue:
                 role="radio"
                 aria-checked={quickAddForm.kind === 'depense'}
                 className={`quick-add-kind__option${quickAddForm.kind === 'depense' ? ' quick-add-kind__option--active' : ''}`}
-                onClick={() => setQuickAddForm((previous) => ({ ...previous, kind: 'depense' }))}
+                onClick={() =>
+                  setQuickAddForm((previous) => ({
+                    ...previous,
+                    kind: 'depense',
+                    category: quickAddTouchedRef.current.category ? previous.category : 'Courses',
+                  }))
+                }
               >
                 💸 Dépense
               </button>
@@ -8092,7 +8101,7 @@ Réponse attendue:
                   setQuickAddForm((previous) => ({
                     ...previous,
                     kind: 'revenu',
-                    category: quickAddTouchedRef.current.category ? previous.category : 'Autre',
+                    category: quickAddTouchedRef.current.category ? previous.category : 'Salaire',
                   }))
                 }
               >
@@ -8151,28 +8160,26 @@ Réponse attendue:
                 ) : quickAddAiApplied ? (
                   <small className="quick-add-hint"> ✨ suggéré par l'IA — modifiable</small>
                 ) : null}
-                <select
+                <GroupedSearchSelect
                   value={quickAddForm.category}
-                  onChange={(event) => {
+                  groups={quickAddForm.kind === 'revenu' ? INCOME_CATEGORY_GROUPS : EXPENSE_CATEGORY_GROUPS}
+                  onChange={(category) => {
                     quickAddTouchedRef.current.category = true
-                    setQuickAddForm((previous) => ({ ...previous, category: event.target.value as Category }))
+                    setQuickAddForm((previous) => ({ ...previous, category }))
                   }}
-                >
-                  {categories.map((category) => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
+                  searchPlaceholder="Rechercher une catégorie…"
+                  selectAriaLabel="Catégorie"
+                />
               </label>
               <label>
                 Poche
-                <select
+                <GroupedSearchSelect
                   value={quickAddForm.envelope}
-                  onChange={(event) => setQuickAddForm((previous) => ({ ...previous, envelope: event.target.value as Envelope }))}
-                >
-                  {envelopes.map((envelope) => (
-                    <option key={envelope} value={envelope}>{envelope}</option>
-                  ))}
-                </select>
+                  groups={ENVELOPE_GROUPS}
+                  onChange={(envelope) => setQuickAddForm((previous) => ({ ...previous, envelope }))}
+                  searchPlaceholder="Rechercher une poche…"
+                  selectAriaLabel="Poche"
+                />
               </label>
             </div>
             <label>

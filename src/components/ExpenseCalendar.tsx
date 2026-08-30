@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { buildMonthGrid, shiftDay, shiftMonth } from '../lib/calendar'
 import { getOccurrencesBetween } from '../lib/recurring'
 import { euroFormatter } from '../lib/format'
-import { categoryColors } from '../lib/categories'
+import { colorForCategory } from '../lib/categories'
 import type { RecurringRule, Transaction } from '../types'
 
 type CalendarView = 'day' | 'month' | 'year'
@@ -270,7 +270,7 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
             <ul className="expense-calendar__day-list">
               {dayTransactions.map((tx) => (
                 <li key={tx.id}>
-                  <span className="recent-tx-dot" style={{ background: categoryColors[tx.category] }} aria-hidden="true" />
+                  <span className="recent-tx-dot" style={{ background: colorForCategory(tx.category) }} aria-hidden="true" />
                   <span className="expense-calendar__day-label">
                     {tx.label}
                     {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement">🔁</span> : null}
