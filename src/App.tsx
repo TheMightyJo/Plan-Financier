@@ -33,7 +33,6 @@ import {
   Pencil,
   Trash2,
   X,
-  MessageCircle,
   Mic,
   Paperclip,
   Send,
@@ -8340,7 +8339,7 @@ Réponse attendue:
           title="Cash, votre assistant budget"
           aria-label="Ouvrir Cash, votre assistant budget"
         >
-          {chatOpen ? <X size={22} /> : <MessageCircle size={22} />}
+          {chatOpen ? <X size={22} /> : <Bot size={24} />}
           {!chatOpen && chatMessages.length > 0 && (
             <span className="chat-fab-badge">{chatMessages.filter((m) => m.role === 'assistant').length}</span>
           )}
