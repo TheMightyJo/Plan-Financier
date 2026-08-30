@@ -9623,3 +9623,11 @@ h1 {
   text-transform: none;
   letter-spacing: normal;
 }
+
+/* Emoji de marchand (libre de droit — jamais de logo de marque). */
+.tx-merchant-icon {
+  font-size: 1.05rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-right: 0.15rem;
+}

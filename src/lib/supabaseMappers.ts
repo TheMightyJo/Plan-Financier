@@ -153,6 +153,7 @@ type TransactionMeta = {
   localId: number
   rec?: string
   tags?: string[]
+  icon?: string
 }
 
 const encodeTransactionMeta = (transaction: Transaction): string =>
@@ -164,6 +165,7 @@ const encodeTransactionMeta = (transaction: Transaction): string =>
     localId: transaction.id,
     ...(transaction.recurringRuleId ? { rec: transaction.recurringRuleId } : {}),
     ...(transaction.tags && transaction.tags.length > 0 ? { tags: transaction.tags } : {}),
+    ...(transaction.icon ? { icon: transaction.icon } : {}),
   } satisfies TransactionMeta)
 
 const decodeTransactionMeta = (notes: string | null): Partial<TransactionMeta> => {
@@ -226,6 +228,7 @@ export const transactionFromRow = (row: TransactionRow): Transaction => {
     envelope: meta.env ?? ('Perso' as Envelope),
     ...(meta.rec ? { recurringRuleId: meta.rec } : {}),
     ...(Array.isArray(meta.tags) && meta.tags.length > 0 ? { tags: meta.tags } : {}),
+    ...(typeof meta.icon === 'string' && meta.icon ? { icon: meta.icon } : {}),
     accountId: row.account_id,
   }
 }

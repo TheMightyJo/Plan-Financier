@@ -83,6 +83,7 @@ import {
   MONEY_AVATAR_PRESETS,
   readAndResizeImage,
 } from './lib/avatar'
+import { isValidTxIcon, suggestMerchantIcon } from './lib/merchantIcons'
 import { generateDueTransactions } from './lib/recurring'
 import { loadRecurringRules, saveRecurringRules } from './repos/recurringRulesRepo'
 import { RecurringRulesPanel } from './components/RecurringRulesPanel'
@@ -638,6 +639,9 @@ const normalizeTransaction = (value: unknown, knownProfileIds?: Set<string>): Tr
             .filter((tag): tag is string => typeof tag === 'string' && tag.length > 0)
             .slice(0, 8),
         }
+      : {}),
+    ...(isValidTxIcon((value as { icon?: unknown }).icon)
+      ? { icon: (value as { icon: string }).icon }
       : {}),
   }
 }
@@ -3269,6 +3273,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const quickAddTouchedRef = useRef({ category: false, tags: false })
   const [quickAddAiBusy, setQuickAddAiBusy] = useState(false)
   const [quickAddAiApplied, setQuickAddAiApplied] = useState(false)
+  const quickAddAiIconRef = useRef<string | null>(null)
 
   const runQuickAddAi = async (label: string) => {
     if (!anthropicKey) return
@@ -3286,7 +3291,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
           model: 'claude-3-5-haiku-20241022',
           max_tokens: 120,
           system:
-            'Tu classes une dépense de budget familial français. Réponds UNIQUEMENT un objet JSON de la forme {"category": "...", "tags": ["..."]} sans autre texte. category doit être exactement une valeur parmi: Courses, Transport, Ecole, Loisirs, Sante, Maison, Autre. tags: 0 à 3 étiquettes courtes en minuscules, utiles et non redondantes avec la catégorie (ex: "abonnement", "vacances", "cadeau"), sinon tableau vide.',
+            'Tu classes une dépense de budget familial français. Réponds UNIQUEMENT un objet JSON de la forme {"category": "...", "tags": ["..."], "icon": "🛒"} sans autre texte. category doit être exactement une valeur parmi: Courses, Transport, Ecole, Loisirs, Sante, Maison, Autre. tags: 0 à 3 étiquettes courtes en minuscules, utiles et non redondantes avec la catégorie, sinon tableau vide. icon: UN SEUL emoji représentant au mieux le marchand ou la dépense (jamais de texte).',
           messages: [{ role: 'user', content: label }],
         }),
       })
@@ -3295,7 +3300,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       const text = data.content.find((c) => c.type === 'text')?.text ?? ''
       const match = /\{[\s\S]*\}/.exec(text)
       if (!match) return
-      const parsed = JSON.parse(match[0]) as { category?: string; tags?: unknown }
+      const parsed = JSON.parse(match[0]) as { category?: string; tags?: unknown; icon?: unknown }
+      if (isValidTxIcon(parsed.icon)) quickAddAiIconRef.current = parsed.icon
       const aiCategory = categories.includes(parsed.category as Category)
         ? (parsed.category as Category)
         : null
@@ -3335,6 +3341,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     setQuickAddForm({ label: '', amount: '', category: 'Courses', envelope: 'Maison', tags: '', recurrence: 'none' })
     setQuickAddEditingId(null)
     quickAddTouchedRef.current = { category: false, tags: false }
+    quickAddAiIconRef.current = null
     setQuickAddAiApplied(false)
     setQuickAddDate(date)
   }
@@ -3429,6 +3436,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
         (a) => a.ownerMember === selectedProfileId && a.type === 'checking' && a.archivedAt === null,
       )?.id || undefined
 
+    const icon = suggestMerchantIcon(quickAddForm.label) ?? quickAddAiIconRef.current
     const newTransaction: Transaction = {
       id: Date.now(),
       label: quickAddForm.label.trim(),
@@ -3438,6 +3446,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       date: quickAddDate,
       kind: 'depense',
       envelope: quickAddForm.envelope,
+      ...(icon ? { icon } : {}),
       ...(parsedTags.length > 0 ? { tags: parsedTags } : {}),
       ...(createdRuleId ? { recurringRuleId: createdRuleId } : {}),
       accountId: resolvedAccountId,
@@ -3455,6 +3464,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     const base = Date.now()
     const imported: Transaction[] = rows.map((row, index) => ({
       id: base + index,
+      ...(suggestMerchantIcon(row.label) ? { icon: suggestMerchantIcon(row.label)! } : {}),
       label: row.label,
       amount: row.amount,
       category: row.category,
@@ -5027,7 +5037,11 @@ Réponse attendue:
                   onClick={() => openQuickEdit(tx)}
                   aria-label={`Modifier ${tx.label}`}
                 >
-                  <span className="recent-tx-dot" style={{ background: categoryColors[tx.category] }} aria-hidden="true" />
+                  {tx.icon ? (
+                    <span className="tx-merchant-icon" aria-hidden="true">{tx.icon}</span>
+                  ) : (
+                    <span className="recent-tx-dot" style={{ background: categoryColors[tx.category] }} aria-hidden="true" />
+                  )}
                   <span className="recent-tx-label">
                     {tx.label}
                     {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
@@ -6071,6 +6085,7 @@ Réponse attendue:
                 >
                   <div>
                     <p>
+                      {item.icon ? <span className="tx-merchant-icon" aria-hidden="true">{item.icon}</span> : null}
                       {item.label}
                       {item.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
                     </p>

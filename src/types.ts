@@ -38,6 +38,8 @@ export type Transaction = {
   recurringRuleId?: string
   /** Étiquettes libres saisies par l'utilisateur (ex. « vacances », « remboursable »). */
   tags?: string[]
+  /** Emoji du marchand (jamais un logo de marque — libre de droit par nature). */
+  icon?: string
   /**
    * Compte sur lequel l'opération est imputée. Optionnel pour rétro-compat
    * avec les anciennes transactions stockées avant l'introduction des
