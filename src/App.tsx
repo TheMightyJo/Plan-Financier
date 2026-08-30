@@ -7088,7 +7088,14 @@ Réponse attendue:
           <div className="panel-title">
             <div className="budget-title-row">
               <h2>
-                <span className="budget-title-main">Mon budget · {formatMonth(selectedMonth)}</span>
+                <span className="budget-title-main">
+                  Mon budget ·{' '}
+                  <span className="budget-title-month-nav">
+                    <button type="button" onClick={() => navigateMonth(-1)} aria-label="Mois précédent">‹</button>
+                    <span>{formatMonth(selectedMonth)}</span>
+                    <button type="button" onClick={() => navigateMonth(1)} aria-label="Mois suivant">›</button>
+                  </span>
+                </span>
               </h2>
             </div>
           </div>
@@ -7515,8 +7522,8 @@ Réponse attendue:
         <article className="glass-card chart-card wide-card envelope-board">
           <div className="panel-title">
             <div>
-              <h2>✉️ Mes poches · {formatMonth(selectedMonth)}</h2>
-              <p>La météo de chaque poche — appuyez sur l'objectif pour l'ajuster.</p>
+              <h2>✉️ Mes poches</h2>
+              <p>La météo de chaque poche — appuyez sur une poche pour la gérer.</p>
             </div>
           </div>
           <div className="envelope-grid">
@@ -7543,7 +7550,7 @@ Réponse attendue:
                   </div>
                   <p className="envelope-card__spent">
                     −{euroFormatter.format(card.spent)}
-                    <small> dépensés</small>
+                    <small> dépensés ce mois-ci</small>
                   </p>
                   <small className="envelope-card__fund-line">
                     💰 Dans la poche :{' '}

@@ -8445,11 +8445,12 @@ h1 {
   background: rgba(61, 43, 31, 0.95);
   border: 1px solid var(--border);
   color: var(--pf-color-bg);
-  font-size: 0.875rem;
-  font-weight: 500;
-  padding: 0.6rem 1.25rem;
-  border-radius: 999px;
-  box-shadow: 0 8px 24px rgba(20, 12, 8, 0.4);
+  font-size: var(--text-base);
+  font-weight: 700;
+  padding: 0.9rem 1.6rem;
+  border-radius: 1rem;
+  border-width: 2px;
+  box-shadow: 0 14px 40px rgba(20, 12, 8, 0.55);
   backdrop-filter: blur(8px);
   animation: toast-in 0.2s ease forwards;
   pointer-events: none;
@@ -11049,4 +11050,36 @@ button.envelope-card:hover .envelope-card__body {
 /* Respiration entre le titre « Mon budget · … » et les cartes du résumé. */
 #budget .panel-title {
   margin-bottom: 0.9rem;
+}
+
+/* Toasts d'alerte (danger) : encore plus marqués. */
+.app-toast--danger {
+  border-color: rgba(192, 92, 42, 0.9);
+  background: rgba(120, 45, 18, 0.97);
+  font-size: var(--text-base);
+}
+
+/* Navigation de mois dans le titre « Mon budget ». */
+.budget-title-month-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.budget-title-month-nav button {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text-1);
+  border-radius: 0.5rem;
+  width: 1.7rem;
+  height: 1.7rem;
+  display: inline-grid;
+  place-items: center;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.budget-title-month-nav button:hover {
+  border-color: rgba(var(--accent-rgb), 0.6);
 }
