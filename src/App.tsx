@@ -134,7 +134,6 @@ import {
 import { ACCOUNT_TYPE_LABELS } from './types'
 import type { Account, RecurringFrequency, RecurringRule } from './types'
 import {
-  ENVELOPE_GROUPS,
   EXPENSE_CATEGORY_GROUPS,
   INCOME_CATEGORY_GROUPS,
   allExpenseCategories,
@@ -1134,7 +1133,6 @@ function App() {
   const [goalRowDraft, setGoalRowDraft] = useState('')
   const [budgetQuickEditOpen, setBudgetQuickEditOpen] = useState(false)
   const [budgetQuickEditValue, setBudgetQuickEditValue] = useState('')
-  const [budgetAssistantVisible, setBudgetAssistantVisible] = useState(true)
   const budgetInfoScopeRef = useRef<HTMLElement | null>(null)
 
   // ── Claude AI ──────────────────────────────────────────────────────────
@@ -2858,13 +2856,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
   const budgetHealthLabel = budgetMasteryScore >= 80 ? 'Excellente maîtrise' : budgetMasteryScore >= 60 ? 'Stable' : 'À surveiller'
   const budgetHealthColor = budgetMasteryScore >= 80 ? '#22c55e' : budgetMasteryScore >= 60 ? '#f59e0b' : '#f43f5e'
-  const budgetHumanAdvice = remaining < 0
-    ? 'Vous dépassez le budget. Mettez en pause les dépenses non urgentes.'
-    : projectionData.projectedOverrun > 0
-      ? 'Attention, au rythme actuel vous risquez de dépasser avant la fin du mois.'
-      : usageRate >= 75
-        ? 'Vous tenez le cap, mais il faut rester prudent jusqu’à la fin du mois.'
-        : 'Vous êtes tranquille ce mois-ci. Continuez comme ça.'
 
   const budgetInsights = useMemo(() => {
     const insights: string[] = []
@@ -2927,35 +2918,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const budgetStatusColor = remaining < 0 ? '#f43f5e' : usageRate >= 85 ? '#f59e0b' : '#22c55e'
   const budgetStatusLabel = remaining < 0 ? 'Dépassé' : usageRate >= 85 ? 'Attention' : 'Normal'
 
-  // Génération des actions
-  const budgetActionsList = useMemo(() => {
-    const actions: string[] = []
-    if (remaining < 0) actions.push('🔴 Dépassement : réduire une catégorie immédiatement')
-    else if (usageRate >= 85) actions.push('⚠️ 85% du budget atteint : freiner les dépenses')
-    else actions.push('✅ Budget maîtrisé : bon rythme')
-    
-    if (depenseChangePercent !== null && depenseChangePercent > 15) {
-      actions.push(`📈 +${depenseChangePercent.toFixed(0)}% vs mois dernier : vérifier les grosses dépenses`)
-    } else if (depenseChangePercent !== null && depenseChangePercent < -15) {
-      actions.push(`📉 ${depenseChangePercent.toFixed(0)}% vs mois dernier : très bon contrôle`)
-    }
-    
-    if (monthlyExpense > budget * 0.5) actions.push('💡 Dépenses > 50% : envisager un rééquilibrage')
-    
-    return actions.slice(0, 3)
-  }, [budget, depenseChangePercent, monthlyExpense, remaining, usageRate])
-
-  const budgetAssistantLocalMessage = useMemo(() => {
-    const actionsSummary = budgetActionsList
-      .slice(0, 2)
-      .map((action) => action.replace(/^[^A-Za-z0-9À-ÿ]+/, '').replace(/\s+/g, ' ').trim())
-    const actionsText = actionsSummary.length > 0 ? `🎯 Actions: ${actionsSummary.join(' | ')}.` : ''
-    return [
-      `✅ ${budgetHumanAdvice}`,
-      `📅 ${projectedMessage}`,
-      actionsText,
-    ].filter(Boolean).join('\n')
-  }, [budgetActionsList, budgetHumanAdvice, projectedMessage])
 
   const budgetAssistantContextKey = useMemo(
     () => [
@@ -2965,8 +2927,9 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       Math.round(monthlyIncome),
       Math.round(remaining),
       Math.round(usageRate),
+      activeSectionId === 'budget' ? 'budget' : 'general',
     ].join('|'),
-    [monthlyExpense, monthlyIncome, remaining, selectedMonth, selectedProfileId, usageRate],
+    [activeSectionId, monthlyExpense, monthlyIncome, remaining, selectedMonth, selectedProfileId, usageRate],
   )
 
   const pieData = useMemo(() => {
@@ -3215,14 +3178,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     closeEnvelopeModal()
   }
 
-  // Groupes de poches pour la modale d'opération : les poches créées par
-  // l'utilisateur apparaissent en tête, dans un groupe « Mes poches ».
-  const envelopeGroupsWithCustom = useMemo(() => {
-    const known = new Set(ENVELOPE_GROUPS.flatMap((group) => group.options))
-    const custom = profileCustomEnvelopes.filter((name) => !known.has(name))
-    return custom.length > 0 ? [{ label: 'Mes poches', options: custom }, ...ENVELOPE_GROUPS] : ENVELOPE_GROUPS
-  }, [profileCustomEnvelopes])
-
   /** Fixe l'argent DISPONIBLE d'une poche (le fonds est recalculé : dispo + dépensé du mois). */
   const setEnvelopeAvailable = (name: string, availableTarget: number) => {
     const spent = envelopeCards.find((card) => card.name === name)?.spent ?? 0
@@ -3272,6 +3227,13 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       })
       .sort((a, b) => b.spent - a.spent)
   }, [activeMonthTransactions, profileEnvelopeBudgets, profileEnvelopeFunds, profileCustomEnvelopes])
+
+  // Groupes de poches pour la modale d'opération : les poches créées par
+  // l'utilisateur apparaissent en tête, dans un groupe « Mes poches ».
+  const envelopeGroupsWithCustom = useMemo(
+    () => [{ label: 'Mes poches', options: envelopeCards.map((card) => card.name) }],
+    [envelopeCards],
+  )
 
   const envelopeBreakdown = useMemo(
     () =>
@@ -4466,7 +4428,11 @@ Contexte:
 - Reste: ${euroFormatter.format(remaining)}
 - État: ${budgetStatusLabel}
 - Projection: ${projectedMessage}
-
+${activeSectionId === 'budget'
+  ? `- Poches (dispo / objectif): ${envelopeCards.map((c) => `${c.name} ${euroFormatter.format(c.inside)} dispo${c.target > 0 ? ` / obj ${euroFormatter.format(c.target)} (${Math.round((c.ratio ?? 0) * 100)}%)` : ''}`).join(' · ')}
+- Plafonds par catégorie: ${goalProgress.map((g) => `${g.category} ${g.rate.toFixed(0)}%`).join(' · ')}
+`
+  : ''}
 Réponse attendue:
 - TRÈS COURT: 3 phrases maximum, 320 caractères au total
 - français simple, en vouvoyant l'utilisateur
@@ -7565,7 +7531,9 @@ Réponse attendue:
                     </div>
                   ) : null}
                   <small className="envelope-card__target-line">
-                    🎯 {card.target > 0 ? `Objectif : ${euroFormatter.format(card.target)}` : 'Pas encore d\u2019objectif'}
+                    🎯 {card.target > 0
+                      ? `Objectif : ${euroFormatter.format(card.target)} — ${Math.round((card.ratio ?? 0) * 100)}% utilisé`
+                      : 'Pas encore d\u2019objectif'}
                   </small>
                   <small className="envelope-card__forecast">{card.weather.label}</small>
                 </div>
@@ -8267,7 +8235,7 @@ Réponse attendue:
       </aside>
       ) : null}
 
-      {isActiveView('overview') || isActiveView('family') ? (
+      {isActiveView('overview') || isActiveView('family') || isActiveView('budget') ? (
       <aside className="glass-card budget-advice-rail dashboard-right-rail overview-coaching-rail" aria-label="Assistant">
         {!isBudgetAiConfigured ? (
           <>
@@ -8297,7 +8265,9 @@ Réponse attendue:
               </div>
             </div>
             <p className="budget-advice-helper">
-              Cash analyse votre mois en cours et vous conseille.
+              {activeSectionId === 'budget'
+                ? 'Cash analyse votre budget, vos poches et vos plafonds.'
+                : 'Cash analyse votre mois en cours et vous conseille.'}
             </p>
             {budgetAssistantError ? (
               <>
@@ -8325,63 +8295,6 @@ Réponse attendue:
       </aside>
       ) : null}
 
-      {isActiveView('budget') ? (
-      <aside className={`glass-card budget-advice-rail dashboard-right-rail${budgetAssistantVisible ? '' : ' collapsed'}`} aria-label="Conseils budget">
-        <div className="budget-assistant-title-row">
-          <div className="budget-assistant-title-main">
-            <p className="eyebrow">Assistant conseil</p>
-            {isBudgetAiConfigured ? (
-              <span className="budget-assistant-ai-tag">
-                <Bot size={12} /> Connecté IA
-              </span>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            className="budget-assistant-hide"
-            onClick={() => setBudgetAssistantVisible((previous) => !previous)}
-          >
-            {budgetAssistantVisible ? 'Masquer' : 'Afficher'}
-          </button>
-        </div>
-        {budgetAssistantVisible ? (
-        <>
-        <p className="budget-advice-helper">
-          {isBudgetAiConfigured
-            ? 'Cash vous conseille en direct selon votre situation.'
-            : 'Mode local: conseils automatiques selon les données du mois.'}
-        </p>
-        <div className="budget-assistant-panel" aria-live="polite">
-          <div className="budget-assistant-header">
-            <strong>{isBudgetAiConfigured ? '🪙 Cash est en ligne' : '🧭 Assistant local actif'}</strong>
-          </div>
-
-          {isBudgetAiConfigured ? (
-            <div className="budget-assistant-answer-wrap budget-assistant-answer-wrap--ia">
-              {budgetAssistantError ? (
-                <p className="budget-assistant-error">{budgetAssistantError}</p>
-              ) : budgetAssistantLoading ? (
-                <div className="budget-assistant-skeleton" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              ) : (
-                <p className="budget-assistant-answer">
-                  {budgetAssistantAdvice || 'Analyse en cours…'}
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="budget-assistant-answer-wrap budget-assistant-answer-wrap--local" aria-label="Conseil automatique local">
-              <p className="budget-assistant-answer">{budgetAssistantLocalMessage}</p>
-            </div>
-          )}
-        </div>
-        </>
-        ) : null}
-      </aside>
-      ) : null}
     </main>
 
     {/* ── Claude AI Chat ─────────────────────────────────────────── */}
