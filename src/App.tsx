@@ -190,6 +190,22 @@ const MANUAL_ONBOARDING_PHASES = [
   'Finalisation de votre plan…',
 ]
 const FIRST_TX_TOUR_DONE_KEY = 'plan-financier-first-tx-tour-done-v1'
+
+// ── URLs propres (routage SPA léger, sans dépendance) ───────────────────────
+// / (vitrine) · /login · /demo · /app, /app/depenses, /app/budget,
+// /app/statistiques, /app/notes, /app/famille — le .htaccess renvoie tout
+// chemin inconnu vers index.html.
+const SECTION_TO_PATH: Record<string, string> = {
+  overview: '/app',
+  operations: '/app/depenses',
+  budget: '/app/budget',
+  stats: '/app/statistiques',
+  notes: '/app/notes',
+  family: '/app/famille',
+}
+const PATH_TO_SECTION: Record<string, string> = Object.fromEntries(
+  Object.entries(SECTION_TO_PATH).map(([section, route]) => [route, section]),
+)
 const ENVELOPE_BUDGETS_STORAGE_KEY = 'plan-financier-envelope-budgets-v1'
 const ENVELOPE_FUNDS_STORAGE_KEY = 'plan-financier-envelope-funds-v1'
 const CUSTOM_ENVELOPES_STORAGE_KEY = 'plan-financier-custom-envelopes-v1'
@@ -995,10 +1011,16 @@ function App() {
   const isActiveView = (sectionId: string) => activeSectionId === sectionId
   const navigateToSection = (sectionId: string) => {
     setActiveSectionId(sectionId)
+    const route = SECTION_TO_PATH[sectionId]
+    if (route && window.location.pathname !== route) {
+      window.history.pushState({}, '', route)
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
   const [profiles, setProfiles] = useState<UserProfile[]>(loadProfiles)
-  const [activeSectionId, setActiveSectionId] = useState('overview')
+  const [activeSectionId, setActiveSectionId] = useState(
+    () => PATH_TO_SECTION[window.location.pathname] ?? 'overview',
+  )
   const [isSecurityReady, setIsSecurityReady] = useState(false)
   const [authProviderReady, setAuthProviderReady] = useState(false)
   // (saveSensitiveState) — plus aucune lecture depuis la fin des sessions locales.
@@ -1008,7 +1030,11 @@ function App() {
   // (toutes les persistances localStorage sont désactivées tant qu'il est actif).
   const [demoMode, setDemoMode] = useState(false)
   // Site vitrine affiché avant l'écran de connexion pour les visiteurs.
-  const [showLanding, setShowLanding] = useState(true)
+  // /login et /app/* mènent directement à l'écran de connexion.
+  const [showLanding, setShowLanding] = useState(() => {
+    const path = window.location.pathname
+    return path !== '/login' && !path.startsWith('/app')
+  })
   const [, setAuthRole] = useState<AuthRole>('Parent')
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>(
     () => (window.localStorage.getItem(THEME_STORAGE_KEY) as 'dark' | 'light' | 'system') ?? 'system'
@@ -1185,6 +1211,40 @@ function App() {
   })
   const anthropicKey = aiProviderKeys.anthropic
   const [chatOpen, setChatOpen] = useState(false)
+
+  // /demo lance le mode démo directement ; navigation arrière/avant du
+  // navigateur synchronisée avec l'état de l'app.
+  useEffect(() => {
+    if (window.location.pathname === '/demo' && !isAuthenticated && !demoMode) {
+      window.history.replaceState({}, '', '/app')
+      enterDemoMode()
+    }
+    const onPopState = () => {
+      const path = window.location.pathname
+      if (PATH_TO_SECTION[path]) {
+        setActiveSectionId(PATH_TO_SECTION[path])
+        setShowLanding(false)
+        return
+      }
+      if (path === '/login') {
+        setShowLanding(false)
+        return
+      }
+      setShowLanding(true)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Une fois connecté, l'URL bascule sur /app (et garde la section active).
+  useEffect(() => {
+    if (!isAuthenticated && !demoMode) return
+    if (!window.location.pathname.startsWith('/app')) {
+      window.history.replaceState({}, '', SECTION_TO_PATH[activeSectionId] ?? '/app')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, demoMode])
 
   // Invitation discrète : 3 s après l'arrivée, 1× par 24 h, disparaît en 9 s.
   useEffect(() => {
@@ -4376,6 +4436,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
 
   const handleLogout = () => {
+    window.history.replaceState({}, '', '/')
+    setShowLanding(true)
     void (async () => {
       await logAuditEvent('logout')
       await supabase.auth.signOut()
@@ -4964,9 +5026,31 @@ Réponse attendue:
 
   if (!isAuthenticated && !demoMode) {
     if (showLanding) {
-      return <LandingPage onLogin={() => setShowLanding(false)} onTryDemo={enterDemoMode} />
+      return (
+        <LandingPage
+          onLogin={() => {
+            window.history.pushState({}, '', '/login')
+            setShowLanding(false)
+          }}
+          onTryDemo={() => {
+            window.history.pushState({}, '', '/app')
+            enterDemoMode()
+          }}
+        />
+      )
     }
-    return <AuthScreen onTryDemo={enterDemoMode} onBackToSite={() => setShowLanding(true)} />
+    return (
+      <AuthScreen
+        onTryDemo={() => {
+          window.history.pushState({}, '', '/app')
+          enterDemoMode()
+        }}
+        onBackToSite={() => {
+          window.history.pushState({}, '', '/')
+          setShowLanding(true)
+        }}
+      />
+    )
   }
 
   return (
