@@ -5239,21 +5239,26 @@ Réponse attendue:
           {(() => {
             const week = weeklyStatsData.at(-1)
             if (!week) return null
+            const WEEK_STATUS = {
+              danger: { icon: '⚠️', label: 'Danger', advice: 'Vous dépensez plus que vous ne recevez — levez le pied cette semaine.' },
+              up: { icon: '📈', label: 'Up', advice: 'Solde en hausse par rapport à la semaine dernière — continuez !' },
+              highest: { icon: '🏆', label: 'Highest ever', advice: 'Record absolu de la semaine — bravo !' },
+              normal: { icon: '✅', label: 'Normal', advice: 'Semaine équilibrée, rien à signaler.' },
+            } as const
+            const status = WEEK_STATUS[week.type]
             return (
               <button
                 type="button"
-                className="hero-week-status"
+                className={`hero-week-status hero-week-status--${week.type}`}
                 onClick={() => navigateToSection('stats')}
                 title="Voir les statistiques hebdomadaires"
               >
-                <span className="hero-week-status__label">Semaine du {week.label} :</span>
-                <span className={`stats-week-type stats-week-type--${week.type}`}>
-                  {week.type === 'danger' ? '⚠️ Danger'
-                    : week.type === 'highest' ? '🏆 Highest ever'
-                    : week.type === 'up' ? '📈 Up'
-                    : 'Normal'}
+                <span className="hero-week-status__icon" aria-hidden="true">{status.icon}</span>
+                <span className="hero-week-status__text">
+                  <strong>Semaine du {week.label} : {status.label}</strong>
+                  <small>{status.advice}</small>
                 </span>
-                <strong className={week.net < 0 ? 'expense' : 'income'}>
+                <strong className={`hero-week-status__net ${week.net < 0 ? 'expense' : 'income'}`}>
                   {week.net >= 0 ? '+' : ''}{euroFormatter.format(week.net)}
                 </strong>
               </button>
