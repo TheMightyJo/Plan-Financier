@@ -4102,10 +4102,12 @@ Réponse attendue:
 
     if (!isBudgetAiConfigured) {
       // Reset de l'état de l'assistant à l'entrée de section / config absente.
+      // Le contexte est remis à zéro (pas marqué « traité ») pour que
+      // l'analyse parte bien dès que l'IA est (re)configurée.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setBudgetAssistantAdvice('')
       setBudgetAssistantError('')
-      setBudgetAssistantContextLoaded(budgetAssistantContextKey)
+      setBudgetAssistantContextLoaded('')
       return
     }
 
