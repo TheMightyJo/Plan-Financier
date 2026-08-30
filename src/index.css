@@ -10319,3 +10319,31 @@ h1 {
 .kpi-card--week:hover {
   border-color: rgba(var(--accent-rgb), 0.55);
 }
+
+/* ── Statistiques : navigation de période + export ────────────────── */
+.stats-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.stats-toolbar > button:not(.stats-export-btn) {
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text-1);
+  border-radius: 0.6rem;
+  padding: 0.35rem 0.7rem;
+  font-weight: 700;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.stats-toolbar > button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.stats-export-btn {
+  font-size: var(--text-sm);
+}

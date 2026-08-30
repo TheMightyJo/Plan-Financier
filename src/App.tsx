@@ -3305,10 +3305,89 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }, [activeMonthTransactions])
 
   // Vue Statistiques : 12 dernières semaines (lundi → dimanche).
+  // weeklyStatsData reste calé sur aujourd'hui (carte Accueil) ; la vue
+  // Statistiques navigue avec sa propre ancre.
   const weeklyStatsData = useMemo(
     () => weeklyStats(activeTransactions, todayIso, 12),
     [activeTransactions, todayIso],
   )
+  const [statsAnchor, setStatsAnchor] = useState(todayIso)
+  const statsViewData = useMemo(
+    () => weeklyStats(activeTransactions, statsAnchor, 12),
+    [activeTransactions, statsAnchor],
+  )
+  const statsChartRef = useRef<HTMLDivElement | null>(null)
+
+  const exportWeeklyStatsPdf = async () => {
+    const svg = statsChartRef.current?.querySelector('svg')
+    const lastWeek = statsViewData.at(-1)
+    if (!svg || !lastWeek) return
+    const { default: JsPdf } = await import('jspdf')
+
+    // Graphique SVG → PNG (fond crème charte).
+    const xml = new XMLSerializer().serializeToString(svg)
+    const blobUrl = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }))
+    const width = svg.clientWidth || Number(svg.getAttribute('width')) || 800
+    const height = svg.clientHeight || Number(svg.getAttribute('height')) || 280
+    let png: string
+    try {
+      png = await new Promise<string>((resolve, reject) => {
+        const image = new Image()
+        image.onload = () => {
+          const canvas = window.document.createElement('canvas')
+          canvas.width = width * 2
+          canvas.height = height * 2
+          const ctx = canvas.getContext('2d')
+          if (!ctx) return reject(new Error('canvas'))
+          ctx.fillStyle = '#FDFAF6'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+          ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
+          resolve(canvas.toDataURL('image/png'))
+        }
+        image.onerror = () => reject(new Error('svg'))
+        image.src = blobUrl
+      })
+    } catch {
+      showToast("Impossible d'exporter le graphique", 'danger')
+      return
+    } finally {
+      URL.revokeObjectURL(blobUrl)
+    }
+
+    const doc = new JsPdf({ orientation: 'landscape' })
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const reportDate = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    doc.setTextColor(61, 43, 31)
+    doc.setFontSize(18)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Statistiques hebdomadaires — Plan Financier', 14, 16)
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(160, 128, 96)
+    doc.text(`Exporté le ${reportDate} · ${selectedProfileName}`, 14, 23)
+    doc.text(`Période affichée : du ${statsViewData[0].weekStart} au ${lastWeek.weekEnd}`, 14, 29)
+
+    doc.setFontSize(12)
+    doc.setTextColor(61, 43, 31)
+    doc.setFont('helvetica', 'bold')
+    const typeLabel =
+      lastWeek.type === 'danger' ? 'Danger' : lastWeek.type === 'highest' ? 'Highest ever' : lastWeek.type === 'up' ? 'Up' : 'Normal'
+    doc.text(`Semaine du ${lastWeek.label} : ${typeLabel}`, 14, 38)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(11)
+    doc.setTextColor(58, 125, 68)
+    doc.text(`Revenus : +${euroFormatter.format(lastWeek.income)}`, 14, 45)
+    doc.setTextColor(192, 92, 42)
+    doc.text(`Dépenses : -${euroFormatter.format(lastWeek.spent)}`, 70, 45)
+    doc.setTextColor(61, 43, 31)
+    doc.text(`Solde : ${lastWeek.net >= 0 ? '+' : ''}${euroFormatter.format(lastWeek.net)}`, 130, 45)
+
+    const imgWidth = pageWidth - 28
+    const imgHeight = (height / width) * imgWidth
+    doc.addImage(png, 'PNG', 14, 52, imgWidth, imgHeight)
+    doc.save(`statistiques-semaines-${todayIso}.pdf`)
+    showToast('📄 Statistiques exportées en PDF')
+  }
 
   const recurringItems = useMemo(() => {
     type RecurringEntry = { label: string; avgAmount: number; monthCount: number }
@@ -6706,12 +6785,26 @@ Réponse attendue:
           <div className="panel-title">
             <div>
               <h2>Dépenses vs Revenus par semaine</h2>
-              <p>12 dernières semaines, du lundi au dimanche · {selectedProfileName}</p>
+              <p>
+                12 semaines, du lundi au dimanche · du{' '}
+                {new Date(`${statsViewData[0].weekStart}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} au{' '}
+                {new Date(`${statsViewData.at(-1)!.weekEnd}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </p>
+            </div>
+            <div className="stats-toolbar">
+              <button type="button" onClick={() => setStatsAnchor(shiftDay(statsAnchor, -28))} aria-label="4 semaines plus tôt">‹</button>
+              <button type="button" onClick={() => setStatsAnchor(shiftDay(statsAnchor, 28) > todayIso ? todayIso : shiftDay(statsAnchor, 28))} aria-label="4 semaines plus tard" disabled={statsAnchor === todayIso}>›</button>
+              {statsAnchor !== todayIso ? (
+                <button type="button" onClick={() => setStatsAnchor(todayIso)}>Aujourd&apos;hui</button>
+              ) : null}
+              <button type="button" className="hero-cta-button stats-export-btn" onClick={() => void exportWeeklyStatsPdf()}>
+                📄 Exporter
+              </button>
             </div>
           </div>
-          <div className="stats-chart-wrap">
+          <div className="stats-chart-wrap" ref={statsChartRef}>
             <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={weeklyStatsData}>
+              <LineChart data={statsViewData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(160, 128, 96, 0.2)" />
                 <XAxis dataKey="label" stroke="#a1a1aa" fontSize={11} interval="preserveStartEnd" />
                 <YAxis stroke="#a1a1aa" fontSize={11} />
@@ -6759,7 +6852,7 @@ Réponse attendue:
             </div>
           </div>
           <ul className="stats-week-list">
-            {[...weeklyStatsData].reverse().map((week) => (
+            {[...statsViewData].reverse().map((week) => (
               <li key={week.weekStart}>
                 <span className="stats-week-label">{week.label}</span>
                 <span className="stats-week-amounts">
