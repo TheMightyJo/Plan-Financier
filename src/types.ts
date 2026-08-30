@@ -4,6 +4,12 @@ export type UserProfile = {
   id: string
   name: string
   monthlyBudget: number
+  /**
+   * Avatar optionnel : `emoji:💰` (preset libre de droit) ou data URI
+   * `data:image/…` (photo importée, redimensionnée côté client).
+   * Absent = pastille initiales + couleur dérivée de l'id.
+   */
+  avatar?: string
 }
 
 export type TransactionKind = 'depense' | 'revenu'
@@ -28,6 +34,12 @@ export type Transaction = {
   date: string
   kind: TransactionKind
   envelope: Envelope
+  /** Présent si la transaction a été générée par une règle récurrente. */
+  recurringRuleId?: string
+  /** Étiquettes libres saisies par l'utilisateur (ex. « vacances », « remboursable »). */
+  tags?: string[]
+  /** Emoji du marchand (jamais un logo de marque — libre de droit par nature). */
+  icon?: string
   /**
    * Compte sur lequel l'opération est imputée. Optionnel pour rétro-compat
    * avec les anciennes transactions stockées avant l'introduction des
@@ -193,7 +205,6 @@ export type DashboardWidgetId =
   | 'savingsGoals'
   | 'recurringCharges'
   | 'savingsProjects'
-  | 'expenseCalendar'
 
 export type DashboardWidgetTemplateId = 'essentiel' | 'equilibre' | 'analytique' | 'custom'
 export type DashboardWidgetSize = 'compact' | 'medium' | 'large'

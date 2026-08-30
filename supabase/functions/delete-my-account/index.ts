@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
       .eq('user_id', userId)
       .eq('kind', 'erase')
       .eq('status', 'pending')
-  } catch (_) {
+  } catch {
     // Best-effort : la suppression compte reste prioritaire
   }
 

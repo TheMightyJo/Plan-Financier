@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from './supabase'
 import AuthScreen from './AuthScreen'
 import {
@@ -43,9 +43,6 @@ import {
   ArrowUp,
   ArrowDown,
   Zap,
-  GripVertical,
-  Maximize2,
-  Minimize2,
 } from 'lucide-react'
 import {
   addPinChangeLog,
@@ -55,7 +52,6 @@ import {
   loadSensitiveState,
   loadPinChangeLogs,
   resetSensitiveStorage,
-  SESSION_DURATION_OPTIONS,
   saveSensitiveState,
   setParentPin,
   verifyParentPin,
@@ -68,22 +64,60 @@ import {
   formatTooltipValue,
 } from './lib/format'
 import {
-  computeLabelSimilarity,
   normalizeText,
   sanitizeProfileId,
 } from './lib/text'
-import { getDateDistanceInDays } from './lib/dates'
+import {
+  defaultCsvMapping,
+  inferBankProfileKey,
+  inferCsvMapping,
+  parseCsvRawData,
+  parseCsvTransactions,
+} from './lib/csvImport'
+import { BACKUP_VERSION, encryptBackupPayload, decryptBackupPayload } from './lib/backup'
+import { generateOnboardingPlan } from './lib/onboardingPlan'
+import {
+  AVATAR_MAX_DATA_URI_LENGTH,
+  avatarColor,
+  avatarInitials,
+  MONEY_AVATAR_PRESETS,
+  readAndResizeImage,
+} from './lib/avatar'
+import { isValidTxIcon, suggestMerchantIcon } from './lib/merchantIcons'
 import { generateDueTransactions } from './lib/recurring'
 import { loadRecurringRules, saveRecurringRules } from './repos/recurringRulesRepo'
 import { RecurringRulesPanel } from './components/RecurringRulesPanel'
 import { FirstTransactionTour } from './components/FirstTransactionTour'
 import { AccountsPanel } from './components/AccountsPanel'
 import { TransactionHistoryPanel } from './components/TransactionHistoryPanel'
+import { ExpenseCalendar } from './components/ExpenseCalendar'
 import { SavingsGoalsPanel } from './components/SavingsGoalsPanel'
 import { PrivacyPanel } from './components/PrivacyPanel'
 import { PrivacyPolicyModal } from './components/PrivacyPolicyModal'
 import { ProfilePanel } from './components/ProfilePanel'
 import { logAuditEvent } from './lib/auditLog'
+import { pushToCloud, syncWithCloud } from './lib/cloudSync'
+import {
+  acceptInvite,
+  cancelSentInvite,
+  listFamilyPeers,
+  listPendingInvites,
+  listSentInvites,
+  type FamilyInvite,
+  type FamilyPeer,
+  type SentInvite,
+} from './repos/familyRepo'
+import { FamilyView } from './components/FamilyView'
+import { NotesView, type ExtractedTx, type NoteItem } from './components/NotesView'
+import {
+  defaultReportPrefs,
+  getReportPrefs,
+  parseCcEmails,
+  saveReportPrefs,
+  sendTestReport,
+  type ReportPrefs,
+} from './repos/reportPrefsRepo'
+import { shiftMonth } from './lib/calendar'
 import {
   computeConsolidatedBalance,
   balanceByAccountType,
@@ -95,7 +129,7 @@ import {
   ensureDefaultAccount,
 } from './repos/accountsRepo'
 import { ACCOUNT_TYPE_LABELS } from './types'
-import type { Account, RecurringRule } from './types'
+import type { Account, RecurringFrequency, RecurringRule } from './types'
 import {
   categories,
   categoryColors,
@@ -141,11 +175,74 @@ const CSV_MAPPINGS_STORAGE_KEY = 'plan-financier-csv-mappings-v1'
 const PROFILES_STORAGE_KEY = 'plan-financier-profiles-v1'
 const ACTIVE_PROFILE_STORAGE_KEY = 'plan-financier-active-profile-v1'
 const DEFAULT_PROFILE_STORAGE_KEY = 'plan-financier-default-profile-v1'
-const BACKUP_VERSION = 1
 const SAVINGS_TARGETS_STORAGE_KEY = 'plan-financier-savings-targets-v1'
 const ONBOARDING_DONE_KEY = 'plan-financier-onboarding-done-v1'
+// Phrases défilantes de l'écran de génération du plan manuel.
+const MANUAL_ONBOARDING_PHASES = [
+  'Préparation de la structure…',
+  'Création de vos profils…',
+  'Calcul des budgets mensuels…',
+  'Configuration de votre objectif d\'épargne…',
+  'Finalisation de votre plan…',
+]
 const FIRST_TX_TOUR_DONE_KEY = 'plan-financier-first-tx-tour-done-v1'
 const THEME_STORAGE_KEY = 'plan-financier-theme-v1'
+const PALETTE_STORAGE_KEY = 'plan-financier-palette-v1'
+const NOTES_STORAGE_KEY = 'plan-financier-notes-v1'
+const A11Y_STORAGE_KEY = 'plan-financier-a11y-v1'
+
+type A11yPrefs = {
+  textSize: 'normal' | 'large' | 'xl'
+  reduceMotion: boolean
+  highContrast: boolean
+}
+
+const defaultA11yPrefs: A11yPrefs = { textSize: 'normal', reduceMotion: false, highContrast: false }
+
+const loadA11yPrefs = (): A11yPrefs => {
+  if (typeof window === 'undefined') return defaultA11yPrefs
+  try {
+    const raw = window.localStorage.getItem(A11Y_STORAGE_KEY)
+    const parsed = raw ? (JSON.parse(raw) as Partial<A11yPrefs>) : {}
+    return {
+      textSize: parsed.textSize === 'large' || parsed.textSize === 'xl' ? parsed.textSize : 'normal',
+      reduceMotion: parsed.reduceMotion === true,
+      highContrast: parsed.highContrast === true,
+    }
+  } catch {
+    return defaultA11yPrefs
+  }
+}
+
+const loadNotes = (): NoteItem[] => {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(NOTES_STORAGE_KEY)
+    const parsed = raw ? (JSON.parse(raw) as unknown) : []
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (item): item is NoteItem =>
+        !!item &&
+        typeof (item as NoteItem).id === 'number' &&
+        typeof (item as NoteItem).content === 'string' &&
+        typeof (item as NoteItem).updatedAt === 'number',
+    )
+  } catch {
+    return []
+  }
+}
+// Palettes d'accent prédéfinies (voir index.css [data-palette=…]). Les pastilles
+// `dots` montrent la teinte claire (thème sombre) et foncée (thème clair).
+const COLOR_PALETTES = [
+  { id: 'cafe', label: 'Café', dots: ['#C4956A', '#8B6C52'] },
+  { id: 'foret', label: 'Forêt', dots: ['#8FBF7A', '#3A7D44'] },
+  { id: 'ocean', label: 'Océan', dots: ['#7FB5D1', '#2E6E8E'] },
+  { id: 'prune', label: 'Prune', dots: ['#A794C9', '#6B5B8A'] },
+  { id: 'terracotta', label: 'Terracotta', dots: ['#D98B5F', '#C05C2A'] },
+] as const
+type PaletteId = (typeof COLOR_PALETTES)[number]['id']
+const isPaletteId = (value: unknown): value is PaletteId =>
+  COLOR_PALETTES.some((entry) => entry.id === value)
 const DASHBOARD_WIDGETS_STORAGE_KEY = 'plan-financier-dashboard-widgets-v1'
 const AI_PROVIDER_STORAGE_KEY = 'plan-financier-ai-provider-v1'
 const AI_PROVIDER_KEYS_STORAGE_KEY = 'plan-financier-ai-provider-keys-v1'
@@ -154,12 +251,11 @@ const DEFAULT_CHAT_THREAD: ChatThread = { id: 'general', label: 'Général', las
 const DASHBOARD_WIDGET_LIBRARY: Array<{ id: DashboardWidgetId; label: string }> = [
   { id: 'annualTrend', label: 'Tendance annuelle' },
   { id: 'coaching', label: 'Coaching financier' },
-  { id: 'csvImport', label: 'Import CSV bancaire' },
+  { id: 'csvImport', label: 'Relevé bancaire' },
   { id: 'alerts', label: 'Alertes intelligentes' },
   { id: 'savingsGoals', label: "Objectifs d'épargne" },
   { id: 'recurringCharges', label: 'Charges récurrentes' },
   { id: 'savingsProjects', label: "Objectifs d'épargne projet" },
-  { id: 'expenseCalendar', label: 'Calendrier des dépenses' },
 ]
 
 const DASHBOARD_WIDGET_TEMPLATES: Array<{
@@ -172,29 +268,23 @@ const DASHBOARD_WIDGET_TEMPLATES: Array<{
     id: 'essentiel',
     label: 'Essentiel',
     description: 'Vue courte pour aller droit au but.',
-    widgets: ['annualTrend', 'alerts', 'savingsGoals', 'expenseCalendar'],
+    widgets: ['annualTrend', 'alerts', 'savingsGoals'],
   },
   {
     id: 'equilibre',
     label: 'Équilibré',
     description: 'Bon compromis suivi + actions.',
-    widgets: ['annualTrend', 'coaching', 'alerts', 'savingsGoals', 'expenseCalendar'],
+    widgets: ['annualTrend', 'coaching', 'alerts', 'savingsGoals'],
   },
   {
     id: 'analytique',
     label: 'Analytique',
     description: 'Vision complète avec import et récurrences.',
-    widgets: ['annualTrend', 'coaching', 'csvImport', 'alerts', 'savingsGoals', 'recurringCharges', 'savingsProjects', 'expenseCalendar'],
+    widgets: ['annualTrend', 'coaching', 'csvImport', 'alerts', 'savingsGoals', 'recurringCharges', 'savingsProjects'],
   },
 ]
 
-const MINI_CALENDAR_WEEKDAYS = ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di'] as const
 const DASHBOARD_WIDGET_SIZE_ORDER: DashboardWidgetSize[] = ['compact', 'medium', 'large']
-const DASHBOARD_WIDGET_SIZE_LABELS: Record<DashboardWidgetSize, string> = {
-  compact: 'Petit',
-  medium: 'Moyen',
-  large: 'Grand',
-}
 
 const DASHBOARD_WIDGET_ALLOWED_SIZES: Record<DashboardWidgetId, DashboardWidgetSize[]> = {
   annualTrend: ['medium', 'large'],
@@ -204,7 +294,6 @@ const DASHBOARD_WIDGET_ALLOWED_SIZES: Record<DashboardWidgetId, DashboardWidgetS
   savingsGoals: ['compact', 'medium', 'large'],
   recurringCharges: ['compact', 'medium'],
   savingsProjects: ['compact', 'medium', 'large'],
-  expenseCalendar: ['medium', 'large'],
 }
 
 const isDashboardWidgetId = (value: unknown): value is DashboardWidgetId =>
@@ -420,10 +509,18 @@ const normalizeProfile = (value: unknown): UserProfile | null => {
     return null
   }
 
+  const avatar =
+    typeof candidate.avatar === 'string' &&
+    (candidate.avatar.startsWith('emoji:') || candidate.avatar.startsWith('data:image/')) &&
+    candidate.avatar.length <= AVATAR_MAX_DATA_URI_LENGTH
+      ? candidate.avatar
+      : undefined
+
   return {
     id,
     name: candidate.name.trim() || 'Profil',
     monthlyBudget: Math.max(200, Math.round(candidate.monthlyBudget)),
+    ...(avatar ? { avatar } : {}),
   }
 }
 
@@ -487,7 +584,7 @@ const loadDefaultProfileId = (profiles: UserProfile[]) => {
   return profiles[0]?.id ?? defaultProfile.id
 }
 
-const normalizeTransaction = (value: unknown): Transaction | null => {
+const normalizeTransaction = (value: unknown, knownProfileIds?: Set<string>): Transaction | null => {
   if (!value || typeof value !== 'object') {
     return null
   }
@@ -506,7 +603,15 @@ const normalizeTransaction = (value: unknown): Transaction | null => {
   }
 
   const legacyMember = normalizeText(candidate.member)
-  const member = legacyMember === 'moi' ? defaultProfile.id : sanitizeProfileId(candidate.member)
+  // Migration legacy : les très anciennes données avaient member = « Moi »
+  // (texte libre) → profil par défaut. À n'appliquer QUE si « moi » n'est pas
+  // un vrai profil de l'utilisateur (l'onboarding génère justement l'id 'moi' —
+  // sans ce garde-fou, ses transactions étaient remappées vers 'principal' à
+  // chaque rechargement et disparaissaient de l'affichage).
+  const member =
+    legacyMember === 'moi' && !knownProfileIds?.has('moi')
+      ? defaultProfile.id
+      : sanitizeProfileId(candidate.member)
   const category = categories.includes(candidate.category as Category)
     ? (candidate.category as Category)
     : 'Autre'
@@ -526,6 +631,19 @@ const normalizeTransaction = (value: unknown): Transaction | null => {
     date: candidate.date,
     kind: candidate.kind === 'revenu' ? 'revenu' : 'depense',
     envelope,
+    ...(typeof (value as { recurringRuleId?: unknown }).recurringRuleId === 'string'
+      ? { recurringRuleId: (value as { recurringRuleId: string }).recurringRuleId }
+      : {}),
+    ...(Array.isArray((value as { tags?: unknown }).tags)
+      ? {
+          tags: ((value as { tags: unknown[] }).tags)
+            .filter((tag): tag is string => typeof tag === 'string' && tag.length > 0)
+            .slice(0, 8),
+        }
+      : {}),
+    ...(isValidTxIcon((value as { icon?: unknown }).icon)
+      ? { icon: (value as { icon: string }).icon }
+      : {}),
   }
 }
 
@@ -545,9 +663,19 @@ const loadTransactions = () => {
       return baseTransactions
     }
 
+    const profiles = loadProfiles()
+    const knownProfileIds = new Set(profiles.map((profile) => profile.id))
+    const fallbackProfileId = loadDefaultProfileId(profiles)
+
     const cleaned = parsed
-      .map((item) => normalizeTransaction(item))
+      .map((item) => normalizeTransaction(item, knownProfileIds))
       .filter((item): item is Transaction => item !== null)
+      // Récupère les transactions orphelines (rattachées à un profil qui
+      // n'existe plus, ex. victimes de l'ancien remap 'moi' → 'principal') :
+      // on les rebascule sur le profil par défaut plutôt que de les perdre.
+      .map((item) =>
+        knownProfileIds.has(item.member) ? item : { ...item, member: fallbackProfileId },
+      )
     return cleaned.length > 0 ? cleaned : baseTransactions
   } catch {
     return baseTransactions
@@ -669,64 +797,6 @@ const loadSavingsTargets = (): SavingsTarget[] => {
   }
 }
 
-const parseCsvLine = (line: string) => {
-  const result: string[] = []
-  let current = ''
-  let inQuotes = false
-
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index]
-
-    if (char === '"') {
-      if (inQuotes && line[index + 1] === '"') {
-        current += '"'
-        index += 1
-      } else {
-        inQuotes = !inQuotes
-      }
-      continue
-    }
-
-    if (char === ',' && !inQuotes) {
-      result.push(current.trim())
-      current = ''
-      continue
-    }
-
-    current += char
-  }
-
-  result.push(current.trim())
-  return result
-}
-
-const defaultCsvMapping: CsvColumnMapping = {
-  date: '',
-  label: '',
-  amount: '',
-  type: '',
-}
-
-const normalizeDateValue = (value: string) => {
-  const trimmed = value.trim()
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    return trimmed
-  }
-
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
-    const [day, month, year] = trimmed.split('/')
-    return `${year}-${month}-${day}`
-  }
-
-  return ''
-}
-
-const parseAmountValue = (value: string) => {
-  const normalized = value.replace(/\s/g, '').replace(',', '.').replace(/€/g, '')
-  const numeric = Number(normalized)
-  return Number.isFinite(numeric) ? numeric : NaN
-}
-
 const normalizeChatThreadLabel = (value: string) => value.trim().replace(/\s+/g, ' ')
 
 const createChatThreadId = (label: string) => normalizeText(label).replace(/\s+/g, '-').slice(0, 32)
@@ -748,229 +818,20 @@ const formatChatThreadActivity = (value: number) => {
   })
 }
 
-const parseCsvRawData = (content: string): CsvRawData => {
-  const lines = content
-    .split(/\r?\n/)
-    .filter((line) => line.trim().length > 0)
-
-  if (lines.length <= 1) {
-    return { headers: [], rows: [] }
-  }
-
-  return {
-    headers: parseCsvLine(lines[0]),
-    rows: lines.slice(1).map((line) => parseCsvLine(line)),
-  }
-}
-
-const bytesToBase64 = (value: Uint8Array) => {
-  let binary = ''
-  value.forEach((byte) => {
-    binary += String.fromCharCode(byte)
-  })
-  return btoa(binary)
-}
-
-const base64ToBytes = (value: string) => {
-  const binary = atob(value)
-  const result = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index += 1) {
-    result[index] = binary.charCodeAt(index)
-  }
-  return result
-}
-
-const toArrayBuffer = (value: Uint8Array) =>
-  value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer
-
-const deriveBackupKey = async (pin: string, salt: Uint8Array) => {
-  const encoder = new TextEncoder()
-  const baseKey = await crypto.subtle.importKey('raw', encoder.encode(pin), 'PBKDF2', false, [
-    'deriveKey',
-  ])
-
-  return crypto.subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      salt: toArrayBuffer(salt),
-      iterations: 150000,
-      hash: 'SHA-256',
-    },
-    baseKey,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
+/** ℹ️ cliquable : l'explication ne s'affiche qu'à la demande. */
+function InfoHint({ text }: { text: string }) {
+  return (
+    <details className="info-hint">
+      <summary aria-label="Plus d'informations" title="Plus d'informations">ℹ️</summary>
+      <span className="info-hint__pop" role="note">{text}</span>
+    </details>
   )
-}
-
-const encryptBackupPayload = async (payload: BackupPayload, pin: string): Promise<EncryptedBackup> => {
-  const encoder = new TextEncoder()
-  const salt = crypto.getRandomValues(new Uint8Array(16))
-  const iv = crypto.getRandomValues(new Uint8Array(12))
-  const key = await deriveBackupKey(pin, salt)
-  const plaintext = encoder.encode(JSON.stringify(payload))
-  const cipherBuffer = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: toArrayBuffer(iv) },
-    key,
-    toArrayBuffer(plaintext),
-  )
-
-  return {
-    version: BACKUP_VERSION,
-    createdAt: Date.now(),
-    salt: bytesToBase64(salt),
-    iv: bytesToBase64(iv),
-    cipher: bytesToBase64(new Uint8Array(cipherBuffer)),
-  }
-}
-
-const decryptBackupPayload = async (encrypted: EncryptedBackup, pin: string): Promise<BackupPayload> => {
-  const decoder = new TextDecoder()
-  const salt = base64ToBytes(encrypted.salt)
-  const iv = base64ToBytes(encrypted.iv)
-  const cipher = base64ToBytes(encrypted.cipher)
-  const key = await deriveBackupKey(pin, salt)
-  const plainBuffer = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: toArrayBuffer(iv) },
-    key,
-    toArrayBuffer(cipher),
-  )
-
-  return JSON.parse(decoder.decode(plainBuffer)) as BackupPayload
-}
-
-const inferBankProfileKey = (fileName: string, headers: string[]) => {
-  const normalizedName = normalizeText(fileName.replace(/\.csv$/i, ''))
-  if (normalizedName) {
-    return normalizedName
-  }
-
-  return normalizeText(headers.join('-')) || 'banque-generique'
-}
-
-const inferCsvMapping = (headers: string[]): CsvColumnMapping => {
-  const normalizedHeaders = headers.map((header) => normalizeText(header))
-
-  const findOriginalHeader = (candidates: string[]) => {
-    const index = normalizedHeaders.findIndex((header) => candidates.includes(header))
-    return index >= 0 ? headers[index] : ''
-  }
-
-  return {
-    date: findOriginalHeader(['date', 'jour', 'operation date', 'date operation']),
-    label: findOriginalHeader(['libelle', 'label', 'description', 'operation']),
-    amount: findOriginalHeader(['montant', 'amount', 'somme', 'debit', 'credit']),
-    type: findOriginalHeader(['type', 'nature', 'sens']),
-  }
-}
-
-const buildTransactionSignature = (item: {
-  date: string
-  label: string
-  amount: number
-  kind: TransactionKind
-  member?: FamilyMember
-}) =>
-  [item.date, normalizeText(item.label), item.amount.toFixed(2), item.kind, item.member ?? '']
-    .join('|')
-
-const findDuplicateReason = (
-  candidate: {
-    date: string
-    label: string
-    amount: number
-    kind: TransactionKind
-    member: FamilyMember
-  },
-  existingTransactions: Transaction[],
-) => {
-  const exactMatch = existingTransactions.find(
-    (transaction) => buildTransactionSignature(transaction) === buildTransactionSignature(candidate),
-  )
-
-  if (exactMatch) {
-    return `Doublon exact avec ${exactMatch.label}`
-  }
-
-  const fuzzyMatch = existingTransactions.find((transaction) => {
-    if (transaction.member !== candidate.member || transaction.kind !== candidate.kind) {
-      return false
-    }
-
-    if (Math.abs(transaction.amount - candidate.amount) > 0.01) {
-      return false
-    }
-
-    if (getDateDistanceInDays(transaction.date, candidate.date) > 3) {
-      return false
-    }
-
-    return computeLabelSimilarity(transaction.label, candidate.label) >= 0.72
-  })
-
-  return fuzzyMatch ? `Doublon probable avec ${fuzzyMatch.label}` : undefined
-}
-
-const parseCsvTransactions = (
-  rawData: CsvRawData,
-  mapping: CsvColumnMapping,
-  existingTransactions: Transaction[],
-  member: FamilyMember,
-): CsvPreviewRow[] => {
-  const dateIndex = rawData.headers.indexOf(mapping.date)
-  const labelIndex = rawData.headers.indexOf(mapping.label)
-  const amountIndex = rawData.headers.indexOf(mapping.amount)
-  const typeIndex = rawData.headers.indexOf(mapping.type)
-
-  if (dateIndex === -1 || labelIndex === -1 || amountIndex === -1) {
-    return []
-  }
-
-  return rawData.rows.flatMap((columns, rowIndex) => {
-    const date = normalizeDateValue(columns[dateIndex] ?? '')
-    const label = (columns[labelIndex] ?? '').trim()
-    const parsedAmount = parseAmountValue(columns[amountIndex] ?? '')
-    const rawType = normalizeText(columns[typeIndex] ?? '')
-    const inferredCategory = suggestCategoryFromLabel(label) ?? 'Autre'
-
-    if (!date || !label || Number.isNaN(parsedAmount)) {
-      return []
-    }
-
-    const kind: TransactionKind =
-      rawType.includes('revenu') || rawType.includes('credit') || parsedAmount > 0
-        ? 'revenu'
-        : 'depense'
-
-    const duplicateReason = findDuplicateReason(
-      {
-        date,
-        label,
-        amount: Math.abs(parsedAmount),
-        kind,
-        member,
-      },
-      existingTransactions,
-    )
-
-    return [
-      {
-        id: Date.now() + rowIndex,
-        date,
-        label,
-        amount: Math.abs(parsedAmount),
-        kind,
-        category: inferredCategory,
-        duplicate: !!duplicateReason,
-        duplicateReason,
-      },
-    ]
-  })
 }
 
 function App() {
-  type SettingsSection = 'profiles' | 'ai' | 'security' | 'backup' | 'reset' | 'theme'
+  type SettingsSection = 'profiles' | 'ai' | 'security' | 'backup' | 'reset' | 'theme' | 'rgpd' | 'account' | 'report' | 'a11y'
   const currentMonth = new Date().toISOString().slice(0, 7)
+  const todayIso = new Date().toISOString().slice(0, 10)
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
   const formatYearMonth = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
   const navigateMonth = (offset: number) => {
@@ -1020,13 +881,33 @@ function App() {
   }, [currentMonth])
 
   const backupRestoreInputRef = useRef<HTMLInputElement | null>(null)
+  // ── Famille (comptes reliés) ──
+  const [familyPeers, setFamilyPeers] = useState<FamilyPeer[]>([])
+  const [pendingInvites, setPendingInvites] = useState<FamilyInvite[]>([])
+  const [myUserId, setMyUserId] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteBusy, setInviteBusy] = useState(false)
+  const [inviteFeedback, setInviteFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  // ── Notes ──
+  const [notes, setNotes] = useState<NoteItem[]>(loadNotes)
+
+  // ── Rapport par email ──
+  const [reportPrefs, setReportPrefs] = useState<ReportPrefs>(defaultReportPrefs)
+  const [reportBusy, setReportBusy] = useState(false)
+  const [reportFeedback, setReportFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  const [reportCcDraft, setReportCcDraft] = useState('')
+  const [sentInvites, setSentInvites] = useState<SentInvite[]>([])
+  // Cadre de relance : 1× par 24 h et par invitation (horodatage local).
+  const [relanceTick, setRelanceTick] = useState(0)
   const navItems = useMemo(
     () => [
       { id: 'overview',    label: '🏠 Accueil' },
       { id: 'operations',  label: '💳 Dépenses' },
       { id: 'budget',      label: '📅 Budget' },
+      { id: 'notes',       label: '🗒️ Notes' },
+      ...(familyPeers.length >= 2 ? [{ id: 'family', label: '👨‍👩‍👧 Famille' }] : []),
     ],
-    [],
+    [familyPeers.length],
   )
   const isActiveView = (sectionId: string) => activeSectionId === sectionId
   const navigateToSection = (sectionId: string) => {
@@ -1037,23 +918,37 @@ function App() {
   const [activeSectionId, setActiveSectionId] = useState('overview')
   const [isSecurityReady, setIsSecurityReady] = useState(false)
   const [authProviderReady, setAuthProviderReady] = useState(false)
-  const [sensitiveState, setSensitiveState] = useState<SensitiveState>(defaultSensitiveState)
+  // Seul le setter est utilisé : l'état sert à persister les réglages PIN
+  // (saveSensitiveState) — plus aucune lecture depuis la fin des sessions locales.
+  const [, setSensitiveState] = useState<SensitiveState>(defaultSensitiveState)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  // Mode démo : visite guidée sans compte — données en mémoire uniquement
+  // (toutes les persistances localStorage sont désactivées tant qu'il est actif).
+  const [demoMode, setDemoMode] = useState(false)
   const [authRole, setAuthRole] = useState<AuthRole>('Parent')
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>(
     () => (window.localStorage.getItem(THEME_STORAGE_KEY) as 'dark' | 'light' | 'system') ?? 'system'
   )
+  const [a11yPrefs, setA11yPrefs] = useState<A11yPrefs>(loadA11yPrefs)
+  const [palette, setPalette] = useState<PaletteId>(() => {
+    const stored = window.localStorage.getItem(PALETTE_STORAGE_KEY)
+    return isPaletteId(stored) ? stored : 'cafe'
+  })
   const [dashboardWidgetState, setDashboardWidgetState] = useState<DashboardWidgetState>(loadDashboardWidgetState)
-  const isWidgetDirectMode = true
-  const [widgetEditMode, setWidgetEditMode] = useState(false)
   const [widgetSizeMenuFor, setWidgetSizeMenuFor] = useState<DashboardWidgetId | null>(null)
-  const [draggedWidgetId, setDraggedWidgetId] = useState<DashboardWidgetId | null>(null)
-  const [dragOverWidgetId, setDragOverWidgetId] = useState<DashboardWidgetId | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('profiles')
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false)
   const [settingsError, setSettingsError] = useState('')
   const [settingsSuccess, setSettingsSuccess] = useState('')
+
+  // Les confirmations de succès s'effacent seules (les erreurs, elles, restent
+  // affichées jusqu'à la prochaine action).
+  useEffect(() => {
+    if (!settingsSuccess) return
+    const timer = window.setTimeout(() => setSettingsSuccess(''), 4000)
+    return () => window.clearTimeout(timer)
+  }, [settingsSuccess])
   const [claudeTestState, setClaudeTestState] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
   const [claudeTestMessage, setClaudeTestMessage] = useState('')
   const [pinLogs, setPinLogs] = useState<PinChangeLog[]>([])
@@ -1141,7 +1036,6 @@ function App() {
   const [budgetSimpleMode, setBudgetSimpleMode] = useState(true)
   const [budgetQuickEditOpen, setBudgetQuickEditOpen] = useState(false)
   const [budgetQuickEditValue, setBudgetQuickEditValue] = useState('')
-  const [budgetAiHintOpen, setBudgetAiHintOpen] = useState(false)
   const [budgetAssistantVisible, setBudgetAssistantVisible] = useState(true)
   const budgetInfoScopeRef = useRef<HTMLElement | null>(null)
 
@@ -1197,6 +1091,9 @@ function App() {
   useEffect(() => {
     if (orderedVisibleDashboardWidgets.length === 0) {
       if (activeDashboardWidgetId !== null) {
+        // Réinitialise une sélection devenue invalide : non dérivable au render
+        // (l'ID actif est piloté par les clics utilisateur).
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setActiveDashboardWidgetId(null)
       }
       return
@@ -1213,9 +1110,18 @@ function App() {
     }
 
     const handleOutsideInfoClick = (event: MouseEvent | TouchEvent) => {
-      const target = event.target as Node | null
-      const insideBudgetPanel = !!(target && budgetInfoScopeRef.current?.contains(target))
-      if (!insideBudgetPanel) {
+      const target = event.target as HTMLElement | null
+      // La bulle reste ouverte uniquement si le clic vise le bouton ℹ️ ou la
+      // bulle elle-même ; tout autre clic (même dans le panneau budget) ferme.
+      const insideInfoUi = !!target?.closest('.info-dot-wrap, .toolbar-info-wrap, .toolbar-info-btn, .toolbar-info-pop')
+      if (!insideInfoUi) {
+        setBudgetInfoOpen(null)
+        setBudgetInfoDotOpen(null)
+      }
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
         setBudgetInfoOpen(null)
         setBudgetInfoDotOpen(null)
       }
@@ -1223,46 +1129,19 @@ function App() {
 
     document.addEventListener('mousedown', handleOutsideInfoClick)
     document.addEventListener('touchstart', handleOutsideInfoClick)
+    document.addEventListener('keydown', handleEscape)
 
     return () => {
       document.removeEventListener('mousedown', handleOutsideInfoClick)
       document.removeEventListener('touchstart', handleOutsideInfoClick)
+      document.removeEventListener('keydown', handleEscape)
     }
   }, [budgetInfoOpen, budgetInfoDotOpen])
 
-  const goToDashboardWidget = (widgetId: DashboardWidgetId) => {
-    if (!orderedVisibleDashboardWidgets.includes(widgetId)) return
-    setActiveDashboardWidgetId(widgetId)
-  }
-
-  const goToPreviousDashboardWidget = () => {
-    if (orderedVisibleDashboardWidgets.length === 0) return
-    if (!activeDashboardWidgetId) {
-      setActiveDashboardWidgetId(orderedVisibleDashboardWidgets[0])
-      return
-    }
-    const currentIndex = orderedVisibleDashboardWidgets.indexOf(activeDashboardWidgetId)
-    const previousIndex = currentIndex <= 0 ? orderedVisibleDashboardWidgets.length - 1 : currentIndex - 1
-    setActiveDashboardWidgetId(orderedVisibleDashboardWidgets[previousIndex])
-  }
-
-  const goToNextDashboardWidget = () => {
-    if (orderedVisibleDashboardWidgets.length === 0) return
-    if (!activeDashboardWidgetId) {
-      setActiveDashboardWidgetId(orderedVisibleDashboardWidgets[0])
-      return
-    }
-    const currentIndex = orderedVisibleDashboardWidgets.indexOf(activeDashboardWidgetId)
-    const nextIndex = currentIndex >= orderedVisibleDashboardWidgets.length - 1 ? 0 : currentIndex + 1
-    setActiveDashboardWidgetId(orderedVisibleDashboardWidgets[nextIndex])
-  }
-
-  const activeDashboardWidgetIndex = activeDashboardWidgetId
-    ? orderedVisibleDashboardWidgets.indexOf(activeDashboardWidgetId)
-    : -1
-
+  // Visibilité simple : tous les blocs activés s'affichent en grille (l'ancienne
+  // « navigation vue par vue » qui n'en montrait qu'un a été supprimée).
   const isPilotageWidgetVisible = (widgetId: DashboardWidgetId) =>
-    visibleDashboardWidgets.has(widgetId) && activeDashboardWidgetId === widgetId
+    visibleDashboardWidgets.has(widgetId)
 
   const applyDashboardWidgetTemplate = (templateId: Exclude<DashboardWidgetTemplateId, 'custom'>) => {
     const template = DASHBOARD_WIDGET_TEMPLATES.find((entry) => entry.id === templateId)
@@ -1274,129 +1153,14 @@ function App() {
     }))
   }
 
-  const toggleDashboardWidget = (widgetId: DashboardWidgetId) => {
-    setDashboardWidgetState((previous) => {
-      const alreadyVisible = previous.visibleWidgets.includes(widgetId)
-      const nextVisibleWidgets = alreadyVisible
-        ? previous.visibleWidgets.filter((id) => id !== widgetId)
-        : [...previous.visibleWidgets, widgetId]
 
-      return {
-        templateId: 'custom',
-        visibleWidgets: nextVisibleWidgets,
-        widgetSizes: buildDashboardWidgetSizes(nextVisibleWidgets, previous.widgetSizes),
-      }
-    })
-  }
 
-  const setDashboardWidgetSize = (widgetId: DashboardWidgetId, size: DashboardWidgetSize) => {
-    setDashboardWidgetState((previous) => {
-      const allowedSizes = getAllowedDashboardWidgetSizes(widgetId)
-      if (!allowedSizes.includes(size)) {
-        return previous
-      }
 
-      return {
-        ...previous,
-        templateId: 'custom',
-        widgetSizes: {
-          ...previous.widgetSizes,
-          [widgetId]: size,
-        },
-      }
-    })
-  }
 
-  const reorderDashboardWidgets = (sourceId: DashboardWidgetId, targetId: DashboardWidgetId) => {
-    if (sourceId === targetId) return
 
-    setDashboardWidgetState((previous) => {
-      const currentOrder = [...previous.visibleWidgets]
-      const sourceIndex = currentOrder.indexOf(sourceId)
-      const targetIndex = currentOrder.indexOf(targetId)
 
-      if (sourceIndex === -1 || targetIndex === -1) {
-        return previous
-      }
 
-      const [movedWidget] = currentOrder.splice(sourceIndex, 1)
-      currentOrder.splice(targetIndex, 0, movedWidget)
 
-      return {
-        ...previous,
-        templateId: 'custom',
-        visibleWidgets: currentOrder,
-      }
-    })
-  }
-
-  const toggleDashboardWidgetSize = (widgetId: DashboardWidgetId) => {
-    setDashboardWidgetState((previous) => {
-      const allowedSizes = getAllowedDashboardWidgetSizes(widgetId)
-      const currentSize = previous.widgetSizes[widgetId] ?? getDefaultDashboardWidgetSize(widgetId)
-      const currentIndex = Math.max(0, allowedSizes.indexOf(currentSize))
-      const nextSize = allowedSizes[(currentIndex + 1) % allowedSizes.length]
-
-      return {
-        ...previous,
-        templateId: 'custom',
-        widgetSizes: {
-          ...previous.widgetSizes,
-          [widgetId]: nextSize,
-        },
-      }
-    })
-  }
-
-  const resetDashboardWidgetLayout = () => {
-    setDashboardWidgetState((previous) => ({
-      ...previous,
-      templateId: 'custom',
-      visibleWidgets: [...previous.visibleWidgets].sort(
-        (left, right) =>
-          DASHBOARD_WIDGET_LIBRARY.findIndex((entry) => entry.id === left) -
-          DASHBOARD_WIDGET_LIBRARY.findIndex((entry) => entry.id === right),
-      ),
-      widgetSizes: buildDashboardWidgetSizes(previous.visibleWidgets),
-    }))
-    setWidgetSizeMenuFor(null)
-    setDraggedWidgetId(null)
-    setDragOverWidgetId(null)
-  }
-
-  const handleWidgetDragStart = (event: DragEvent<HTMLElement>, widgetId: DashboardWidgetId) => {
-    if (!widgetEditMode && !isWidgetDirectMode) return
-
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', widgetId)
-    setWidgetSizeMenuFor(null)
-    setDraggedWidgetId(widgetId)
-  }
-
-  const handleWidgetDragOver = (event: DragEvent<HTMLElement>, widgetId: DashboardWidgetId) => {
-    if (!widgetEditMode && !isWidgetDirectMode) return
-
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
-    setDragOverWidgetId(widgetId)
-  }
-
-  const handleWidgetDrop = (event: DragEvent<HTMLElement>, widgetId: DashboardWidgetId) => {
-    if (!widgetEditMode && !isWidgetDirectMode) return
-
-    event.preventDefault()
-    const sourceId = (event.dataTransfer.getData('text/plain') || draggedWidgetId) as DashboardWidgetId
-    if (isDashboardWidgetId(sourceId)) {
-      reorderDashboardWidgets(sourceId, widgetId)
-    }
-    setDraggedWidgetId(null)
-    setDragOverWidgetId(null)
-  }
-
-  const handleWidgetDragEnd = () => {
-    setDraggedWidgetId(null)
-    setDragOverWidgetId(null)
-  }
 
   useEffect(() => {
     if (!widgetSizeMenuFor) return
@@ -1525,11 +1289,14 @@ function App() {
   const activeAiKey = aiProviderKeys[aiProvider] ?? ''
   const isCurrentAiProviderOperational = selectedAiProvider.id === 'anthropic'
 
-  const [showOnboarding, setShowOnboarding] = useState(
-    () =>
-      !window.localStorage.getItem(ONBOARDING_DONE_KEY) &&
-      !window.localStorage.getItem(ANTHROPIC_KEY_STORAGE),
-  )
+  // Affiché piloté par le compte (cf. effet plus bas qui lit
+  // profiles.onboarding_completed_at à la connexion), pas par l'appareil.
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  // Branche choisie à l'étape 1 : assistant IA ou questionnaire manuel.
+  const [onboardingMode, setOnboardingMode] = useState<'ai' | 'manual'>('ai')
+  // Écran de génération animé du plan manuel + index de la phrase affichée.
+  const [manualGenerating, setManualGenerating] = useState(false)
+  const [manualPhase, setManualPhase] = useState(0)
   const [onboardingStep, setOnboardingStep] = useState<1 | 2 | 3 | 4>(1)
   const [onboardingProvider, setOnboardingProvider] = useState<OnboardingProviderId | null>(null)
   const [onboardingKeyDraft, setOnboardingKeyDraft] = useState('')
@@ -1667,8 +1434,11 @@ Règles :
       const config = parseOnboardingConfig(reply)
       if (config) {
         applyOnboardingConfig(config)
-        window.localStorage.setItem(ONBOARDING_DONE_KEY, '1')
-        setTimeout(() => setShowOnboarding(false), 2200)
+        void persistOnboardingDone()
+        setTimeout(() => {
+          setShowOnboarding(false)
+          landAfterOnboarding()
+        }, 2200)
       }
     } catch {
       setOnboardingMessages([...next, { role: 'assistant', content: "Désolé, une erreur s'est produite. Réessayez." }])
@@ -1677,11 +1447,133 @@ Règles :
     }
   }
 
-  const skipOnboarding = () => {
+  // Marque l'onboarding terminé : drapeau localStorage (rapide/offline) +
+  // profiles.onboarding_completed_at côté Supabase (source de vérité par compte).
+  const persistOnboardingDone = async () => {
     window.localStorage.setItem(ONBOARDING_DONE_KEY, '1')
-    setShowOnboarding(false)
-    // Le tour de première transaction prend le relais (sauf si déjà fait).
+    try {
+      const { data } = await supabase.auth.getSession()
+      const userId = data.session?.user.id
+      if (userId) {
+        await supabase
+          .from('profiles')
+          .update({ onboarding_completed_at: new Date().toISOString() })
+          .eq('user_id', userId)
+      }
+    } catch {
+      // Hors-ligne : le drapeau localStorage suffit pour cet appareil.
+    }
   }
+
+  // Après l'onboarding : atterrir sur l'Accueil (le « cockpit ») et, si le
+  // compte est encore vide, enchaîner le guide « première transaction ».
+  const landAfterOnboarding = () => {
+    setActiveSectionId('overview')
+    if (transactions.length === 0) {
+      setShowFirstTxTour(true)
+    }
+  }
+
+  // Entrée en mode démo : jeu de données réaliste, en mémoire seulement.
+  const enterDemoMode = () => {
+    const d = (day: number) => `${currentMonth}-${String(day).padStart(2, '0')}`
+    const demoProfiles: UserProfile[] = [
+      { id: 'demo', name: 'Démo', monthlyBudget: 2200, avatar: 'emoji:💰' },
+    ]
+    const demoTransactions: Transaction[] = [
+      { id: 1, label: 'Salaire', amount: 2450, category: 'Autre', member: 'demo', date: d(2), kind: 'revenu', envelope: 'Perso' },
+      { id: 2, label: 'Loyer', amount: 850, category: 'Maison', member: 'demo', date: d(3), kind: 'depense', envelope: 'Maison' },
+      { id: 3, label: 'Courses Carrefour', amount: 96.4, category: 'Courses', member: 'demo', date: d(4), kind: 'depense', envelope: 'Maison' },
+      { id: 4, label: 'Pass Navigo', amount: 86.4, category: 'Transport', member: 'demo', date: d(5), kind: 'depense', envelope: 'Perso' },
+      { id: 5, label: 'Restaurant entre amis', amount: 54, category: 'Loisirs', member: 'demo', date: d(8), kind: 'depense', envelope: 'Perso' },
+      { id: 6, label: 'Pharmacie', amount: 18.9, category: 'Sante', member: 'demo', date: d(10), kind: 'depense', envelope: 'Maison' },
+      { id: 7, label: 'Courses Lidl', amount: 72.3, category: 'Courses', member: 'demo', date: d(12), kind: 'depense', envelope: 'Maison' },
+      { id: 8, label: 'Essence', amount: 65, category: 'Transport', member: 'demo', date: d(15), kind: 'depense', envelope: 'Perso' },
+      { id: 9, label: 'Cinéma', amount: 24, category: 'Loisirs', member: 'demo', date: d(16), kind: 'depense', envelope: 'Vacances' },
+      { id: 10, label: 'Courses marché', amount: 43.5, category: 'Courses', member: 'demo', date: d(19), kind: 'depense', envelope: 'Maison' },
+      { id: 11, label: 'Électricité', amount: 78, category: 'Maison', member: 'demo', date: d(20), kind: 'depense', envelope: 'Maison' },
+      { id: 12, label: 'Cantine des enfants', amount: 62, category: 'Ecole', member: 'demo', date: d(22), kind: 'depense', envelope: 'Maison' },
+    ]
+    setProfiles(demoProfiles)
+    setSelectedMember('demo')
+    setDefaultProfileId('demo')
+    setTransactions(demoTransactions)
+    setSavingsTargets([
+      { id: 'demo-goal', label: 'Épargne de précaution', targetAmount: 3000, currentSaved: 1450, displayColor: '#3A7D44', member: 'demo' },
+    ])
+    setShowOnboarding(false)
+    setShowFirstTxTour(false)
+    setDemoMode(true)
+  }
+
+  const skipOnboarding = () => {
+    void persistOnboardingDone()
+    setShowOnboarding(false)
+    landAfterOnboarding()
+  }
+
+  // Chemin MANUEL : génère un plan sur mesure depuis les réponses (sans IA) et
+  // l'applique (profils + budgets + objectif d'épargne).
+  const handleManualPlan = () => {
+    // Date.now() = horodatage réel de l'action (handler, pas du render).
+    // eslint-disable-next-line react-hooks/purity
+    const plan = generateOnboardingPlan(onboardingUserProfile, Date.now())
+    setManualPhase(0)
+    setManualGenerating(true)
+
+    // Défilement des phrases pendant la « génération ».
+    let phase = 0
+    const interval = window.setInterval(() => {
+      phase += 1
+      if (phase < MANUAL_ONBOARDING_PHASES.length) {
+        setManualPhase(phase)
+      } else {
+        window.clearInterval(interval)
+      }
+    }, 650)
+
+    // Application effective du plan à la fin de l'animation.
+    window.setTimeout(() => {
+      window.clearInterval(interval)
+      applyOnboardingConfig({ profiles: plan.profiles, defaultProfileId: plan.defaultProfileId })
+      setSavingsTargets(plan.savingsTargets)
+      window.localStorage.setItem(SAVINGS_TARGETS_STORAGE_KEY, JSON.stringify(plan.savingsTargets))
+      void persistOnboardingDone()
+      setManualGenerating(false)
+      setShowOnboarding(false)
+      landAfterOnboarding()
+    }, MANUAL_ONBOARDING_PHASES.length * 650 + 350)
+  }
+
+  // Déclenchement lié au compte : à la connexion, on affiche le wizard tant que
+  // profiles.onboarding_completed_at est vide. Fallback localStorage si offline.
+  useEffect(() => {
+    if (!isAuthenticated) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const { data } = await supabase.auth.getSession()
+        const userId = data.session?.user.id
+        if (!userId || cancelled) return
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('onboarding_completed_at')
+          .eq('user_id', userId)
+          .maybeSingle()
+        if (cancelled) return
+        if (error) {
+          if (!window.localStorage.getItem(ONBOARDING_DONE_KEY)) setShowOnboarding(true)
+          return
+        }
+        if (!profile?.onboarding_completed_at) setShowOnboarding(true)
+      } catch {
+        if (!window.localStorage.getItem(ONBOARDING_DONE_KEY)) setShowOnboarding(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isAuthenticated])
 
   const completeFirstTxTour = (transaction?: Transaction) => {
     if (transaction) {
@@ -1850,6 +1742,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     if (!message || !anthropicKey || chatLoading) return
 
     const newMessages: ChatMessage[] = [...chatMessages, { role: 'user', content: message }]
+    // Timestamp réel de l'action utilisateur (handler, pas du render).
+    // eslint-disable-next-line react-hooks/purity
     updateChatThreadActivity(activeChatThread.id, Date.now())
     setChatMessages(newMessages)
     setChatInput('')
@@ -1952,6 +1846,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return
     }
 
+    // Timestamp réel de l'action utilisateur (handler, pas du render).
+    // eslint-disable-next-line react-hooks/purity
     const baseId = createChatThreadId(label) || `topic-${Date.now()}`
     let nextId = baseId
     let suffix = 2
@@ -1960,6 +1856,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       suffix += 1
     }
 
+    // Timestamp réel de l'action utilisateur (handler, pas du render).
+    // eslint-disable-next-line react-hooks/purity
     const nextThread = { id: nextId, label, lastActivityAt: Date.now() }
     setChatThreads((previous) => [nextThread, ...previous])
     setChatThreadId(nextThread.id)
@@ -2020,6 +1918,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     const fallback = [DEFAULT_CHAT_THREAD]
 
     if (!raw) {
+      // Chargement initial des fils de discussion depuis localStorage.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setChatThreads(fallback)
       setChatThreadId(DEFAULT_CHAT_THREAD.id)
       setChatRenameDraft(DEFAULT_CHAT_THREAD.label)
@@ -2060,6 +1960,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }, [chatThreadScopeKey])
 
   useEffect(() => {
+    // Réinitialise le brouillon de renommage au changement de fil actif.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setChatRenameDraft(activeChatThread.label)
   }, [activeChatThread.id, activeChatThread.label])
 
@@ -2099,6 +2001,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
   useEffect(() => {
     chatHistoryReadyKeyRef.current = ''
+    // Reset de l'UI de confirmation au changement de contexte de conversation.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setChatClearConfirmOpen(false)
     resetChatUndoState()
   }, [chatHistoryStorageKey])
@@ -2133,6 +2037,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }, [lastDeletedChat])
 
   useEffect(() => {
+    // Reset de l'état d'annulation au changement de section.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     resetChatUndoState()
   }, [activeSectionId])
 
@@ -2142,6 +2048,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
 
     if (!isAuthenticated || !anthropicKey) {
+      // Chargement/purge de l'historique de chat depuis localStorage.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setChatMessages([])
       chatHistoryReadyKeyRef.current = chatHistoryStorageKey
       return
@@ -2197,22 +2105,306 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
         sessionDurationDays: String(loaded.sessionDurationDays),
       }))
 
-      if (loaded.persistedSession) {
-        setAuthRole(loaded.persistedSession.role)
-        setIsAuthenticated(true)
-      }
-
+      // NB : l'ancienne « session locale » (persistedSession) n'authentifie
+      // plus — Supabase est l'unique source de vérité (cf. onAuthStateChange).
       setIsSecurityReady(true)
     }
 
     void initializeSecurity()
   }, [])
 
+  // ── Synchronisation cloud ─────────────────────────────────────
+  // Au login : fusion local↔distant puis convergence. Ensuite : push debouncé
+  // à chaque modification. Réfs pour éviter les courses (état au moment T).
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle')
+  const cloudSyncReadyRef = useRef(false)
+  const cloudPushTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      cloudSyncReadyRef.current = false
+      // Reset du statut à la déconnexion (état piloté par événement).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCloudSyncStatus('idle')
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const { data } = await supabase.auth.getSession()
+      const userId = data.session?.user.id
+      if (!userId || cancelled) return
+      setCloudSyncStatus('syncing')
+      const report = await syncWithCloud(userId, accounts, transactions, defaultProfileId)
+      if (cancelled) return
+      if (!report.ok) {
+        setCloudSyncStatus('error')
+        return
+      }
+      if (report.transactions && report.transactions.addedFromRemote > 0) {
+        setTransactions(report.transactions.merged)
+      }
+      if (report.accounts && report.accounts.addedFromRemote > 0) {
+        setAccounts(report.accounts.merged)
+      }
+      cloudSyncReadyRef.current = true
+      setCloudSyncStatus('ok')
+      const recovered = (report.transactions?.addedFromRemote ?? 0)
+      if (recovered > 0) {
+        showToast(`☁️ ${recovered} opération${recovered > 1 ? 's' : ''} récupérée${recovered > 1 ? 's' : ''} depuis le cloud`)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // Volontairement déclenché sur le seul login : l'état local du moment sert
+    // de base à la fusion ; les changements suivants passent par le push.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated])
+
+  useEffect(() => {
+    if (!cloudSyncReadyRef.current || !isAuthenticated) return
+    if (cloudPushTimerRef.current !== null) window.clearTimeout(cloudPushTimerRef.current)
+    cloudPushTimerRef.current = window.setTimeout(() => {
+      cloudPushTimerRef.current = null
+      setCloudSyncStatus('syncing')
+      void pushToCloud(accounts, transactions).then((result) => {
+        setCloudSyncStatus(result.ok ? 'ok' : 'error')
+      })
+    }, 2500)
+    return () => {
+      if (cloudPushTimerRef.current !== null) {
+        window.clearTimeout(cloudPushTimerRef.current)
+        cloudPushTimerRef.current = null
+      }
+    }
+  }, [transactions, accounts, isAuthenticated])
+
+  // Chargement des infos famille au login (pairs + invitations en attente).
+  const refreshFamily = async () => {
+    const [peers, invites, sent, session] = await Promise.all([
+      listFamilyPeers(),
+      listPendingInvites(),
+      listSentInvites(),
+      supabase.auth.getSession(),
+    ])
+    setFamilyPeers(peers)
+    setPendingInvites(invites)
+    setSentInvites(sent)
+    setMyUserId(session.data.session?.user.id ?? '')
+  }
+
+  const RELANCE_COOLDOWN_MS = 24 * 60 * 60 * 1000
+  const relanceKey = (membershipId: string) => `plan-financier-relance-${membershipId}`
+  // Disponibilité des relances, calculée hors rendu (horloge + localStorage) et
+  // rafraîchie via relanceTick après chaque relance.
+  const relanceInfo = useMemo(() => {
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now()
+    return new Map(
+      sentInvites.map((invite) => {
+        const raw = window.localStorage.getItem(relanceKey(invite.membershipId))
+        const availableAt = (raw ? Number(raw) : 0) + RELANCE_COOLDOWN_MS
+        return [
+          invite.membershipId,
+          {
+            canRelance: now >= availableAt,
+            hoursLeft: Math.max(1, Math.ceil((availableAt - now) / 3_600_000)),
+          },
+        ] as const
+      }),
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sentInvites, relanceTick])
+
+  const handleResendInvite = async (invite: SentInvite) => {
+    if (inviteBusy) return
+    setInviteBusy(true)
+    setInviteFeedback(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('invite-family-member', {
+        body: { email: invite.email, action: 'resend' },
+      })
+      if (error || !data?.ok) {
+        setInviteFeedback({ kind: 'error', text: `La relance vers ${invite.email} a échoué — réessayez plus tard.` })
+      } else if (data.outcome === 'already_active') {
+        setInviteFeedback({
+          kind: 'ok',
+          text: `${invite.email} a déjà activé son compte : l'invitation l'attend à sa prochaine connexion (aucun email renvoyé).`,
+        })
+      } else {
+        window.localStorage.setItem(relanceKey(invite.membershipId), String(Date.now()))
+        setRelanceTick((tick) => tick + 1)
+        setInviteFeedback({ kind: 'ok', text: `📨 Invitation renvoyée à ${invite.email}.` })
+        showToast(`📨 Relance envoyée à ${invite.email}`)
+        await refreshFamily()
+      }
+    } catch {
+      setInviteFeedback({ kind: 'error', text: 'La relance a échoué (fonction indisponible).' })
+    } finally {
+      setInviteBusy(false)
+    }
+  }
+
+  const handleCancelInvite = async (invite: SentInvite) => {
+    const ok = await cancelSentInvite(invite.membershipId)
+    if (ok) {
+      showToast(`Invitation de ${invite.email} annulée`)
+      await refreshFamily()
+    } else {
+      setInviteFeedback({ kind: 'error', text: "L'annulation a échoué — réessayez." })
+    }
+  }
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      // Reset des données famille à la déconnexion.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setFamilyPeers([])
+      setPendingInvites([])
+      return
+    }
+    void refreshFamily()
+    void getReportPrefs().then((prefs) => {
+      setReportPrefs(prefs)
+      setReportCcDraft(prefs.ccEmails.join(', '))
+    })
+  }, [isAuthenticated])
+
+  const handleReportPrefsChange = async (
+    patch: Partial<Pick<ReportPrefs, 'frequency' | 'format' | 'attachment' | 'ccEmails'>>,
+  ) => {
+    const next = {
+      frequency: reportPrefs.frequency,
+      format: reportPrefs.format,
+      attachment: reportPrefs.attachment,
+      ccEmails: reportPrefs.ccEmails,
+      ...patch,
+    }
+    setReportPrefs((previous) => ({ ...previous, ...patch }))
+    setReportFeedback(null)
+    const ok = await saveReportPrefs(next)
+    if (ok) {
+      showToast(next.frequency === 'none' ? 'Rapport automatique désactivé' : '📧 Préférences de rapport enregistrées')
+    } else {
+      setReportFeedback({ kind: 'error', text: "Impossible d'enregistrer (les migrations 0005 et 0006 sont-elles appliquées ?)." })
+    }
+  }
+
+  const handleReportCcCommit = (raw: string) => {
+    const { valid, invalid } = parseCcEmails(raw)
+    setReportCcDraft(valid.join(', '))
+    if (invalid.length > 0) {
+      setReportFeedback({
+        kind: 'error',
+        text: `Adresse${invalid.length > 1 ? 's' : ''} ignorée${invalid.length > 1 ? 's' : ''} : ${invalid.join(', ')}`,
+      })
+    }
+    const unchanged =
+      valid.length === reportPrefs.ccEmails.length && valid.every((e, i) => reportPrefs.ccEmails[i] === e)
+    if (!unchanged) void handleReportPrefsChange({ ccEmails: valid })
+  }
+
+  const handleSendTestReport = async () => {
+    if (reportBusy) return
+    setReportBusy(true)
+    setReportFeedback(null)
+    const result = await sendTestReport()
+    if (result.ok) {
+      showToast(`✅ Rapport envoyé à ${userEmail} — vérifiez votre boîte mail.`)
+    } else {
+      setReportFeedback({
+        kind: 'error',
+        text: result.detail
+          ? `L'envoi a échoué : ${result.detail}`
+          : "L'envoi a échoué (fonction send-report déployée ? clé Resend configurée ?).",
+      })
+    }
+    setReportBusy(false)
+  }
+
+  const handleSendFamilyInvite = async () => {
+    const email = inviteEmail.trim().toLowerCase()
+    if (!email || inviteBusy) return
+    setInviteBusy(true)
+    setInviteFeedback(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('invite-family-member', {
+        body: { email },
+      })
+      if (error || !data?.ok) {
+        // La fonction renvoie { error, detail } dans le corps même en 4xx/5xx :
+        // on le lit pour afficher la vraie cause au lieu d'un message générique.
+        let detail = ''
+        const context = (error as { context?: Response } | null)?.context
+        if (context && typeof context.json === 'function') {
+          try {
+            const body = (await context.json()) as { error?: string; detail?: string }
+            detail = [body.error, body.detail].filter(Boolean).join(' — ')
+          } catch {
+            /* corps illisible */
+          }
+        }
+        setInviteFeedback({
+          kind: 'error',
+          text: detail
+            ? `L'invitation n'a pas pu partir : ${detail}`
+            : "L'invitation n'a pas pu partir. Vérifiez l'adresse, ou réessayez plus tard.",
+        })
+      } else if (data.outcome === 'invited_new_user') {
+        setInviteFeedback({
+          kind: 'ok',
+          text: `✅ Invitation envoyée à ${email} — cette personne va recevoir un email pour créer son compte.`,
+        })
+        showToast(`📨 Invitation envoyée à ${email}`)
+        setInviteEmail('')
+      } else {
+        setInviteFeedback({
+          kind: 'ok',
+          text: `✅ ${email} a déjà un compte : l'invitation lui sera proposée à sa prochaine connexion.`,
+        })
+        showToast(`🤝 ${email} sera invité·e à sa prochaine connexion`)
+        setInviteEmail('')
+      }
+    } catch {
+      setInviteFeedback({
+        kind: 'error',
+        text: "L'invitation n'a pas pu partir (la fonction invite-family-member est-elle déployée ?).",
+      })
+    } finally {
+      setInviteBusy(false)
+    }
+  }
+
+  const handleAcceptInvite = async (invite: FamilyInvite) => {
+    const ok = await acceptInvite(invite.membershipId)
+    if (ok) {
+      showToast(`Bienvenue dans « ${invite.groupName} » 👨‍👩‍👧`)
+      await refreshFamily()
+    } else {
+      showToast('Impossible d\'accepter l\'invitation — réessayez.', 'danger')
+    }
+  }
+
   // ── Theme ─────────────────────────────────────────────────────
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
     window.localStorage.setItem(THEME_STORAGE_KEY, theme)
   }, [theme])
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-palette', palette)
+    window.localStorage.setItem(PALETTE_STORAGE_KEY, palette)
+  }, [palette])
+
+  useEffect(() => {
+    const root = document.documentElement
+    root.setAttribute('data-textsize', a11yPrefs.textSize)
+    if (a11yPrefs.reduceMotion) root.setAttribute('data-reduce-motion', '1')
+    else root.removeAttribute('data-reduce-motion')
+    if (a11yPrefs.highContrast) root.setAttribute('data-contrast', 'high')
+    else root.removeAttribute('data-contrast')
+    window.localStorage.setItem(A11Y_STORAGE_KEY, JSON.stringify(a11yPrefs))
+  }, [a11yPrefs])
 
   useEffect(() => {
     window.localStorage.setItem(DASHBOARD_WIDGETS_STORAGE_KEY, JSON.stringify(dashboardWidgetState))
@@ -2240,21 +2432,24 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return
     }
 
+    if (demoMode) return
     window.localStorage.setItem(
       TRANSACTIONS_STORAGE_KEY,
       JSON.stringify(transactions),
     )
-  }, [transactions])
+  }, [transactions, demoMode])
 
   // Persistance des règles récurrentes (localStorage v1, mappable Supabase plus tard)
   useEffect(() => {
+    if (demoMode) return
     saveRecurringRules(recurringRules)
-  }, [recurringRules])
+  }, [recurringRules, demoMode])
 
   // Persistance des comptes
   useEffect(() => {
+    if (demoMode) return
     saveAccounts(accounts)
-  }, [accounts])
+  }, [accounts, demoMode])
 
   // Migration : transactions sans accountId → compte courant par défaut
   // Auto-stable : après migration toutes les transactions ont un accountId,
@@ -2264,6 +2459,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     if (!hasOrphans) return
     const result = migrateTransactionsToDefaultAccount(transactions, accounts)
     if (result.changed) {
+      // Migration one-shot auto-stabilisante (cf. commentaire ci-dessus).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTransactions(result.transactions)
       setAccounts(result.accounts)
     }
@@ -2274,6 +2471,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   useEffect(() => {
     const result = ensureDefaultAccount(accounts, selectedProfileId)
     if (result.accounts !== accounts) {
+      // Garantit un compte par défaut, auto-stabilisant.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAccounts(result.accounts)
     }
   }, [selectedProfileId, accounts])
@@ -2293,6 +2492,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return { ...rule, lastGeneratedOn: result.lastGeneratedOn, updatedAt: Date.now() }
     })
     if (generated.length === 0) return
+    // Génération idempotente des échéances récurrentes (cf. commentaire ci-dessus).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTransactions((previous) => [...previous, ...generated])
     setRecurringRules(updatedRules)
   }, [recurringRules])
@@ -2302,34 +2503,40 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return
     }
 
+    if (demoMode) return
     window.localStorage.setItem(GOALS_STORAGE_KEY, JSON.stringify(savingsGoals))
-  }, [savingsGoals])
+  }, [savingsGoals, demoMode])
 
   useEffect(() => {
+    if (demoMode) return
     saveProfiles(profiles)
-  }, [profiles])
+  }, [profiles, demoMode])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
       return
     }
 
+    if (demoMode) return
     window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, selectedProfileId)
-  }, [selectedProfileId])
+  }, [selectedProfileId, demoMode])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
       return
     }
 
+    if (demoMode) return
     window.localStorage.setItem(DEFAULT_PROFILE_STORAGE_KEY, defaultProfileId)
-  }, [defaultProfileId])
+  }, [defaultProfileId, demoMode])
 
   useEffect(() => {
     if (profiles.some((profile) => profile.id === selectedMember)) {
       return
     }
 
+    // Réinitialise une sélection de membre devenue invalide.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedMember(profiles[0]?.id ?? defaultProfile.id)
   }, [profiles, selectedMember])
 
@@ -2338,6 +2545,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return
     }
 
+    // Réinitialise le profil par défaut devenu invalide.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDefaultProfileId(profiles[0]?.id ?? defaultProfile.id)
   }, [defaultProfileId, profiles])
 
@@ -2356,6 +2565,9 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return
     }
 
+    // Synchronise le formulaire de gestion au profil sélectionné (guardé pour
+    // ne pas écraser une saisie en cours — cf. égalité ci-dessus).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSettingsForm((previous) => ({
       ...previous,
       manageProfileId: profileToManage.id,
@@ -2391,8 +2603,9 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return
     }
 
+    if (demoMode) return
     window.localStorage.setItem(ROLLOVER_STORAGE_KEY, JSON.stringify(rolloverState))
-  }, [rolloverState])
+  }, [rolloverState, demoMode])
 
   useEffect(() => {
     if (rolloverState.month === currentMonth) {
@@ -2414,6 +2627,9 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return Math.max(0, trackedBudget - spentDuringTrackedMonth)
     }
 
+    // Snapshot du report budgétaire au passage d'un mois à l'autre (guardé par
+    // l'égalité de mois ci-dessus : ne se déclenche qu'une fois par bascule).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRolloverState({
       month: currentMonth,
       carryOver: profiles.reduce<Record<string, number>>((accumulator, profile) => {
@@ -2482,8 +2698,10 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
 
     if (currentLevel > previous.level) {
-      // Franchissement haut → toast
+      // Franchissement haut → toast (notification au franchissement de seuil,
+      // guardé par lastBudgetThresholdRef pour ne notifier qu'une fois).
       if (currentLevel === 120) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         showToast(
           `⚠️ Budget dépassé de ${Math.round(usageRateRaw - 100)} %. Pensez à ajuster vos prochaines dépenses.`,
           'danger',
@@ -2595,7 +2813,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
   const budgetInsights = useMemo(() => {
     const insights: string[] = []
-    insights.push(projectedMessage)
+    // La projection fin de mois est déjà affichée dans le bloc « Santé budget » :
+    // on ne la répète pas ici pour éviter le doublon.
     if (depenseChangePercent !== null) {
       insights.push(
         depenseChangePercent > 0
@@ -2605,7 +2824,43 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
     if (remaining < 0) insights.push('Le budget est dépassé: prioriser les postes non essentiels.')
     return insights.slice(0, 3)
-  }, [depenseChangePercent, projectedMessage, remaining])
+  }, [depenseChangePercent, remaining])
+
+  // ── Dérivés de l'Accueil (hero « reste à dépenser ») ──────────────────
+  const daysLeftInMonth = useMemo(() => {
+    const [year, month] = selectedMonth.split('-').map(Number)
+    const daysInMonth = new Date(year, month, 0).getDate()
+    if (selectedMonth !== currentMonth) return daysInMonth
+    const today = Number(new Date().toISOString().slice(8, 10))
+    return Math.max(1, daysInMonth - today + 1)
+  }, [selectedMonth, currentMonth])
+  const dailyAllowance = Math.max(0, remaining) / daysLeftInMonth
+  const recentTransactions = useMemo(
+    () => [...activeMonthTransactions].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5),
+    [activeMonthTransactions],
+  )
+  // Bilan du mois affiché vs mois précédent (carte Accueil).
+  const monthSummary = useMemo(() => {
+    const previousMonth = shiftMonth(selectedMonth, -1)
+    const inMonth = (month: string) => activeTransactions.filter((t) => t.date.startsWith(month))
+    const sum = (list: Transaction[], kind: TransactionKind) =>
+      list.filter((t) => t.kind === kind).reduce((total, t) => total + t.amount, 0)
+    const current = inMonth(selectedMonth)
+    const spent = sum(current, 'depense')
+    const income = sum(current, 'revenu')
+    const previousSpent = sum(inMonth(previousMonth), 'depense')
+    const byCategory = new Map<Category, number>()
+    current
+      .filter((t) => t.kind === 'depense')
+      .forEach((t) => byCategory.set(t.category, (byCategory.get(t.category) ?? 0) + t.amount))
+    const topCategories = [...byCategory.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+    return { spent, income, previousSpent, delta: spent - previousSpent, topCategories }
+  }, [activeTransactions, selectedMonth])
+
+  const primarySavingsTarget = savingsTargets[0] ?? null
+  const primarySavingsProgress = primarySavingsTarget
+    ? Math.min(100, Math.round(((primarySavingsTarget.currentSaved ?? 0) / primarySavingsTarget.targetAmount) * 100))
+    : 0
 
   const budgetSeriesColors = {
     revenus: '#22c55e',
@@ -2711,7 +2966,9 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       const q = txSearch.toLowerCase()
       list = list.filter(
         (item) =>
-          item.label.toLowerCase().includes(q) || item.category.toLowerCase().includes(q),
+          item.label.toLowerCase().includes(q) ||
+          item.category.toLowerCase().includes(q) ||
+          (item.tags ?? []).some((tag) => tag.toLowerCase().includes(q)),
       )
     }
     list.sort((a, b) =>
@@ -2754,32 +3011,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     [activeMonthTransactions, goalsForSelectedMember],
   )
 
-  const calendarData = useMemo(() => {
-    const [calYear, calMon] = selectedMonth.split('-').map(Number)
-    const daysInMonth = new Date(calYear, calMon, 0).getDate()
-    const amountByDay = new Map<number, number>()
-    const countByDay = new Map<number, number>()
-
-    activeMonthTransactions
-      .filter((item) => item.kind === 'depense')
-      .forEach((item) => {
-        const day = Number(item.date.slice(8, 10))
-        amountByDay.set(day, (amountByDay.get(day) ?? 0) + item.amount)
-        countByDay.set(day, (countByDay.get(day) ?? 0) + 1)
-      })
-
-    return Array.from({ length: daysInMonth }, (_, index) => {
-      const day = index + 1
-      const total = amountByDay.get(day) ?? 0
-      const count = countByDay.get(day) ?? 0
-      return {
-        day,
-        total,
-        count,
-        intensity: Math.min(1, total / 120),
-      }
-    })
-  }, [activeMonthTransactions, selectedMonth])
 
   const monthlyNet = monthlyIncome - monthlyExpense
 
@@ -2828,13 +3059,22 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
 
     goalProgress.forEach((goal) => {
-      if (goal.rate >= 100) {
-        alerts.push({ message: `Objectif ${goal.category} dépassé pour ${selectedProfileName}.`, level: 'danger' })
+      if (goal.target <= 0) return
+      if (goal.spent > goal.target) {
+        alerts.push({
+          message: `${goal.category} : ${Math.round(goal.spent)} € dépensés — budget de ${Math.round(goal.target)} € dépassé.`,
+          level: 'danger',
+        })
+      } else if (goal.rate >= 85) {
+        alerts.push({
+          message: `${goal.category} : ${Math.round(goal.spent)} € sur ${Math.round(goal.target)} € (${goal.rate.toFixed(0)}%).`,
+          level: 'warning',
+        })
       }
     })
 
     return alerts.slice(0, 5)
-  }, [activeMonthTransactions, envelopeBreakdown, goalProgress, monthlyExpense, selectedProfileName, usageRate])
+  }, [activeMonthTransactions, envelopeBreakdown, goalProgress, monthlyExpense, usageRate])
 
   const annualTrendData = useMemo(() => {
     const now = new Date()
@@ -2955,106 +3195,9 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     return results.sort((a, b) => b.monthCount - a.monthCount).slice(0, 8)
   }, [activeTransactions])
 
-  const widgetPreviewDefinitions = useMemo(() => {
-    const annualTrendPreview = annualTrendData.slice(-3)
-    const highestExpenseDay = [...calendarData].sort((left, right) => right.total - left.total)[0]
 
-    return {
-      annualTrend: {
-        eyebrow: '12 mois',
-        title: 'Tendance annuelle',
-        summary: 'Suivi revenus et dépenses sur les derniers mois.',
-        accent: `${annualTrendPreview.at(-1)?.month ?? ''} · ${euroFormatter.format(annualTrendPreview.at(-1)?.depenses ?? 0)}`,
-      },
-      coaching: {
-        eyebrow: 'Conseils',
-        title: 'Coaching financier',
-        summary: coachingTips[0] ?? 'Conseils prêts dès que des données sont disponibles.',
-        accent: `${coachingTips.length} suggestion${coachingTips.length > 1 ? 's' : ''}`,
-      },
-      csvImport: {
-        eyebrow: 'Banque',
-        title: 'Import CSV bancaire',
-        summary: csvPreview.length > 0 ? `${csvPreview.length} ligne(s) prêtes à être importées.` : 'Associez un CSV bancaire et prévisualisez avant fusion.',
-        accent: csvStatus || (csvRawData.headers.length > 0 ? `${csvRawData.headers.length} colonnes détectées` : 'Aucun fichier chargé'),
-      },
-      alerts: {
-        eyebrow: 'Alerte',
-        title: 'Alertes intelligentes',
-        summary: alertMessages[0]?.message ?? 'Aucune alerte active en ce moment.',
-        accent: `${alertMessages.length} alerte${alertMessages.length > 1 ? 's' : ''}`,
-      },
-      savingsGoals: {
-        eyebrow: 'Épargne',
-        title: "Objectifs d'épargne",
-        summary: goalProgress[0]
-          ? `${goalProgress[0].category} : ${goalProgress[0].rate.toFixed(0)}% consommé sur la cible.`
-          : 'Définissez un objectif pour piloter les dépenses par catégorie.',
-        accent: `${goalProgress.length} catégorie${goalProgress.length > 1 ? 's' : ''} suivie${goalProgress.length > 1 ? 's' : ''}`,
-      },
-      recurringCharges: {
-        eyebrow: 'Habitudes',
-        title: 'Charges récurrentes',
-        summary: recurringItems[0]
-          ? `${recurringItems[0].label} revient sur ${recurringItems[0].monthCount} mois.`
-          : 'Pas encore assez de recul pour isoler des charges récurrentes.',
-        accent: `${recurringItems.length} récurrence${recurringItems.length > 1 ? 's' : ''}`,
-      },
-      savingsProjects: {
-        eyebrow: 'Projet',
-        title: "Objectifs d'épargne projet",
-        summary: savingsTargets[0]
-          ? `${savingsTargets[0].label} · cible ${euroFormatter.format(savingsTargets[0].targetAmount)}.`
-          : 'Ajoutez un projet pour suivre une grande enveloppe d’épargne.',
-        accent: `${savingsTargets.length} projet${savingsTargets.length > 1 ? 's' : ''}`,
-      },
-      expenseCalendar: {
-        eyebrow: 'Calendrier',
-        title: 'Calendrier des dépenses',
-        summary: highestExpenseDay?.total
-          ? `Pic détecté le ${highestExpenseDay.day} avec ${euroFormatter.format(highestExpenseDay.total)}.`
-          : 'La heatmap s’alimente à mesure que les dépenses arrivent.',
-        accent: highestExpenseDay?.total ? `Jour chaud : ${highestExpenseDay.day}` : 'Aucun pic détecté',
-      },
-    } satisfies Record<DashboardWidgetId, { eyebrow: string; title: string; summary: string; accent: string }>
-  }, [alertMessages, annualTrendData, calendarData, coachingTips, csvPreview.length, csvRawData.headers.length, csvStatus, goalProgress, recurringItems, savingsTargets])
 
-  const expenseCalendarPreviewCells = useMemo(() => {
-    const [year, month] = selectedMonth.split('-').map(Number)
-    const firstWeekday = (new Date(year, month - 1, 1).getDay() + 6) % 7
-    const highestTotal = Math.max(0, ...calendarData.map((entry) => entry.total))
-    const leadingEmptyCells = Array.from({ length: firstWeekday }, (_, index) => ({
-      key: `empty-${index}`,
-      day: null as number | null,
-      total: 0,
-      count: 0,
-      intensity: 0,
-    }))
 
-    const filledCells = calendarData.map((entry) => ({
-      key: `day-${entry.day}`,
-      day: entry.day,
-      total: entry.total,
-      count: entry.count,
-      intensity: highestTotal > 0 ? entry.total / highestTotal : 0,
-    }))
-
-    return [...leadingEmptyCells, ...filledCells]
-  }, [calendarData, selectedMonth])
-
-  const annualTrendPreviewBars = useMemo(() => {
-    const recentMonths = annualTrendData.slice(-6)
-    const peakExpense = Math.max(1, ...recentMonths.map((entry) => entry.depenses))
-
-    return recentMonths.map((entry) => ({
-      month: entry.month,
-      depenses: entry.depenses,
-      heightPercent: Math.max(10, (entry.depenses / peakExpense) * 100),
-    }))
-  }, [annualTrendData])
-
-  const widgetAlertPreviewItems = useMemo(() => alertMessages.slice(0, 3), [alertMessages])
-  const widgetGoalsPreviewItems = useMemo(() => goalProgress.slice(0, 3), [goalProgress])
 
   const yoyComparisonData = useMemo(() => {
     const [y, m] = selectedMonth.split('-').map(Number)
@@ -3136,6 +3279,231 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       amount: '',
     }))
     setSmartCategory(null)
+  }
+
+  // ── Ajout rapide depuis le calendrier (modale, sans changer de vue) ────
+  const [quickAddDate, setQuickAddDate] = useState<string | null>(null)
+  const [quickAddForm, setQuickAddForm] = useState({
+    label: '',
+    amount: '',
+    category: 'Courses' as Category,
+    envelope: 'Maison' as Envelope,
+    tags: '',
+    recurrence: 'none' as 'none' | RecurringFrequency,
+  })
+
+  // Null = création ; sinon id de la transaction en cours de modification.
+  const [quickAddEditingId, setQuickAddEditingId] = useState<number | null>(null)
+  // Classification IA (catégorie + tags) : proposée automatiquement quand
+  // l'assistant est configuré, sans jamais écraser un choix manuel.
+  const quickAddAiTimerRef = useRef<number | null>(null)
+  const quickAddTouchedRef = useRef({ category: false, tags: false })
+  const [quickAddAiBusy, setQuickAddAiBusy] = useState(false)
+  const [quickAddAiApplied, setQuickAddAiApplied] = useState(false)
+  const quickAddAiIconRef = useRef<string | null>(null)
+
+  const runQuickAddAi = async (label: string) => {
+    if (!anthropicKey) return
+    setQuickAddAiBusy(true)
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-haiku-20241022',
+          max_tokens: 120,
+          system:
+            'Tu classes une dépense de budget familial français. Réponds UNIQUEMENT un objet JSON de la forme {"category": "...", "tags": ["..."], "icon": "🛒"} sans autre texte. category doit être exactement une valeur parmi: Courses, Transport, Ecole, Loisirs, Sante, Maison, Autre. tags: 0 à 3 étiquettes courtes en minuscules, utiles et non redondantes avec la catégorie, sinon tableau vide. icon: UN SEUL emoji représentant au mieux le marchand ou la dépense (jamais de texte).',
+          messages: [{ role: 'user', content: label }],
+        }),
+      })
+      if (!response.ok) return
+      const data = (await response.json()) as { content: Array<{ type: string; text: string }> }
+      const text = data.content.find((c) => c.type === 'text')?.text ?? ''
+      const match = /\{[\s\S]*\}/.exec(text)
+      if (!match) return
+      const parsed = JSON.parse(match[0]) as { category?: string; tags?: unknown; icon?: unknown }
+      if (isValidTxIcon(parsed.icon)) quickAddAiIconRef.current = parsed.icon
+      const aiCategory = categories.includes(parsed.category as Category)
+        ? (parsed.category as Category)
+        : null
+      const aiTags = Array.isArray(parsed.tags)
+        ? parsed.tags.filter((t): t is string => typeof t === 'string' && t.length > 0).slice(0, 3)
+        : []
+      setQuickAddForm((previous) => {
+        // Ne s'applique que si le libellé n'a pas changé entre-temps et que
+        // l'utilisateur n'a pas déjà fait un choix manuel sur le champ.
+        if (previous.label !== label) return previous
+        const next = { ...previous }
+        if (aiCategory && !quickAddTouchedRef.current.category) next.category = aiCategory
+        if (aiTags.length > 0 && !quickAddTouchedRef.current.tags && !previous.tags.trim()) {
+          next.tags = aiTags.join(', ')
+        }
+        return next
+      })
+      setQuickAddAiApplied(true)
+    } catch {
+      // Silencieux : la suggestion locale reste en place.
+    } finally {
+      setQuickAddAiBusy(false)
+    }
+  }
+
+  const scheduleQuickAddAi = (label: string) => {
+    if (!isBudgetAiConfigured || quickAddEditingId !== null) return
+    if (quickAddAiTimerRef.current !== null) window.clearTimeout(quickAddAiTimerRef.current)
+    if (label.trim().length < 3) return
+    quickAddAiTimerRef.current = window.setTimeout(() => {
+      quickAddAiTimerRef.current = null
+      void runQuickAddAi(label)
+    }, 700)
+  }
+
+  const openQuickAdd = (date: string) => {
+    setQuickAddForm({ label: '', amount: '', category: 'Courses', envelope: 'Maison', tags: '', recurrence: 'none' })
+    setQuickAddEditingId(null)
+    quickAddTouchedRef.current = { category: false, tags: false }
+    quickAddAiIconRef.current = null
+    setQuickAddAiApplied(false)
+    setQuickAddDate(date)
+  }
+
+  const openQuickEdit = (tx: Transaction) => {
+    setQuickAddForm({
+      label: tx.label,
+      amount: String(tx.amount).replace('.', ','),
+      category: tx.category,
+      envelope: tx.envelope,
+      tags: (tx.tags ?? []).join(', '),
+      recurrence: 'none',
+    })
+    setQuickAddEditingId(tx.id)
+    setQuickAddDate(tx.date)
+  }
+
+  const closeQuickAdd = () => {
+    if (quickAddAiTimerRef.current !== null) {
+      window.clearTimeout(quickAddAiTimerRef.current)
+      quickAddAiTimerRef.current = null
+    }
+    setQuickAddDate(null)
+    setQuickAddEditingId(null)
+  }
+
+  const handleQuickAddSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!quickAddDate) return
+    const amount = Number(quickAddForm.amount.replace(',', '.'))
+    if (!quickAddForm.label.trim() || Number.isNaN(amount) || amount <= 0) return
+
+    const parsedTags = quickAddForm.tags
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean)
+      .slice(0, 8)
+
+    if (quickAddEditingId !== null) {
+      setTransactions((previous) =>
+        previous.map((tx) =>
+          tx.id === quickAddEditingId
+            ? {
+                ...tx,
+                label: quickAddForm.label.trim(),
+                amount,
+                category: quickAddForm.category,
+                envelope: quickAddForm.envelope,
+                date: quickAddDate,
+                ...(parsedTags.length > 0 ? { tags: parsedTags } : { tags: undefined }),
+              }
+            : tx,
+        ),
+      )
+      showToast('Dépense mise à jour')
+      closeQuickAdd()
+      return
+    }
+
+    // Récurrence demandée → on crée la règle : les prochaines échéances seront
+    // générées automatiquement (la dépense saisie couvre l'occurrence du jour).
+    let createdRuleId: string | undefined
+    if (quickAddForm.recurrence !== 'none') {
+      const frequency = quickAddForm.recurrence
+      const dayOfPeriod =
+        frequency === 'weekly'
+          ? ((new Date(`${quickAddDate}T12:00:00`).getDay() + 6) % 7) + 1
+          : Number(quickAddDate.slice(8, 10))
+      const rule: RecurringRule = {
+        id: `rule-${Date.now()}`,
+        member: selectedProfileId,
+        category: quickAddForm.category,
+        envelope: quickAddForm.envelope,
+        label: quickAddForm.label.trim(),
+        amount,
+        kind: 'depense',
+        frequency,
+        dayOfPeriod,
+        startDate: quickAddDate,
+        endDate: null,
+        lastGeneratedOn: quickAddDate,
+        pausedAt: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
+      setRecurringRules((previous) => [...previous, rule])
+      createdRuleId = rule.id
+    }
+
+    const resolvedAccountId =
+      accounts.find(
+        (a) => a.ownerMember === selectedProfileId && a.type === 'checking' && a.archivedAt === null,
+      )?.id || undefined
+
+    const icon = suggestMerchantIcon(quickAddForm.label) ?? quickAddAiIconRef.current
+    const newTransaction: Transaction = {
+      id: Date.now(),
+      label: quickAddForm.label.trim(),
+      amount,
+      category: quickAddForm.category,
+      member: selectedProfileId,
+      date: quickAddDate,
+      kind: 'depense',
+      envelope: quickAddForm.envelope,
+      ...(icon ? { icon } : {}),
+      ...(parsedTags.length > 0 ? { tags: parsedTags } : {}),
+      ...(createdRuleId ? { recurringRuleId: createdRuleId } : {}),
+      accountId: resolvedAccountId,
+    }
+    setTransactions((previous) => [...previous, newTransaction])
+    showToast(createdRuleId ? 'Dépense ajoutée — elle se répétera automatiquement' : 'Dépense ajoutée')
+    closeQuickAdd()
+  }
+
+  const handleImportExtracted = (rows: ExtractedTx[]) => {
+    const resolvedAccountId =
+      accounts.find(
+        (a) => a.ownerMember === selectedProfileId && a.type === 'checking' && a.archivedAt === null,
+      )?.id || undefined
+    const base = Date.now()
+    const imported: Transaction[] = rows.map((row, index) => ({
+      id: base + index,
+      ...(suggestMerchantIcon(row.label) ? { icon: suggestMerchantIcon(row.label)! } : {}),
+      label: row.label,
+      amount: row.amount,
+      category: row.category,
+      member: selectedProfileId,
+      date: row.date ?? todayIso,
+      kind: row.kind,
+      envelope: inferEnvelope(row.category),
+      ...(row.tags.length > 0 ? { tags: row.tags } : {}),
+      accountId: resolvedAccountId,
+    }))
+    setTransactions((previous) => [...previous, ...imported])
+    showToast(`✨ ${imported.length} opération${imported.length > 1 ? 's' : ''} ajoutée${imported.length > 1 ? 's' : ''} depuis vos notes`)
   }
 
   const startEditTransaction = (tx: Transaction) => {
@@ -3581,6 +3949,52 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }))
   }
 
+  // Rendu de l'avatar d'un profil : photo importée > emoji preset > initiales.
+  const profileAvatarNode = (profile: UserProfile) => {
+    if (profile.avatar?.startsWith('data:image/')) {
+      return <img className="member-avatar member-avatar--photo" src={profile.avatar} alt="" />
+    }
+    if (profile.avatar?.startsWith('emoji:')) {
+      return (
+        <span className="member-avatar member-avatar--emoji" aria-hidden="true">
+          {profile.avatar.slice(6)}
+        </span>
+      )
+    }
+    return (
+      <span className="member-avatar" style={{ background: avatarColor(profile.id) }} aria-hidden="true">
+        {avatarInitials(profile.name)}
+      </span>
+    )
+  }
+
+  const setProfileAvatar = (profileId: string, avatar: string | undefined) => {
+    setProfiles((previous) =>
+      previous.map((item) => {
+        if (item.id !== profileId) return item
+        if (!avatar) {
+          const rest = { ...item }
+          delete rest.avatar
+          return rest
+        }
+        return { ...item, avatar }
+      }),
+    )
+  }
+
+  const handleAvatarUpload = async (file: File | undefined) => {
+    if (!file) return
+    setSettingsError('')
+    setSettingsSuccess('')
+    try {
+      const dataUrl = await readAndResizeImage(file, 96)
+      setProfileAvatar(settingsForm.manageProfileId, dataUrl)
+      setSettingsSuccess('Photo de profil mise à jour.')
+    } catch {
+      setSettingsError("Impossible d'utiliser cette image (format non lisible ou trop lourde).")
+    }
+  }
+
   const handleUpdateManagedProfile = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setSettingsError('')
@@ -3678,13 +4092,6 @@ Réponse attendue:
     }
   }
 
-  const handleBudgetAiClick = () => {
-    if (!isBudgetAiConfigured) {
-      setBudgetAiHintOpen(true)
-      return
-    }
-    setBudgetAiHintOpen((previous) => !previous)
-  }
 
   useEffect(() => {
     if (activeSectionId !== 'budget') {
@@ -3692,6 +4099,8 @@ Réponse attendue:
     }
 
     if (!isBudgetAiConfigured) {
+      // Reset de l'état de l'assistant à l'entrée de section / config absente.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBudgetAssistantAdvice('')
       setBudgetAssistantError('')
       setBudgetAssistantContextLoaded(budgetAssistantContextKey)
@@ -3859,7 +4268,7 @@ Réponse attendue:
 
       const validProfileIds = new Set(restoredProfiles.map((profile) => profile.id))
       const restoredTransactions = payload.transactions
-        .map((item) => normalizeTransaction(item))
+        .map((item) => normalizeTransaction(item, validProfileIds))
         .filter((item): item is Transaction => item !== null)
         .filter((item) => validProfileIds.has(item.member))
       const restoredGoals = buildDefaultGoalsForProfiles(restoredProfiles)
@@ -3972,7 +4381,7 @@ Réponse attendue:
       newProfileName: '',
       newProfileBudget: previous.newProfileBudget,
     }))
-    setSettingsSuccess('Profil ajoute. La base multi-profils est maintenant active et evolutive.')
+    setSettingsSuccess('Profil ajouté.')
   }
 
   const handlePinUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -3990,63 +4399,32 @@ Réponse attendue:
       return
     }
 
-    const hasParentUpdate = settingsForm.newParentPin.length > 0
-    const requestedSessionDuration = Number(settingsForm.sessionDurationDays)
-    const hasSessionDurationUpdate =
-      requestedSessionDuration !== sensitiveState.sessionDurationDays
-
-    if (!hasParentUpdate && !hasSessionDurationUpdate) {
-      setSettingsError('Aucun changement detecte dans les parametres.')
+    if (settingsForm.newParentPin.length === 0) {
+      setSettingsError('Entrez un nouveau PIN pour le mettre a jour.')
       return
     }
 
-    if (!SESSION_DURATION_OPTIONS.includes(requestedSessionDuration as 7 | 14 | 30)) {
-      setSettingsError('La duree de session doit etre 7, 14 ou 30 jours.')
+    if (settingsForm.newParentPin.length < 4 || settingsForm.newParentPin.length > 6) {
+      setSettingsError('Le nouveau PIN doit contenir entre 4 et 6 chiffres.')
       return
     }
 
-    const hasValidLength = [settingsForm.newParentPin]
-      .filter((pin) => pin.length > 0)
-      .every((pin) => pin.length >= 4 && pin.length <= 6)
-
-    if (!hasValidLength) {
-      setSettingsError('Chaque nouveau PIN doit contenir entre 4 et 6 chiffres.')
-      return
-    }
-
-    if (
-      hasParentUpdate &&
-      settingsForm.newParentPin !== settingsForm.confirmNewParentPin
-    ) {
+    if (settingsForm.newParentPin !== settingsForm.confirmNewParentPin) {
       setSettingsError('La confirmation du nouveau PIN parent ne correspond pas.')
       return
     }
 
-    let nextSensitiveState: SensitiveState = {
-      ...sensitiveState,
-      sessionDurationDays: requestedSessionDuration as 7 | 14 | 30,
-    }
-
-    if (hasParentUpdate) {
-      nextSensitiveState = await setParentPin(settingsForm.newParentPin)
-      nextSensitiveState = {
-        ...nextSensitiveState,
-        sessionDurationDays: requestedSessionDuration as 7 | 14 | 30,
-      }
-    }
-
+    const nextSensitiveState = await setParentPin(settingsForm.newParentPin)
     setSensitiveState(nextSensitiveState)
     await saveSensitiveState(nextSensitiveState)
-    if (hasParentUpdate) {
-      setPinLogs(
-        addPinChangeLog({
-          actor: 'Parent',
-          parentPinChanged: hasParentUpdate,
-        }),
-      )
-      void logAuditEvent('pin_change')
-    }
-    setSettingsSuccess('Parametres de securite mis a jour avec succes.')
+    setPinLogs(
+      addPinChangeLog({
+        actor: 'Parent',
+        parentPinChanged: true,
+      }),
+    )
+    void logAuditEvent('pin_change')
+    setSettingsSuccess('PIN parent mis a jour avec succes.')
     setSettingsForm({
       parentPinValidation: '',
       newParentPin: '',
@@ -4156,16 +4534,43 @@ Réponse attendue:
     )
   }
 
-  if (!isAuthenticated) {
-    return <AuthScreen />
+  if (!isAuthenticated && !demoMode) {
+    return <AuthScreen onTryDemo={enterDemoMode} />
   }
 
   return (
     <>
+    {demoMode ? (
+      <div className="demo-banner" role="status">
+        <span>🎬 Mode démo — explorez librement, rien n'est enregistré.</span>
+        <button type="button" onClick={() => window.location.reload()}>
+          Quitter la démo
+        </button>
+      </div>
+    ) : null}
+    {pendingInvites.map((invite) => (
+      <div key={invite.membershipId} className="invite-banner" role="status">
+        <span>
+          🤝 <strong>{invite.inviterName}</strong> vous invite à rejoindre « {invite.groupName} »
+          pour partager vos budgets.
+        </span>
+        <button type="button" onClick={() => void handleAcceptInvite(invite)}>
+          Accepter
+        </button>
+      </div>
+    ))}
     {/* ── Onboarding wizard (première utilisation) ──────────────────── */}
     {showOnboarding ? (
       <div className="onboarding-overlay" role="dialog" aria-modal="true" aria-label="Configuration initiale">
         <div className="onboarding-modal glass-card">
+          {manualGenerating ? (
+            <div className="onboarding-generating">
+              <div className="onboarding-generating-spinner" aria-hidden="true" />
+              <p className="onboarding-generating-phase" key={manualPhase}>{MANUAL_ONBOARDING_PHASES[manualPhase]}</p>
+              <p className="onboarding-generating-sub">Construction de votre plan sur mesure…</p>
+            </div>
+          ) : (
+          <>
           <div className="onboarding-header">
             <span className="eyebrow">Bienvenue sur Plan Financier</span>
             <h2>Comment voulez-vous démarrer ?</h2>
@@ -4181,7 +4586,7 @@ Réponse attendue:
                 <button
                   type="button"
                   className="onboarding-choice-card"
-                  onClick={() => setOnboardingStep(2)}
+                  onClick={() => { setOnboardingMode('ai'); setOnboardingStep(2) }}
                 >
                   <span className="onboarding-choice-icon">✦</span>
                   <strong>Configurer avec l'IA</strong>
@@ -4193,13 +4598,20 @@ Réponse attendue:
                 <button
                   type="button"
                   className="onboarding-choice-card onboarding-choice-card--manual"
-                  onClick={skipOnboarding}
+                  onClick={() => { setOnboardingMode('manual'); setOnboardingStep(3) }}
                 >
-                  <span className="onboarding-choice-icon">⊞</span>
-                  <strong>Dashboard vide</strong>
-                  <p>Démarrez avec un tableau de bord vide et configurez tout à votre rythme depuis les paramètres.</p>
+                  <span className="onboarding-choice-icon">📝</span>
+                  <strong>Configurer manuellement</strong>
+                  <p>Répondez à 4 questions rapides et laissez l'app construire vos profils, budgets et objectif d'épargne. Sans clé API.</p>
                 </button>
               </div>
+              <button
+                type="button"
+                className="ghost-button onboarding-skip"
+                onClick={skipOnboarding}
+              >
+                Commencer avec un tableau vide
+              </button>
             </div>
           ) : onboardingStep === 2 ? (
             <div className="onboarding-step1">
@@ -4306,8 +4718,12 @@ Réponse attendue:
             </div>
           ) : onboardingStep === 3 ? (
             <div className="onboarding-profile-step">
-              <button type="button" className="onboarding-back-btn" onClick={() => setOnboardingStep(2)}>← Retour</button>
-              <p className="onboarding-profile-intro">Ces informations permettront à l'IA de personnaliser directement votre configuration.</p>
+              <button type="button" className="onboarding-back-btn" onClick={() => setOnboardingStep(onboardingMode === 'manual' ? 1 : 2)}>← Retour</button>
+              <p className="onboarding-profile-intro">
+                {onboardingMode === 'manual'
+                  ? 'Vos réponses servent à construire directement vos profils, budgets et objectif d\'épargne.'
+                  : 'Ces informations permettront à l\'IA de personnaliser directement votre configuration.'}
+              </p>
 
               <div className="onboarding-profile-question">
                 <span className="onboarding-profile-qlabel">Votre situation</span>
@@ -4354,12 +4770,25 @@ Réponse attendue:
               </div>
 
               <div className="onboarding-actions">
-                <button type="button" className="hero-cta-button" onClick={() => void handleOnboardingStart()} disabled={onboardingLoading}>
-                  {onboardingLoading ? (
-                    <span className="inline-loading-label"><span className="inline-loader" aria-hidden="true" />Lancement…</span>
-                  ) : 'Lancer Claude →'}
+                {onboardingMode === 'manual' ? (
+                  <button type="button" className="hero-cta-button" onClick={handleManualPlan}>
+                    Générer mon plan →
+                  </button>
+                ) : (
+                  <button type="button" className="hero-cta-button" onClick={() => void handleOnboardingStart()} disabled={onboardingLoading}>
+                    {onboardingLoading ? (
+                      <span className="inline-loading-label"><span className="inline-loader" aria-hidden="true" />Lancement…</span>
+                    ) : 'Lancer Claude →'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="ghost-button"
+                  style={{fontSize:'0.8rem',opacity:0.7}}
+                  onClick={onboardingMode === 'manual' ? skipOnboarding : () => void handleOnboardingStart()}
+                >
+                  Passer cette étape
                 </button>
-                <button type="button" className="ghost-button" style={{fontSize:'0.8rem',opacity:0.7}} onClick={() => void handleOnboardingStart()}>Passer cette étape</button>
               </div>
               {onboardingError ? <p className="auth-error">{onboardingError}</p> : null}
             </div>
@@ -4419,14 +4848,39 @@ Réponse attendue:
               </button>
             </div>
           )}
+          </>
+          )}
         </div>
       </div>
     ) : null}
 
-    <main className={`dashboard-shell${isActiveView('budget') || isActiveView('overview') ? ' dashboard-shell--three-columns' : ''}`} id="app-main" aria-label="Tableau de bord budgétaire">
+    <main className={`dashboard-shell${isActiveView('budget') || isActiveView('overview') || isActiveView('operations') || isActiveView('family') ? ' dashboard-shell--three-columns' : ''}`} id="app-main" aria-label="Tableau de bord budgétaire">
       <h1 className="sr-only">Plan Financier — Tableau de bord</h1>
       <aside className="glass-card side-menu" aria-label="Navigation principale">
-        <p className="eyebrow">Navigation</p>
+        <div className="side-menu-profiles" role="tablist" aria-label="Sélection du profil">
+          <p className="eyebrow">Profil</p>
+          <div className="side-menu-profiles__row">
+            {profiles.map((profile) => (
+              <button
+                key={profile.id}
+                type="button"
+                role="tab"
+                aria-selected={selectedProfileId === profile.id}
+                className={selectedProfileId === profile.id ? 'active' : ''}
+                title={profile.id === defaultProfileId ? `${profile.name} (profil par défaut)` : profile.name}
+                aria-label={`Basculer sur ${profile.name}`}
+                onClick={() => {
+                  setSelectedMember(profile.id)
+                  setCsvImportMember(profile.id)
+                  setForm((previous) => ({ ...previous, member: profile.id }))
+                }}
+              >
+                {profileAvatarNode(profile)}
+              </button>
+            ))}
+          </div>
+          <p className="side-menu-profiles__name">{selectedProfile.name}</p>
+        </div>
         <nav>
           {navItems.map((item) => (
             <button
@@ -4440,6 +4894,23 @@ Réponse attendue:
           ))}
         </nav>
         <div className="side-menu-footer">
+          <p
+            className={`cloud-sync-badge cloud-sync-badge--${cloudSyncStatus}`}
+            title={
+              cloudSyncStatus === 'ok'
+                ? 'Vos données sont synchronisées dans le cloud.'
+                : cloudSyncStatus === 'syncing'
+                ? 'Synchronisation en cours…'
+                : cloudSyncStatus === 'error'
+                ? 'Synchronisation impossible — vos données restent enregistrées sur cet appareil.'
+                : 'Synchronisation en attente de connexion.'
+            }
+          >
+            {cloudSyncStatus === 'ok' && '☁️ Synchronisé'}
+            {cloudSyncStatus === 'syncing' && '☁️ Synchronisation…'}
+            {cloudSyncStatus === 'error' && '☁️ Hors ligne'}
+            {cloudSyncStatus === 'idle' && '☁️ En attente'}
+          </p>
           <button
             type="button"
             className="side-menu-settings-btn"
@@ -4447,34 +4918,6 @@ Réponse attendue:
             aria-label="Ouvrir les paramètres"
           >
             ⚙️ Paramètres
-          </button>
-          <button
-            type="button"
-            className="side-menu-settings-btn"
-            onClick={() => {
-              const cycle = { dark: 'light', light: 'system', system: 'dark' } as const
-              setTheme(cycle[theme])
-            }}
-            aria-label={`Thème actuel : ${theme === 'dark' ? 'Sombre' : theme === 'light' ? 'Clair' : 'Système'}. Cliquer pour changer.`}
-            title="Changer le thème"
-          >
-            {theme === 'dark' ? '🌙 Sombre' : theme === 'light' ? '☀️ Clair' : '💻 Système'}
-          </button>
-          <button
-            type="button"
-            className="side-menu-settings-btn"
-            onClick={() => setShowProfilePanel(true)}
-            aria-label="Mon profil"
-          >
-            👤 Mon profil
-          </button>
-          <button
-            type="button"
-            className="side-menu-settings-btn"
-            onClick={() => setShowPrivacyPanel(true)}
-            aria-label="Mes données RGPD"
-          >
-            🔒 Mes données RGPD
           </button>
           <button
             type="button"
@@ -4490,49 +4933,34 @@ Réponse attendue:
       <div className="dashboard-main">
         {isActiveView('overview') ? (
         <header id="overview" className="hero-header glass-card">
-        {!isBudgetAiConfigured ? (
-          <div className="hero-ai-info-bar" role="status" aria-live="polite">
-            <div>
-              <strong>Assistant IA non configuré</strong>
-              <small>
-                Activez votre fournisseur IA dans les paramètres pour débloquer les analyses automatiques et le coaching avancé.
-              </small>
-            </div>
-            <button type="button" onClick={() => openSettingsPanel('ai')}>
-              Configurer l&apos;IA
+        {/* Hero actionnable : LE chiffre que les utilisateurs cherchent en
+            premier (« combien il me reste »), son rythme par jour, et le CTA
+            principal — au lieu d'un slogan marketing. */}
+        <div className="hero-main">
+          <span className="hero-greeting">
+            Bonjour {selectedProfile.name}{' '}
+            <span className="hero-wave" aria-hidden="true">👋</span>
+          </span>
+          <p className="hero-focus-label">Reste à dépenser · {formatMonth(selectedMonth)}</p>
+          <p className={`hero-focus-value${remaining < 0 ? ' hero-focus-value--negative' : ''}`}>
+            {euroFormatter.format(remaining)}
+          </p>
+          <p className="hero-focus-hint">
+            {remaining >= 0
+              ? `≈ ${euroFormatter.format(dailyAllowance)} / jour sur les ${daysLeftInMonth} jours restants`
+              : 'Budget dépassé — réduisez une catégorie ou ajustez le budget.'}
+          </p>
+          <div className="hero-primary-actions">
+            <button type="button" className="hero-cta-button" onClick={() => openQuickAdd(todayIso)}>
+              <Plus size={16} /> Ajouter une dépense
+            </button>
+            <button type="button" className="ghost-button" onClick={() => void exportMonthlyPdf()}>
+              <Download size={16} /> PDF mensuel
             </button>
           </div>
-        ) : null}
-        <div>
-          <div className="app-brand-row">
-            <img className="app-brand-logo" src="/logo.png" alt="Logo FP" />
-          </div>
-          <h2>Suivez votre argent simplement</h2>
-          <p className="hero-copy">
-            Tout est regroupé ici pour gérer votre budget facilement, sans jargon.
-          </p>
         </div>
         <div className="header-actions">
           <div className="hero-priority-bar">
-            <div className="member-toggle" role="tablist" aria-label="Selection profil">
-              {profiles.map((profile) => (
-                <button
-                  key={profile.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={selectedProfileId === profile.id}
-                  className={selectedProfileId === profile.id ? 'active' : ''}
-                  onClick={() => {
-                    setSelectedMember(profile.id)
-                    setCsvImportMember(profile.id)
-                    setForm((previous) => ({ ...previous, member: profile.id }))
-                  }}
-                >
-                  {profile.name}
-                  {profile.id === defaultProfileId ? ' • Defaut' : ''}
-                </button>
-              ))}
-            </div>
             <div className="month-nav month-nav--hero">
               <button type="button" onClick={() => navigateMonth(-1)} aria-label="Mois précédent">&#8249;</button>
               <label className="month-picker-label" title="Choisir un mois">
@@ -4559,24 +4987,12 @@ Réponse attendue:
               {euroFormatter.format(monthlyExpense)} / {euroFormatter.format(budget)} &mdash; {usageRate.toFixed(0)}% utilisé
             </span>
           </div>
-          <div className="hero-secondary-actions">
-            <button type="button" className="ghost-button" onClick={() => void exportMonthlyPdf()}>
-              <Download size={16} /> PDF mensuel
-            </button>
-          </div>
         </div>
         </header>
         ) : null}
 
         {isActiveView('overview') ? (
         <section className="glass-card kpi-summary" style={{ margin: '0 0 1rem 0' }}>
-          <div className="kpi-card kpi-card--primary">
-            <div className="kpi-card-label">Solde disponible</div>
-            <div className="kpi-card-value">{euroFormatter.format(budget - monthlyExpense)}</div>
-            <div className="kpi-card-change" style={{ color: budget - monthlyExpense >= 0 ? 'var(--kpi-positive)' : 'var(--kpi-danger)' }}>
-              {budget - monthlyExpense >= 0 ? '✓ En positif' : '⚠ À revoir'}
-            </div>
-          </div>
           <div className="kpi-card kpi-card--secondary">
             <div className="kpi-card-label">Revenus ce mois</div>
             <div className="kpi-card-value">{euroFormatter.format(monthlyIncome)}</div>
@@ -4589,19 +5005,146 @@ Réponse attendue:
               {usageRate.toFixed(0)}% du budget
             </div>
           </div>
-          <div className="kpi-card kpi-card--accent">
-            <div className="kpi-card-label">Économies possibles</div>
-            <div className="kpi-card-value">{euroFormatter.format(Math.max(0, budget * 0.15 - monthlyExpense + monthlyIncome))}</div>
-            <div className="kpi-card-change positive">Reste à optimiser</div>
+          {primarySavingsTarget ? (
+            <div className={`kpi-card kpi-card--accent${primarySavingsProgress >= 100 ? ' kpi-card--celebrate' : ''}`}>
+              <div className="kpi-card-label">
+                {primarySavingsTarget.label}
+                {primarySavingsProgress >= 100 ? <span className="kpi-celebrate-emoji" aria-hidden="true"> 🎉</span> : null}
+              </div>
+              <div className="kpi-card-value">{euroFormatter.format(primarySavingsTarget.targetAmount)}</div>
+              <div className="kpi-card-change">
+                <span className="kpi-progress-track" aria-hidden="true">
+                  <span className="kpi-progress-fill" style={{ width: `${primarySavingsProgress}%` }} />
+                </span>
+                {primarySavingsProgress}% atteint
+              </div>
+            </div>
+          ) : (
+            <div className="kpi-card kpi-card--accent">
+              <div className="kpi-card-label">Économies du mois</div>
+              <div className="kpi-card-value">{euroFormatter.format(Math.max(0, monthlyIncome - monthlyExpense))}</div>
+              <div className="kpi-card-change positive">Revenus − dépenses</div>
+            </div>
+          )}
+        </section>
+        ) : null}
+
+        {isActiveView('overview') ? (
+        <section className="glass-card home-calendar-card" aria-label="Calendrier des dépenses">
+          <div className="panel-title">
+            <h2>Mon calendrier</h2>
+            <p>Vos dépenses jour par jour — cliquez sur une case pour voir le détail.</p>
+          </div>
+          <ExpenseCalendar
+            month={selectedMonth}
+            transactions={activeTransactions}
+            onMonthChange={setSelectedMonth}
+            today={todayIso}
+            onAddExpense={openQuickAdd}
+            onEditExpense={openQuickEdit}
+            recurringRules={recurringRules.filter((rule) => rule.member === selectedProfileId)}
+          />
+        </section>
+        ) : null}
+
+        {isActiveView('overview') && recentTransactions.length > 0 ? (
+        <section className="glass-card recent-tx-card" aria-label="Dernières opérations">
+          <div className="panel-title">
+            <h2>Dernières opérations</h2>
+            <button type="button" className="ghost-button" onClick={() => navigateToSection('operations')}>
+              Tout voir →
+            </button>
+          </div>
+          <ul className="recent-tx-list">
+            {recentTransactions.map((tx) => (
+              <li key={tx.id}>
+                <button
+                  type="button"
+                  className="recent-tx-hit"
+                  onClick={() => openQuickEdit(tx)}
+                  aria-label={`Modifier ${tx.label}`}
+                >
+                  {tx.icon ? (
+                    <span className="tx-merchant-icon" aria-hidden="true">{tx.icon}</span>
+                  ) : (
+                    <span className="recent-tx-dot" style={{ background: categoryColors[tx.category] }} aria-hidden="true" />
+                  )}
+                  <span className="recent-tx-label">
+                    {tx.label}
+                    {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
+                    {(tx.tags ?? []).map((tag) => (
+                      <span key={tag} className="tx-tag">#{tag}</span>
+                    ))}
+                  </span>
+                  <span className="recent-tx-meta">
+                    {new Date(`${tx.date}T12:00:00`).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })} · {tx.category}
+                  </span>
+                  <span className={`recent-tx-amount recent-tx-amount--${tx.kind}`}>
+                    {tx.kind === 'depense' ? '−' : '+'}{euroFormatter.format(tx.amount)}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+        ) : null}
+
+        {isActiveView('overview') && (monthSummary.spent > 0 || monthSummary.income > 0) ? (
+        <section className="glass-card month-summary-card" aria-label="Bilan du mois">
+          <div className="panel-title">
+            <h2>Bilan · {formatMonth(selectedMonth)}</h2>
+          </div>
+          <div className="month-summary-rows">
+            <div className="month-summary-row">
+              <span>Dépensé</span>
+              <strong className="month-summary-spent">−{euroFormatter.format(monthSummary.spent)}</strong>
+              {monthSummary.previousSpent > 0 ? (
+                <small className={monthSummary.delta > 0 ? 'negative' : 'positive'}>
+                  {monthSummary.delta > 0 ? '+' : ''}{euroFormatter.format(monthSummary.delta)} vs mois dernier
+                </small>
+              ) : null}
+            </div>
+            <div className="month-summary-row">
+              <span>Reçu</span>
+              <strong className="month-summary-income">+{euroFormatter.format(monthSummary.income)}</strong>
+            </div>
+            {monthSummary.topCategories.length > 0 ? (
+              <div className="month-summary-row month-summary-row--cats">
+                <span>Top catégories</span>
+                <div className="month-summary-cats">
+                  {monthSummary.topCategories.map(([category, total]) => (
+                    <span key={category} className="month-summary-cat">
+                      <span className="recent-tx-dot" style={{ background: categoryColors[category] }} aria-hidden="true" />
+                      {category} · {euroFormatter.format(total)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         </section>
         ) : null}
+
+      {isActiveView('family') ? (
+        <FamilyView month={selectedMonth} peers={familyPeers} myUserId={myUserId} />
+      ) : null}
+
+      {isActiveView('notes') ? (
+        <NotesView
+          notes={notes}
+          onChange={setNotes}
+          aiEnabled={isBudgetAiConfigured}
+          anthropicKey={anthropicKey ?? ''}
+          onImportTransactions={handleImportExtracted}
+          onConfigureAi={() => openSettingsPanel('ai')}
+        />
+      ) : null}
 
       {isActiveView('envelopes') ? (
       <section id="envelopes" className="glass-card envelope-strip">
         <div className="panel-title">
           <h2>Enveloppes</h2>
-          <p>Segmentation budgétaire par poche de dépense</p>
+          <p>Répartissez vos dépenses par poche (Perso, Maison, Vacances)</p>
         </div>
         <div className="envelope-actions">
           <div className="member-toggle" role="tablist" aria-label="Filtre enveloppe">
@@ -4630,272 +5173,6 @@ Réponse attendue:
       </section>
       ) : null}
 
-      {isActiveView('overview') ? (
-      <section className={`widget-customizer${isWidgetDirectMode ? ' widget-customizer--direct' : ''}`} aria-label={isWidgetDirectMode ? 'Widgets du dashboard' : 'Personnalisation des widgets'}>
-        <div className="widget-customizer-toolbar">
-          <button
-            type="button"
-            className={widgetEditMode ? 'hero-cta-button' : 'ghost-button'}
-            onClick={() => setWidgetEditMode((previous) => !previous)}
-          >
-            {widgetEditMode ? 'Terminer l’édition' : 'Modifier les widgets'}
-          </button>
-          <button type="button" className="ghost-button" onClick={resetDashboardWidgetLayout}>
-            Réinitialiser la disposition
-          </button>
-        </div>
-        <div className="widget-template-row" role="tablist" aria-label="Modèles de widgets">
-          {DASHBOARD_WIDGET_TEMPLATES.map((template) => (
-            <button
-              key={template.id}
-              type="button"
-              role="tab"
-              aria-selected={dashboardWidgetState.templateId === template.id}
-              className={dashboardWidgetState.templateId === template.id ? 'active' : ''}
-              onClick={() => applyDashboardWidgetTemplate(template.id)}
-              title={template.description}
-            >
-              {template.label}
-            </button>
-          ))}
-          <button
-            type="button"
-            role="tab"
-            aria-selected={dashboardWidgetState.templateId === 'custom'}
-            className={dashboardWidgetState.templateId === 'custom' ? 'active' : ''}
-          >
-            Personnalisé
-          </button>
-        </div>
-        <div className={`widget-board${widgetEditMode ? ' widget-board--editing' : ''}`}>
-          {(widgetEditMode
-            ? orderedVisibleDashboardWidgets
-            : orderedVisibleDashboardWidgets.filter((widgetId) => widgetId !== 'coaching')
-          ).map((widgetId) => {
-            const widget = DASHBOARD_WIDGET_LIBRARY.find((entry) => entry.id === widgetId)
-            if (!widget) return null
-
-            const preview = widgetPreviewDefinitions[widgetId]
-            const widgetSize = dashboardWidgetState.widgetSizes[widgetId] ?? getDefaultDashboardWidgetSize(widgetId)
-            const allowedWidgetSizes = getAllowedDashboardWidgetSizes(widgetId)
-            const isSizeSelectorOpen = widgetSizeMenuFor === widgetId
-            const isCompactWidget = widgetSize === 'compact'
-            const isMediumWidget = widgetSize === 'medium'
-            const isDragging = draggedWidgetId === widgetId
-            const isDropTarget = dragOverWidgetId === widgetId && draggedWidgetId !== widgetId
-
-            return (
-              <article
-                key={widgetId}
-                className={`widget-preview-card widget-preview-card--${widgetSize}${widgetId === 'expenseCalendar' && widgetSize === 'large' ? ' widget-preview-card--calendar-full' : ''}${isWidgetDirectMode ? ' widget-preview-card--direct' : ''}${isSizeSelectorOpen ? ' widget-preview-card--size-open' : ''}${widgetId === 'coaching' && !widgetEditMode ? ' widget-preview-card--advice-rail' : ''}${isDragging ? ' is-dragging' : ''}${isDropTarget ? ' is-drop-target' : ''}`}
-                draggable={widgetEditMode || isWidgetDirectMode}
-                onDragStart={(event) => handleWidgetDragStart(event, widgetId)}
-                onDragOver={(event) => handleWidgetDragOver(event, widgetId)}
-                onDrop={(event) => handleWidgetDrop(event, widgetId)}
-                onDragEnd={handleWidgetDragEnd}
-              >
-                <div className="widget-preview-card__flip">
-                <div className="widget-preview-card__face widget-preview-card__face--front">
-                {!isWidgetDirectMode ? (
-                  <button
-                    type="button"
-                    className="widget-preview-card__remove"
-                    aria-label={`Retirer ${widget.label}`}
-                    onClick={() => toggleDashboardWidget(widgetId)}
-                  >
-                    ✕
-                  </button>
-                ) : null}
-                <div className="widget-preview-card__top">
-                  <div>
-                    <span className="widget-preview-card__eyebrow-row">
-                      <span className="widget-preview-card__eyebrow">{preview.eyebrow}</span>
-                      {widgetId === 'coaching' && isBudgetAiConfigured ? (
-                        <span className="widget-ai-badge" aria-label="IA connectée">
-                          <Bot size={12} /> IA
-                        </span>
-                      ) : null}
-                    </span>
-                    <h3>
-                      {preview.title}
-                      {widgetId === 'coaching' && isBudgetAiConfigured ? (
-                        <span className="widget-ai-inline-icon" aria-hidden="true"> <Bot size={14} /></span>
-                      ) : null}
-                    </h3>
-                  </div>
-                  <div className="widget-preview-card__tools">
-                    {(widgetEditMode || isWidgetDirectMode) ? (
-                      <button
-                        type="button"
-                        className="widget-preview-card__resize"
-                        onMouseDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          setWidgetSizeMenuFor((previous) => previous === widgetId ? null : widgetId)
-                        }}
-                        aria-label={`Choisir la taille de ${widget.label}`}
-                        title={`Taille: ${DASHBOARD_WIDGET_SIZE_LABELS[widgetSize]}`}
-                      >
-                        {widgetSize === 'large' ? <Maximize2 size={14} /> : widgetSize === 'medium' ? <Layers3 size={14} /> : <Minimize2 size={14} />}
-                      </button>
-                    ) : null}
-                    {widgetEditMode ? (
-                      <span className="widget-preview-card__drag" aria-hidden="true">
-                        <GripVertical size={16} />
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-                <p className={`widget-preview-card__summary${isCompactWidget ? ' widget-preview-card__summary--compact' : ''}`}>{preview.summary}</p>
-                {(isMediumWidget || widgetSize === 'large') ? <div className="widget-preview-card__accent">{preview.accent}</div> : null}
-                {widgetId === 'annualTrend' ? (
-                  <div className={`widget-mini-trend${isCompactWidget ? ' widget-mini-trend--compact' : ''}`} aria-label="Aperçu des dépenses sur 6 mois">
-                    <div className="widget-mini-trend__bars">
-                      {(isCompactWidget ? annualTrendPreviewBars.slice(-3) : isMediumWidget ? annualTrendPreviewBars.slice(-4) : annualTrendPreviewBars).map((entry) => (
-                        <div key={entry.month} className="widget-mini-trend__bar-wrap" title={`${entry.month}: ${euroFormatter.format(entry.depenses)}`}>
-                          <span className="widget-mini-trend__bar" style={{ height: `${entry.heightPercent}%` }} />
-                          <small>{entry.month}</small>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {widgetId === 'alerts' ? (
-                  <ul className={`widget-mini-alerts${isCompactWidget ? ' widget-mini-alerts--compact' : ''}`} aria-label="Aperçu des alertes">
-                    {widgetAlertPreviewItems.length > 0 ? (
-                      (isCompactWidget ? widgetAlertPreviewItems.slice(0, 1) : isMediumWidget ? widgetAlertPreviewItems.slice(0, 2) : widgetAlertPreviewItems).map((item, index) => (
-                        <li key={`${item.level}-${index}`} className={`widget-mini-alerts__item widget-mini-alerts__item--${item.level}`}>
-                          {item.message}
-                        </li>
-                      ))
-                    ) : (
-                      <li className="widget-mini-alerts__item widget-mini-alerts__item--info">Aucune alerte active.</li>
-                    )}
-                  </ul>
-                ) : null}
-                {widgetId === 'savingsGoals' ? (
-                  <ul className={`widget-mini-goals${isCompactWidget ? ' widget-mini-goals--compact' : ''}`} aria-label="Aperçu des objectifs d'épargne">
-                    {(isCompactWidget ? widgetGoalsPreviewItems.slice(0, 2) : isMediumWidget ? widgetGoalsPreviewItems.slice(0, 3) : widgetGoalsPreviewItems).map((goal) => (
-                      <li key={goal.category}>
-                        <div className="widget-mini-goals__head">
-                          <strong>{goal.category}</strong>
-                          <span>{goal.rate.toFixed(0)}%</span>
-                        </div>
-                        <div className="widget-mini-goals__track">
-                          <span style={{ width: `${Math.max(4, Math.min(100, goal.rate))}%` }} />
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                {widgetId === 'expenseCalendar' ? (
-                  <div className={`widget-mini-calendar${isCompactWidget ? ' widget-mini-calendar--compact' : isMediumWidget ? '' : ' widget-mini-calendar--large'}`} aria-label={`Aperçu du calendrier pour ${formatMonth(selectedMonth)}`}>
-                    {!isCompactWidget ? (
-                      <div className="widget-mini-calendar__weekdays">
-                        {MINI_CALENDAR_WEEKDAYS.map((weekday) => (
-                          <span key={weekday}>{weekday}</span>
-                        ))}
-                      </div>
-                    ) : null}
-                    <div className="widget-mini-calendar__grid">
-                      {(isCompactWidget ? expenseCalendarPreviewCells.slice(0, 21) : isMediumWidget ? expenseCalendarPreviewCells.slice(0, 35) : expenseCalendarPreviewCells).map((cell) => (
-                        <div
-                          key={cell.key}
-                          className={`widget-mini-calendar__cell${cell.day === null ? ' is-empty' : ''}${!isCompactWidget && !isMediumWidget ? ' has-details' : ''}`}
-                          style={cell.day === null
-                            ? undefined
-                            : { background: `rgba(249, 115, 22, ${0.1 + cell.intensity * 0.7})` }}
-                          title={cell.day === null ? '' : `Jour ${cell.day}: ${euroFormatter.format(cell.total)}`}
-                        >
-                          {cell.day !== null ? <strong>{cell.day}</strong> : null}
-                          {cell.day !== null && !isCompactWidget && !isMediumWidget ? (
-                            <small>
-                              {cell.count > 0 ? `${cell.count} op.` : 'Aucune'}
-                              {cell.total > 0 ? ` · ${Math.round(cell.total)}€` : ''}
-                            </small>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {widgetEditMode && !isWidgetDirectMode ? (
-                <div className="widget-preview-card__actions">
-                  <button type="button" className="ghost-button" onClick={() => toggleDashboardWidgetSize(widgetId)}>
-                    {widgetSize === 'large' ? <Maximize2 size={14} /> : widgetSize === 'medium' ? <Layers3 size={14} /> : <Minimize2 size={14} />}
-                    Changer la taille
-                  </button>
-                </div>
-                ) : null}
-                </div>
-                <div className="widget-preview-card__face widget-preview-card__face--back">
-                  <div className="widget-size-flip-panel" role="menu" aria-label={`Taille du widget ${widget.label}`}>
-                    <strong>Choisir la taille</strong>
-                    <div className="widget-size-flip-options">
-                      {allowedWidgetSizes.map((sizeOption) => (
-                        <button
-                          key={sizeOption}
-                          type="button"
-                          role="menuitemradio"
-                          aria-checked={widgetSize === sizeOption}
-                          className={widgetSize === sizeOption ? 'active' : ''}
-                          onMouseDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setDashboardWidgetSize(widgetId, sizeOption)
-                            setWidgetSizeMenuFor(null)
-                          }}
-                        >
-                          {DASHBOARD_WIDGET_SIZE_LABELS[sizeOption]}
-                        </button>
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onMouseDown={(event) => event.stopPropagation()}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        setWidgetSizeMenuFor(null)
-                      }}
-                    >
-                      Retour
-                    </button>
-                  </div>
-                </div>
-                </div>
-              </article>
-            )
-          })}
-          {(widgetEditMode
-            ? orderedVisibleDashboardWidgets
-            : orderedVisibleDashboardWidgets.filter((widgetId) => widgetId !== 'coaching')
-          ).length === 0 ? (
-            <article className="widget-preview-card widget-preview-card--empty">
-              <span className="widget-preview-card__eyebrow">Vide</span>
-              <h3>Aucun widget sur la vue d’ensemble</h3>
-              <p className="widget-preview-card__summary">Activez des widgets ci-dessous pour composer votre cockpit personnel.</p>
-            </article>
-          ) : null}
-        </div>
-        <div className="widget-chip-grid">
-          {DASHBOARD_WIDGET_LIBRARY.map((widget) => {
-            const active = visibleDashboardWidgets.has(widget.id)
-            return (
-              <button
-                key={widget.id}
-                type="button"
-                className={`widget-chip${active ? ' widget-chip--active' : ''}`}
-                onClick={() => toggleDashboardWidget(widget.id)}
-                aria-pressed={active}
-              >
-                {widget.label}
-              </button>
-            )
-          })}
-        </div>
-      </section>
-      ) : null}
 
       {showSettings ? (
         <div
@@ -4910,11 +5187,8 @@ Réponse attendue:
           <section className="glass-card settings-modal-card" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
             <div className="settings-modal-header">
               <div>
-                <p className="eyebrow">Réglages sensibles</p>
-                <h2 id="settings-modal-title">Paramètres du cockpit</h2>
-                <p className="auth-note">
-                  Profils, IA, sécurité, sauvegarde et reset sont séparés pour réduire la charge mentale.
-                </p>
+                <h2 id="settings-modal-title">Paramètres</h2>
+                <p className="auth-note">Personnalisez l'application et gérez vos données.</p>
               </div>
               <button type="button" className="settings-close-button" onClick={closeSettingsPanel} aria-label="Fermer les paramètres">
                 <X size={18} />
@@ -4923,22 +5197,47 @@ Réponse attendue:
 
             <div className="settings-modal-body">
               <aside className="settings-nav" aria-label="Sections de paramètres">
-                {[
-                  ['profiles', 'Profils'],
-                  ['ai', 'Assistant IA'],
-                  ['security', 'Sécurité'],
-                  ['backup', 'Sauvegarde'],
-                  ['theme', 'Thème'],
-                  ['reset', 'Reset'],
-                ].map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    className={settingsSection === id ? 'active' : ''}
-                    onClick={() => setSettingsSection(id as SettingsSection)}
-                  >
-                    {label}
-                  </button>
+                {([
+                  {
+                    group: 'Personnalisation',
+                    items: [
+                      ['theme', '🎨', 'Thème'],
+                      ['a11y', '♿', 'Accessibilité'],
+                      ['profiles', '👥', 'Profils'],
+                      ['ai', '✨', 'Assistant IA'],
+                    ],
+                  },
+                  {
+                    group: 'Données',
+                    items: [
+                      ['backup', '💾', 'Sauvegarde'],
+                      ['report', '📧', 'Rapport par email'],
+                      ['security', '🔐', 'Sécurité'],
+                    ],
+                  },
+                  {
+                    group: 'Compte',
+                    items: [
+                      ['account', '👤', 'Mon compte'],
+                      ['rgpd', '🔏', 'Mes données RGPD'],
+                      ['reset', '⚠️', 'Réinitialiser'],
+                    ],
+                  },
+                ] as const).map((section) => (
+                  <div key={section.group} className="settings-nav-group">
+                    <span className="settings-nav-group__label">{section.group}</span>
+                    {section.items.map(([id, icon, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={`${settingsSection === id ? 'active' : ''}${id === 'reset' ? ' settings-nav-danger' : ''}`}
+                        onClick={() => setSettingsSection(id as SettingsSection)}
+                      >
+                        <span className="settings-nav-icon" aria-hidden="true">{icon}</span>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 ))}
               </aside>
 
@@ -4950,7 +5249,10 @@ Réponse attendue:
                   <div className="settings-section-grid">
                     <article className="glass-card settings-section-card form-panel">
                       <div className="panel-title">
-                        <h2>Profils</h2>
+                        <h2>
+                          Profils
+                          <InfoHint text="Après l'ajout, basculez de profil via les cercles en haut du menu — chaque profil a son budget et ses dépenses." />
+                        </h2>
                         <p>Crée, mets à jour et désigne le profil par défaut depuis un espace dédié.</p>
                       </div>
                       <form onSubmit={handleAddProfile}>
@@ -4972,13 +5274,92 @@ Réponse attendue:
                           />
                         </label>
                         <button type="submit">Ajouter le profil</button>
-                        <p className="auth-note">Bascule ensuite dans le header pour piloter le bon contexte.</p>
                       </form>
+                      <div className="family-invite-block">
+                        <h3>🤝 Inviter un proche</h3>
+                        <p className="auth-note">
+                          Cette personne recevra un email pour créer son propre compte. Une fois
+                          l'invitation acceptée, un onglet « Famille » fusionnera vos budgets
+                          et dépenses (chacun garde la main sur les siens).
+                        </p>
+                        <div className="family-invite-row">
+                          <input
+                            type="email"
+                            value={inviteEmail}
+                            onChange={(event) => setInviteEmail(event.target.value)}
+                            placeholder="email@exemple.fr"
+                            disabled={inviteBusy}
+                          />
+                          <button
+                            type="button"
+                            className="hero-cta-button"
+                            onClick={() => void handleSendFamilyInvite()}
+                            disabled={inviteBusy || !inviteEmail.trim()}
+                          >
+                            {inviteBusy ? 'Envoi…' : 'Inviter'}
+                          </button>
+                        </div>
+                        {inviteFeedback ? (
+                          <p className={inviteFeedback.kind === 'ok' ? 'auth-success' : 'auth-error'}>
+                            {inviteFeedback.text}
+                          </p>
+                        ) : null}
+                        {sentInvites.length > 0 ? (
+                          <ul className="sent-invites-list" data-relance-tick={relanceTick}>
+                            {sentInvites.map((invite) => {
+                              const info = relanceInfo.get(invite.membershipId)
+                              const canRelance = info?.canRelance ?? true
+                              const hoursLeft = info?.hoursLeft ?? 1
+                              return (
+                                <li key={invite.membershipId}>
+                                  <div className="sent-invite-info">
+                                    {invite.accepted ? (
+                                      <>
+                                        <strong>{invite.displayName}</strong>
+                                        <small>{invite.email}</small>
+                                      </>
+                                    ) : (
+                                      <strong>{invite.email}</strong>
+                                    )}
+                                  </div>
+                                  {invite.accepted ? (
+                                    <span className="sent-invite-status sent-invite-status--ok">A rejoint ✓</span>
+                                  ) : (
+                                    <>
+                                      <span className="sent-invite-status">En attente</span>
+                                      <button
+                                        type="button"
+                                        className="ghost-button sent-invite-btn"
+                                        onClick={() => void handleResendInvite(invite)}
+                                        disabled={inviteBusy || !canRelance}
+                                        title={canRelance ? 'Renvoyer l\'email d\'invitation' : `Relance possible dans ${hoursLeft} h (1 relance par 24 h)`}
+                                      >
+                                        {canRelance ? 'Relancer' : `Relancé — ${hoursLeft} h`}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="ghost-button sent-invite-btn sent-invite-btn--danger"
+                                        onClick={() => void handleCancelInvite(invite)}
+                                        disabled={inviteBusy}
+                                      >
+                                        Annuler
+                                      </button>
+                                    </>
+                                  )}
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        ) : null}
+                      </div>
                     </article>
 
                     <article className="glass-card settings-section-card form-panel">
                       <div className="panel-title">
-                        <h2>Profil actif</h2>
+                        <h2>
+                          Profil actif
+                          <InfoHint text="Le profil par défaut sert de filet de sécurité : si un profil est supprimé, ses données lui sont rattachées." />
+                        </h2>
                         <p>Réglages du profil sélectionné et choix du profil de repli.</p>
                       </div>
                       <form onSubmit={handleUpdateManagedProfile}>
@@ -4996,6 +5377,49 @@ Réponse attendue:
                             ))}
                           </select>
                         </label>
+                        <div className="avatar-editor">
+                          <span className="avatar-editor__label">Photo du profil</span>
+                          <div className="avatar-editor__row">
+                            {profileAvatarNode(managedProfile)}
+                            <label className="ghost-button avatar-upload-btn">
+                              📷 Importer une photo
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(event) => {
+                                  void handleAvatarUpload(event.target.files?.[0])
+                                  event.target.value = ''
+                                }}
+                              />
+                            </label>
+                            {managedProfile.avatar ? (
+                              <button
+                                type="button"
+                                className="ghost-button"
+                                onClick={() => setProfileAvatar(managedProfile.id, undefined)}
+                              >
+                                Revenir aux initiales
+                              </button>
+                            ) : null}
+                          </div>
+                          <span className="avatar-editor__label avatar-editor__label--sub">
+                            … ou choisissez un avatar (libres de droit)
+                          </span>
+                          <div className="avatar-preset-grid" role="listbox" aria-label="Avatars proposés">
+                            {MONEY_AVATAR_PRESETS.map((emoji) => (
+                              <button
+                                key={emoji}
+                                type="button"
+                                role="option"
+                                aria-selected={managedProfile.avatar === `emoji:${emoji}`}
+                                className={`avatar-preset${managedProfile.avatar === `emoji:${emoji}` ? ' avatar-preset--active' : ''}`}
+                                onClick={() => setProfileAvatar(managedProfile.id, `emoji:${emoji}`)}
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                         <label>
                           Nom du profil
                           <input
@@ -5021,7 +5445,6 @@ Réponse attendue:
                             Supprimer
                           </button>
                         </div>
-                        <p className="auth-note">Le profil par défaut sert de filet de sécurité si un profil est supprimé.</p>
                       </form>
                     </article>
                   </div>
@@ -5029,38 +5452,55 @@ Réponse attendue:
 
                 {settingsSection === 'ai' ? (
                   <div className="settings-section-grid">
-                    <article className="glass-card settings-section-card form-panel claude-onboarding-card">
+                    <article className="glass-card settings-section-card form-panel ai-settings-card">
                       <div className="panel-title">
                         <h2>Assistant IA</h2>
-                        <p>Choisissez votre fournisseur IA et gérez une clé API par fournisseur.</p>
+                        <p>Connectez une IA pour activer le coaching, les analyses et le chat.</p>
                       </div>
-                      <div className="claude-status-banner">
-                        <strong>
-                          {isCurrentAiProviderOperational
-                            ? (activeAiKey ? 'Statut: activable' : 'Statut: inactif')
-                            : 'Statut: en préparation'}
-                        </strong>
-                        <small>
-                          {isCurrentAiProviderOperational
-                            ? (activeAiKey
-                              ? 'Une clé est enregistrée localement. Testez-la avant de vous appuyer dessus.'
-                              : 'Aucune clé enregistrée pour le moment.')
-                            : `${selectedAiProvider.name} est sélectionné. L’intégration complète arrive bientôt dans FP.`}
-                        </small>
+
+                      <div
+                        className={`ai-status ai-status--${
+                          isCurrentAiProviderOperational ? (activeAiKey ? 'ready' : 'off') : 'soon'
+                        }`}
+                        role="status"
+                      >
+                        <span className="ai-status__dot" aria-hidden="true" />
+                        <div>
+                          <strong>
+                            {isCurrentAiProviderOperational
+                              ? (activeAiKey ? 'Prêt à l\'emploi' : 'Non configuré')
+                              : 'Bientôt disponible'}
+                          </strong>
+                          <small>
+                            {isCurrentAiProviderOperational
+                              ? (activeAiKey
+                                ? 'Votre clé est enregistrée sur cet appareil. Testez-la ci-dessous.'
+                                : 'Ajoutez votre clé pour débloquer l\'assistant.')
+                              : `${selectedAiProvider.name} arrive prochainement — seul Anthropic est actif aujourd'hui.`}
+                          </small>
+                        </div>
                       </div>
-                      <label>
-                        Fournisseur IA
-                        <select
-                          value={aiProvider}
-                          onChange={(event) => saveAiProvider(event.target.value as AIProviderId)}
-                        >
-                          {ONBOARDING_PROVIDERS.map((provider) => (
-                            <option key={provider.id} value={provider.id}>
-                              {provider.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+
+                      <span className="ai-provider-label">Fournisseur</span>
+                      <div className="ai-provider-grid" role="listbox" aria-label="Fournisseurs IA">
+                        {ONBOARDING_PROVIDERS.map((provider) => (
+                          <button
+                            key={provider.id}
+                            type="button"
+                            role="option"
+                            aria-selected={aiProvider === provider.id}
+                            className={`ai-provider-chip${aiProvider === provider.id ? ' ai-provider-chip--active' : ''}${provider.supported ? '' : ' ai-provider-chip--soon'}`}
+                            onClick={() => saveAiProvider(provider.id)}
+                          >
+                            {provider.logoSrc ? (
+                              <img src={provider.logoSrc} alt="" className="ai-provider-chip__logo" />
+                            ) : null}
+                            <span>{provider.name}</span>
+                            {!provider.supported ? <small>Bientôt</small> : null}
+                          </button>
+                        ))}
+                      </div>
+
                       <label>
                         Clé API {selectedAiProvider.name}
                         <input
@@ -5071,23 +5511,26 @@ Réponse attendue:
                           autoComplete="off"
                         />
                       </label>
-                      <div className="settings-inline-actions">
-                        <a href={selectedAiProvider.helpUrl} target="_blank" rel="noreferrer" className="ghost-button">
-                          Guide API
+                      <p className="ai-key-links">
+                        <a href={selectedAiProvider.consoleUrl} target="_blank" rel="noreferrer">
+                          Où trouver ma clé ?
                         </a>
-                        <a href={selectedAiProvider.consoleUrl} target="_blank" rel="noreferrer" className="ghost-button">
-                          Console clés
+                        {' · '}
+                        <a href={selectedAiProvider.helpUrl} target="_blank" rel="noreferrer">
+                          Guide {selectedAiProvider.name}
                         </a>
-                      </div>
+                        {' — '}La clé reste sur cet appareil.
+                      </p>
+
                       <div className="settings-inline-actions">
                         <button
                           type="button"
                           onClick={() => void testClaudeKey()}
-                          disabled={claudeTestState === 'testing' || !isCurrentAiProviderOperational}
+                          disabled={claudeTestState === 'testing' || !isCurrentAiProviderOperational || !activeAiKey}
                         >
                           {claudeTestState === 'testing' ? (
                             <span className="inline-loading-label"><span className="inline-loader" aria-hidden="true" />Test en cours...</span>
-                          ) : isCurrentAiProviderOperational ? 'Tester la clé' : 'Test indisponible'}
+                          ) : 'Tester la clé'}
                         </button>
                         <button
                           type="button"
@@ -5098,11 +5541,188 @@ Réponse attendue:
                           Ouvrir le chat
                         </button>
                       </div>
-                      <p className={`claude-status-text claude-status-text--${claudeTestState}`}>
-                        {isCurrentAiProviderOperational
-                          ? (claudeTestMessage || (anthropicKey ? 'Clé enregistrée localement.' : 'Ajoutez une clé pour activer Anthropic.'))
-                          : `${selectedAiProvider.name} est bien sélectionné. Les fonctionnalités IA temps réel restent temporairement limitées à Anthropic.`}
-                      </p>
+                      {claudeTestMessage ? (
+                        <p className={`claude-status-text claude-status-text--${claudeTestState}`}>
+                          {claudeTestMessage}
+                        </p>
+                      ) : null}
+                    </article>
+                  </div>
+                ) : null}
+
+                {settingsSection === 'a11y' ? (
+                  <div className="settings-section-grid settings-section-grid--single">
+                    <article className="glass-card settings-section-card form-panel">
+                      <div className="panel-title">
+                        <h2>
+                          ♿ Accessibilité
+                          <InfoHint text="Astuce : la vue Budget propose aussi un « Mode simple » qui agrandit encore ses textes." />
+                        </h2>
+                        <p>Adaptez l'application à vos besoins de lecture et de confort.</p>
+                      </div>
+
+                      <span className="ai-provider-label">Taille du texte</span>
+                      <div className="theme-picker">
+                        {([
+                          ['normal', 'Aa', 'Normale'],
+                          ['large', 'Aa', 'Grande'],
+                          ['xl', 'Aa', 'Très grande'],
+                        ] as const).map(([value, icon, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            className={`theme-option a11y-size-option a11y-size-option--${value}${a11yPrefs.textSize === value ? ' theme-option--active' : ''}`}
+                            onClick={() => setA11yPrefs((previous) => ({ ...previous, textSize: value }))}
+                          >
+                            <span className="theme-option-icon">{icon}</span>
+                            <span>{label}</span>
+                            {a11yPrefs.textSize === value ? <span className="theme-option-state">✓</span> : null}
+                          </button>
+                        ))}
+                      </div>
+
+                      <label className="a11y-toggle">
+                        <input
+                          type="checkbox"
+                          checked={a11yPrefs.reduceMotion}
+                          onChange={(event) =>
+                            setA11yPrefs((previous) => ({ ...previous, reduceMotion: event.target.checked }))
+                          }
+                        />
+                        <span>
+                          <strong>Réduire les animations</strong>
+                          <small>Désactive les mouvements (coucou 👋, jauges animées, transitions).</small>
+                        </span>
+                      </label>
+
+                      <label className="a11y-toggle">
+                        <input
+                          type="checkbox"
+                          checked={a11yPrefs.highContrast}
+                          onChange={(event) =>
+                            setA11yPrefs((previous) => ({ ...previous, highContrast: event.target.checked }))
+                          }
+                        />
+                        <span>
+                          <strong>Contraste renforcé</strong>
+                          <small>Textes secondaires plus foncés et bordures plus marquées.</small>
+                        </span>
+                      </label>
+
+                    </article>
+                  </div>
+                ) : null}
+
+                {settingsSection === 'report' ? (
+                  <div className="settings-section-grid settings-section-grid--single">
+                    <article className="glass-card settings-section-card form-panel">
+                      <div className="panel-title">
+                        <h2>📧 Rapport par email</h2>
+                        <p>
+                          Recevez automatiquement un résumé de vos finances sur {userEmail || 'votre adresse'} —
+                          construit à partir de vos données synchronisées.
+                        </p>
+                      </div>
+                      {reportPrefs.frequency !== 'none' ? (
+                        <div className="report-current" role="status">
+                          <strong>📬 Rapport programmé</strong>
+                          <p>
+                            {reportPrefs.frequency === 'weekly' ? 'Chaque semaine' : 'Chaque mois'}
+                            {' · '}
+                            {reportPrefs.format === 'detailed' ? 'détaillé' : "l'essentiel"}
+                            {reportPrefs.attachment === 'none'
+                              ? ''
+                              : ` · ${reportPrefs.attachment === 'csv' ? 'CSV' : reportPrefs.attachment === 'excel' ? 'Excel' : 'PDF'} joint`}
+                            {' — envoyé à '}
+                            {userEmail || 'votre adresse'}
+                            {reportPrefs.ccEmails.length > 0
+                              ? ` + ${reportPrefs.ccEmails.length} adresse${reportPrefs.ccEmails.length > 1 ? 's' : ''} en copie`
+                              : ''}
+                          </p>
+                          <small>
+                            {reportPrefs.lastSentAt
+                              ? `Dernier envoi : ${new Date(reportPrefs.lastSentAt).toLocaleDateString('fr-FR')}. `
+                              : 'Aucun envoi automatique pour le moment. '}
+                            Modifiez les réglages ci-dessous : ils sont enregistrés aussitôt.
+                          </small>
+                        </div>
+                      ) : (
+                        <div className="report-current report-current--off" role="status">
+                          <strong>Aucun rapport programmé</strong>
+                          <small>Choisissez une fréquence ci-dessous pour l'activer.</small>
+                        </div>
+                      )}
+                      <label>
+                        Fréquence
+                        <select
+                          value={reportPrefs.frequency}
+                          onChange={(event) =>
+                            void handleReportPrefsChange({
+                              frequency: event.target.value as ReportPrefs['frequency'],
+                              format: reportPrefs.format,
+                            })
+                          }
+                        >
+                          <option value="none">Jamais (désactivé)</option>
+                          <option value="weekly">Chaque semaine</option>
+                          <option value="monthly">Chaque mois (bilan du mois précédent)</option>
+                        </select>
+                      </label>
+                      <label>
+                        Contenu
+                        <select
+                          value={reportPrefs.format}
+                          onChange={(event) =>
+                            void handleReportPrefsChange({
+                              frequency: reportPrefs.frequency,
+                              format: event.target.value as ReportPrefs['format'],
+                            })
+                          }
+                        >
+                          <option value="summary">L'essentiel (totaux + top catégories)</option>
+                          <option value="detailed">Détaillé (avec la liste des opérations)</option>
+                        </select>
+                      </label>
+                      <label>
+                        Pièce jointe
+                        <select
+                          value={reportPrefs.attachment}
+                          onChange={(event) =>
+                            void handleReportPrefsChange({
+                              attachment: event.target.value as ReportPrefs['attachment'],
+                            })
+                          }
+                        >
+                          <option value="none">Aucune — tout est dans l'email</option>
+                          <option value="pdf">PDF (à imprimer ou archiver)</option>
+                          <option value="csv">CSV (à ouvrir dans un tableur)</option>
+                          <option value="excel">Excel</option>
+                        </select>
+                      </label>
+                      <label>
+                        Envoyer une copie à (5 adresses max)
+                        <input
+                          type="text"
+                          value={reportCcDraft}
+                          onChange={(event) => setReportCcDraft(event.target.value)}
+                          onBlur={(event) => handleReportCcCommit(event.target.value)}
+                          placeholder="conjoint@exemple.fr, comptable@exemple.fr"
+                          autoComplete="off"
+                        />
+                        <small className="field-hint">
+                          Ces adresses reçoivent les rapports automatiques (pas le rapport test).
+                        </small>
+                      </label>
+                      <div className="settings-inline-actions">
+                        <button type="button" onClick={() => void handleSendTestReport()} disabled={reportBusy}>
+                          {reportBusy ? 'Envoi…' : 'Recevoir un rapport test maintenant'}
+                        </button>
+                      </div>
+                      {reportFeedback ? (
+                        <p className={reportFeedback.kind === 'ok' ? 'auth-success' : 'auth-error'}>
+                          {reportFeedback.text}
+                        </p>
+                      ) : null}
                     </article>
                   </div>
                 ) : null}
@@ -5112,7 +5732,7 @@ Réponse attendue:
                     <article className="glass-card settings-section-card form-panel">
                       <div className="panel-title">
                         <h2>Sécurité</h2>
-                        <p>Mets à jour le PIN parent et la durée de session mémorisée.</p>
+                        <p>Le PIN parent chiffre vos sauvegardes et verrouille les actions destructives (reset).</p>
                       </div>
                       <form onSubmit={(event) => void handlePinUpdate(event)}>
                         <label>
@@ -5149,23 +5769,7 @@ Réponse attendue:
                             placeholder="Retapez le nouveau PIN parent"
                           />
                         </label>
-                        <label>
-                          Durée de session mémorisée
-                          <select
-                            value={settingsForm.sessionDurationDays}
-                            onChange={(event) =>
-                              setSettingsForm((previous) => ({
-                                ...previous,
-                                sessionDurationDays: event.target.value,
-                              }))
-                            }
-                          >
-                            <option value="7">7 jours</option>
-                            <option value="14">14 jours</option>
-                            <option value="30">30 jours</option>
-                          </select>
-                        </label>
-                        <button type="submit">Enregistrer les paramètres</button>
+                        <button type="submit">Mettre à jour le PIN</button>
                       </form>
                     </article>
 
@@ -5193,17 +5797,19 @@ Réponse attendue:
                   <div className="settings-section-grid">
                     <article className="glass-card settings-section-card form-panel">
                       <div className="panel-title">
-                        <h2>Sauvegarde chiffrée</h2>
+                        <h2>
+                          Sauvegarde chiffrée
+                          <InfoHint text="Le fichier exporté est chiffré avec votre PIN : vous pouvez le déplacer d'un appareil à l'autre en toute sécurité." />
+                        </h2>
                         <p>Exporte ou restaure les données locales avec le PIN parent.</p>
                       </div>
                       <div className="backup-zone backup-zone--standalone">
-                        <p className="auth-note">Le fichier JSON exporté reste chiffré et portable entre appareils.</p>
                         <div className="settings-inline-actions">
                           <button type="button" onClick={() => void handleExportEncryptedBackup()}>
-                            Exporter le backup chiffré
+                            Exporter ma sauvegarde
                           </button>
                           <button type="button" className="ghost-button" onClick={() => backupRestoreInputRef.current?.click()}>
-                            Restaurer un backup
+                            Restaurer une sauvegarde
                           </button>
                         </div>
                         <input
@@ -5222,7 +5828,10 @@ Réponse attendue:
                   <div className="settings-section-grid">
                     <article className="glass-card settings-section-card form-panel">
                       <div className="panel-title">
-                        <h2>Thème</h2>
+                        <h2>
+                          Thème
+                          <InfoHint text="Le mode Système suit automatiquement les préférences (clair/sombre) de votre appareil." />
+                        </h2>
                         <p>Choisissez l'apparence de l'application.</p>
                       </div>
                       <div className="theme-picker">
@@ -5243,9 +5852,65 @@ Réponse attendue:
                           </button>
                         ))}
                       </div>
-                      <p className="auth-note">
-                        Le mode Système suit automatiquement les préférences de votre appareil.
-                      </p>
+                      <div className="panel-title" style={{ marginTop: '0.9rem' }}>
+                        <h2>Palette de couleurs</h2>
+                        <p>La teinte d'accent utilisée par les boutons, liens et indicateurs.</p>
+                      </div>
+                      <div className="palette-picker" role="listbox" aria-label="Palettes de couleurs">
+                        {COLOR_PALETTES.map((entry) => (
+                          <button
+                            key={entry.id}
+                            type="button"
+                            role="option"
+                            aria-selected={palette === entry.id}
+                            className={`palette-option${palette === entry.id ? ' palette-option--active' : ''}`}
+                            onClick={() => setPalette(entry.id)}
+                          >
+                            <span className="palette-dots" aria-hidden="true">
+                              <span style={{ background: entry.dots[0] }} />
+                              <span style={{ background: entry.dots[1] }} />
+                            </span>
+                            <span>{entry.label}</span>
+                            {palette === entry.id ? <span className="theme-option-state">✓</span> : null}
+                          </button>
+                        ))}
+                      </div>
+                    </article>
+                  </div>
+                ) : null}
+
+                {settingsSection === 'account' ? (
+                  <div className="settings-section-grid settings-section-grid--single">
+                    <article className="glass-card settings-section-card">
+                      <ProfilePanel
+                        inline
+                        userEmail={userEmail}
+                        onEmailChanged={(newEmail) => setUserEmail(newEmail)}
+                      />
+                    </article>
+                  </div>
+                ) : null}
+
+                {settingsSection === 'rgpd' ? (
+                  <div className="settings-section-grid">
+                    <article className="glass-card settings-section-card form-panel">
+                      <div className="panel-title">
+                        <h2>
+                          Mes données RGPD
+                          <InfoHint text="Vos données restent stockées sur cet appareil et dans votre espace personnel sécurisé." />
+                        </h2>
+                        <p>
+                          Consultez, exportez ou supprimez vos données personnelles : export complet,
+                          journal d'activité, suppression du compte.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="hero-cta-button"
+                        onClick={() => setShowPrivacyPanel(true)}
+                      >
+                        🔒 Ouvrir mes données RGPD
+                      </button>
                     </article>
                   </div>
                 ) : null}
@@ -5279,6 +5944,15 @@ Réponse attendue:
                 ) : null}
               </div>
             </div>
+            <footer className="settings-legal-footer">
+              <button type="button" className="auth-rgpd-link" onClick={() => setLegalDoc('terms')}>
+                Conditions d'utilisation
+              </button>
+              {' · '}
+              <button type="button" className="auth-rgpd-link" onClick={() => setLegalDoc('privacy')}>
+                Politique de confidentialité &amp; mentions légales
+              </button>
+            </footer>
           </section>
         </div>
       ) : null}
@@ -5357,36 +6031,379 @@ Réponse attendue:
       </section>
       ) : null}
 
-      {orderedVisibleDashboardWidgets.length > 0 && isActiveView('operations') ? (
-        <section className="glass-card widget-view-nav" aria-label="Navigation des vues widgets">
-          <div className="widget-view-nav__top">
-            <strong>Navigation vue par vue</strong>
-            <span>
-              Vue {Math.max(1, activeDashboardWidgetIndex + 1)} / {orderedVisibleDashboardWidgets.length}
-            </span>
+      {isActiveView('operations') ? (
+      <section id="operations" className="panel-grid">
+        <article className="glass-card chart-card">
+          <div className="panel-title">
+            <h2>Dépenses par catégorie</h2>
+            <p>Vue simplifiée pour ce mois</p>
           </div>
-          <div className="widget-view-nav__actions">
-            <button type="button" className="ghost-button" onClick={goToPreviousDashboardWidget}>← Vue précédente</button>
-            <button type="button" className="ghost-button" onClick={goToNextDashboardWidget}>Vue suivante →</button>
+          <ul className="operations-category-list">
+            {pieData.map((entry) => (
+              <li key={entry.name} className="operations-category-item">
+                <span className="operations-category-name">{entry.name}</span>
+                <span className="operations-category-amount">{euroFormatter.format(entry.value)}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="operations-category-total">
+            <strong>Total dépensé:</strong>
+            <strong>{euroFormatter.format(monthlyExpense)}</strong>
           </div>
-          <div className="widget-view-nav__chips">
-            {orderedVisibleDashboardWidgets.map((widgetId) => {
-              const label = DASHBOARD_WIDGET_LIBRARY.find((entry) => entry.id === widgetId)?.label ?? widgetId
-              const active = activeDashboardWidgetId === widgetId
-              return (
-                <button
-                  key={widgetId}
-                  type="button"
-                  className={`widget-chip${active ? ' widget-chip--active' : ''}`}
-                  aria-pressed={active}
-                  onClick={() => goToDashboardWidget(widgetId)}
+        </article>
+
+        <article className="glass-card chart-card wide-card">
+          <div className="panel-title">
+            <h2>Comparaison avec l’an dernier</h2>
+            <p>{formatMonth(selectedMonth)} par rapport au même mois l'an dernier</p>
+          </div>
+          {yoyComparisonData.length === 0 ? (
+            <p className="auth-note">Aucune donnée disponible pour la comparaison annuelle.</p>
+          ) : (
+            <ul className="yoy-list">
+              {yoyComparisonData.map((item) => {
+                const maxVal = Math.max(item.current, item.previous, 1)
+                const hasImproved = item.delta <= 0
+                const pctChange = item.previous > 0
+                  ? Math.abs((item.delta / item.previous) * 100).toFixed(0)
+                  : null
+                return (
+                  <li key={item.category}>
+                    <div className="yoy-row">
+                      <strong>{item.category}</strong>
+                      <span className={hasImproved ? 'income' : 'expense'}>
+                        {hasImproved ? <ArrowDown size={12} /> : <ArrowUp size={12} />}
+                        {pctChange ? `${pctChange}%` : 'nouveau'}
+                      </span>
+                    </div>
+                    <div className="yoy-bars">
+                      <div
+                        className="yoy-bar yoy-bar--prev"
+                        style={{ width: `${(item.previous / maxVal) * 100}%` }}
+                        title={`N-1 : ${euroFormatter.format(item.previous)}`}
+                      />
+                      <div
+                        className="yoy-bar yoy-bar--curr"
+                        style={{ width: `${(item.current / maxVal) * 100}%` }}
+                        title={`N : ${euroFormatter.format(item.current)}`}
+                      />
+                    </div>
+                    <small>{euroFormatter.format(item.previous)} → {euroFormatter.format(item.current)}</small>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </article>
+
+        <article className="glass-card transaction-panel wide-card">
+          <div className="panel-title">
+            <div>
+              <h2>Transactions du mois</h2>
+              <p>{txFiltered.length} opération{txFiltered.length !== 1 ? 's' : ''} · {formatMonth(selectedMonth)} · {selectedProfileName.toLowerCase()}</p>
+            </div>
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => setShowHistoryPanel(true)}
+              title="Recherche, filtres, édition, export CSV sur tout l'historique"
+            >
+              <Layers3 size={14} />
+              Voir tout l'historique
+            </button>
+          </div>
+          <div className="tx-summary-bar">
+            <div className="tx-summary-card">
+              <strong>{txFilteredCount}</strong>
+              <span>résultat{txFilteredCount > 1 ? 's' : ''}</span>
+            </div>
+            <div className="tx-summary-card">
+              <strong className={txFilteredNet < 0 ? 'expense' : 'income'}>{txFilteredNet < 0 ? '-' : '+'}{euroFormatter.format(Math.abs(txFilteredNet))}</strong>
+              <span>solde des lignes filtrées</span>
+            </div>
+            <div className="tx-summary-context">
+              <span>{txFilterContext}</span>
+              {txShowAll ? <small>Vue complète active</small> : <small>Vue condensée 8 lignes</small>}
+            </div>
+          </div>
+          <div className="tx-toolbar">
+            <input
+              className="tx-search"
+              placeholder="Rechercher un libellé ou une catégorie..."
+              value={txSearch}
+              onChange={(event) => setTxSearch(event.target.value)}
+            />
+            <select
+              value={txFilterKind}
+              onChange={(event) => setTxFilterKind(event.target.value as 'tous' | TransactionKind)}
+            >
+              <option value="tous">Tous types</option>
+              <option value="depense">Dépenses</option>
+              <option value="revenu">Revenus</option>
+            </select>
+            <select
+              value={txSortField}
+              onChange={(event) => setTxSortField(event.target.value as 'date' | 'amount')}
+            >
+              <option value="date">Tri : date</option>
+              <option value="amount">Tri : montant</option>
+            </select>
+          </div>
+          {txFiltered.length === 0 ? (
+            <p className="auth-note">Aucune transaction pour ces critères.</p>
+          ) : (
+            <ul className="transaction-list">
+              {txDisplayed.map((item) => (
+                <li
+                  key={item.id}
+                  className={
+                    editingTxId === item.id
+                      ? 'tx-editing'
+                      : deletingTxId === item.id
+                      ? 'tx-confirming'
+                      : ''
+                  }
                 >
-                  {label}
-                </button>
-              )
-            })}
+                  <div>
+                    <p>
+                      {item.icon ? <span className="tx-merchant-icon" aria-hidden="true">{item.icon}</span> : null}
+                      {item.label}
+                      {item.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
+                    </p>
+                    <small>
+                      {item.date} · {item.category} · {item.envelope}
+                      {(item.tags ?? []).map((tag) => (
+                        <span key={tag} className="tx-tag">#{tag}</span>
+                      ))}
+                    </small>
+                  </div>
+                  {deletingTxId === item.id ? (
+                    <div className="tx-confirm-row">
+                      <span>Supprimer ?</span>
+                      <button
+                        type="button"
+                        className="tx-confirm-yes"
+                        onClick={() => {
+                          deleteTransaction(item.id)
+                          setDeletingTxId(null)
+                        }}
+                      >
+                        Oui
+                      </button>
+                      <button
+                        type="button"
+                        className="tx-confirm-no"
+                        onClick={() => setDeletingTxId(null)}
+                      >
+                        Non
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="tx-actions">
+                      <strong className={item.kind === 'depense' ? 'expense' : 'income'}>
+                        {item.kind === 'depense' ? '-' : '+'}
+                        {euroFormatter.format(item.amount)}
+                      </strong>
+                      <button
+                        type="button"
+                        className="tx-btn tx-edit"
+                        onClick={() => startEditTransaction(item)}
+                        title="Modifier"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="tx-btn tx-delete"
+                        onClick={() => setDeletingTxId(item.id)}
+                        title="Supprimer"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {txFiltered.length > 8 && (
+            <button
+              type="button"
+              className="tx-show-more"
+              onClick={() => setTxShowAll((previous) => !previous)}
+            >
+              {txShowAll
+                ? 'Réduire la liste'
+                : `Voir toutes les ${txFiltered.length} opérations`}
+            </button>
+          )}
+        </article>
+
+        <article className="glass-card form-panel">
+          <div className="panel-title">
+            <h2>{editingTxId !== null ? "Modifier l'opération" : 'Ajouter une opération'}</h2>
+            <p>{editingTxId !== null ? 'Modifiez les champs puis validez' : 'Suivi en direct du budget personnel'}</p>
           </div>
-        </section>
+          <form onSubmit={addTransaction}>
+            <label>
+              Libellé
+              <input
+                required
+                value={form.label}
+                onChange={(event) => {
+                  const nextLabel = event.target.value
+                  const suggestion = suggestCategoryFromLabel(nextLabel)
+
+                  setForm((previous) => ({
+                    ...previous,
+                    label: nextLabel,
+                    category: suggestion ?? previous.category,
+                    envelope: suggestion ? inferEnvelope(suggestion) : previous.envelope,
+                  }))
+                  setSmartCategory(suggestion)
+                }}
+                placeholder="Ex: Fournitures scolaires"
+              />
+              {smartCategory ? (
+                <small className="smart-hint">Catégorie suggérée automatiquement : {smartCategory}</small>
+              ) : null}
+            </label>
+            <label>
+              Montant
+              <input
+                required
+                type="number"
+                min="1"
+                value={form.amount}
+                onChange={(event) =>
+                  setForm((previous) => ({ ...previous, amount: event.target.value }))
+                }
+                placeholder="0"
+              />
+            </label>
+            {form.amount && form.kind === 'depense' && Number(form.amount) > 0 ? (
+              <p className={`impact-hint ${remaining - Number(form.amount) < 0 ? 'impact-negative' : 'impact-positive'}`}>
+                Après ajout : il restera{' '}
+                <strong>{euroFormatter.format(Math.max(0, remaining - Number(form.amount)))}</strong>
+                {remaining - Number(form.amount) < 0 ? ' — budget dépassé !' : ''}
+              </p>
+            ) : null}
+            <label>
+              Date
+              <input
+                required
+                type="date"
+                value={form.date}
+                onChange={(event) =>
+                  setForm((previous) => ({ ...previous, date: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Catégorie
+              <select
+                value={form.category}
+                onChange={(event) =>
+                  setForm((previous) => ({
+                    ...previous,
+                    category: event.target.value as Category,
+                    envelope: inferEnvelope(event.target.value as Category),
+                  }))
+                }
+              >
+                {categories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Profil
+              <select
+                value={form.member}
+                onChange={(event) =>
+                  setForm((previous) => ({
+                    ...previous,
+                    member: event.target.value,
+                    // Reset accountId : il sera re-résolvé vers le compte par défaut
+                    // du nouveau membre au submit (cf. resolvedAccountId).
+                    accountId: '',
+                  }))
+                }
+              >
+                {profiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Compte
+              <select
+                value={form.accountId}
+                onChange={(event) =>
+                  setForm((previous) => ({ ...previous, accountId: event.target.value }))
+                }
+              >
+                <option value="">— compte par défaut —</option>
+                {accounts
+                  .filter((a) => a.ownerMember === form.member && a.archivedAt === null)
+                  .map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              Enveloppe
+              <select
+                value={form.envelope}
+                onChange={(event) =>
+                  setForm((previous) => ({
+                    ...previous,
+                    envelope: event.target.value as Envelope,
+                  }))
+                }
+              >
+                {envelopes.map((envelope) => (
+                  <option key={envelope} value={envelope}>
+                    {envelope}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Type
+              <select
+                value={form.kind}
+                onChange={(event) =>
+                  setForm((previous) => ({
+                    ...previous,
+                    kind: event.target.value as TransactionKind,
+                  }))
+                }
+              >
+                <option value="depense">Dépense</option>
+                <option value="revenu">Revenu</option>
+              </select>
+            </label>
+
+            <div className="form-actions">
+              <button type="submit">
+                {editingTxId !== null ? <><Pencil size={16} /> Mettre à jour</> : <><Plus size={16} /> Ajouter</>}
+              </button>
+              {editingTxId !== null && (
+                <button type="button" className="btn-cancel" onClick={cancelEditTransaction}>
+                  <X size={16} /> Annuler
+                </button>
+              )}
+            </div>
+          </form>
+        </article>
+      </section>
       ) : null}
 
       {isActiveView('operations') || isActiveView('budget') ? (
@@ -5396,23 +6413,7 @@ Réponse attendue:
           <div className="panel-title">
             <div className="budget-title-row">
               <h2>
-                <span className="budget-title-main">Budget: lecture simple</span>
-                <span className="info-dot-wrap">
-                  <button
-                    type="button"
-                    className="info-dot"
-                    onClick={() => setBudgetInfoDotOpen(budgetInfoDotOpen === 'summary' ? null : 'summary')}
-                    aria-label="Information: ce bloc résume votre budget actuel"
-                    aria-expanded={budgetInfoDotOpen === 'summary'}
-                  >
-                    ℹ️
-                  </button>
-                  {budgetInfoDotOpen === 'summary' ? (
-                    <span className="info-mini-pop">
-                      Résumé instantané du budget prévu, des dépenses et du reste.
-                    </span>
-                  ) : null}
-                </span>
+                <span className="budget-title-main">Mon budget · {formatMonth(selectedMonth)}</span>
               </h2>
               <button
                 type="button"
@@ -5425,7 +6426,6 @@ Réponse attendue:
                 {budgetExportOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
               </button>
             </div>
-            <p>Comprenez votre situation en 10 secondes.</p>
             <div
               id="budget-export-panel-content"
               className={`budget-export-controls budget-export-controls-inline${budgetExportOpen ? ' open' : ''}`}
@@ -5477,50 +6477,7 @@ Réponse attendue:
               >
                 Ajuster mon budget
               </button>
-              <button
-                type="button"
-                className="budget-mini-btn budget-mini-btn-secondary"
-                onClick={handleBudgetAiClick}
-                aria-expanded={budgetAiHintOpen}
-              >
-                {isBudgetAiConfigured ? 'IA budget' : 'IA budget (à configurer)'}
-              </button>
             </div>
-            {budgetAiHintOpen ? (
-              <div className={`budget-ai-hint${isBudgetAiConfigured ? '' : ' warning'}`} role="status" aria-live="polite">
-                <span className="budget-ai-hint-text">
-                  {isBudgetAiConfigured
-                    ? `IA prête: ${selectedAiProvider.name} est disponible pour les projections et conseils automatiques.`
-                    : `IA non configurée. Ajoutez d'abord votre clé ${selectedAiProvider.name} pour activer IA budget.`}
-                </span>
-                <span className="budget-ai-hint-actions">
-                  {!isBudgetAiConfigured ? (
-                    <button
-                      type="button"
-                      className="budget-ai-hint-action"
-                      onClick={() => openSettingsPanel('ai')}
-                    >
-                      Configurer l’IA
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="budget-ai-hint-action"
-                      onClick={() => setChatOpen(true)}
-                    >
-                      Ouvrir l'assistant
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="budget-ai-hint-action budget-ai-hint-action-ghost"
-                    onClick={() => setBudgetAiHintOpen(false)}
-                  >
-                    Masquer
-                  </button>
-                </span>
-              </div>
-            ) : null}
           </div>
           <div className="budget-shell-layout">
           <div className="budget-simple-grid" aria-label="Résumé simple du budget">
@@ -5611,12 +6568,28 @@ Réponse attendue:
               </small>
             </div>
           </div>
-          <div className="budget-status-bar" style={{ borderColor: budgetStatusColor }}>
-            <span className="budget-status-dot" style={{ background: budgetStatusColor }} />
-            <span className="budget-status-text">État : <strong>{budgetStatusLabel}</strong></span>
-          </div>
-          <div className="budget-simple-progress" role="status" aria-live="polite">
-            <p>{usageRate.toFixed(0)}% du budget utilisé</p>
+          {profiles.length > 1 ? (
+            <p className="budget-profile-split">
+              <span className="budget-profile-split__label">Répartition par profil :</span>{' '}
+              {profiles.map((profile) => `${profile.name} ${euroFormatter.format(profile.monthlyBudget)}`).join('  ·  ')}
+            </p>
+          ) : null}
+          {/* Bloc de statut unifié : état + % utilisé + score santé + projection. */}
+          <div className="budget-status-summary" style={{ borderColor: budgetStatusColor }} role="status" aria-live="polite">
+            <div className="budget-status-summary__head">
+              <span className="budget-status-summary__state">
+                <span className="budget-status-dot" style={{ background: budgetStatusColor }} />
+                État : <strong>{budgetStatusLabel}</strong>
+                <span className="budget-status-summary__usage">· {usageRate.toFixed(0)}% utilisé</span>
+              </span>
+              <span
+                className="budget-status-summary__score"
+                style={{ color: budgetHealthColor }}
+                title={`Santé budget : ${budgetHealthLabel}`}
+              >
+                Santé {budgetMasteryScore}/100
+              </span>
+            </div>
             <div className="budget-simple-progress__track" aria-hidden="true">
               <div
                 className="budget-simple-progress__fill"
@@ -5627,25 +6600,18 @@ Réponse attendue:
               />
             </div>
             <small>{budgetSimpleMessage}</small>
-          </div>
-          <div className="budget-health-block">
-            <div className="budget-health-top">
-              <strong>Santé budget: {budgetHealthLabel}</strong>
-              <span style={{ color: budgetHealthColor }}>{budgetMasteryScore}/100</span>
-            </div>
-            <div className="budget-health-track" aria-hidden="true">
-              <div className="budget-health-fill" style={{ width: `${budgetMasteryScore}%`, background: budgetHealthColor }} />
-            </div>
             <small className="budget-projection-note">{projectedMessage}</small>
           </div>
-          <div className="budget-insights">
-            <h3>À retenir</h3>
-            <ul>
-              {budgetInsights.map((insight) => (
-                <li key={insight}>{insight}</li>
-              ))}
-            </ul>
-          </div>
+          {budgetInsights.length > 0 ? (
+            <div className="budget-insights">
+              <h3>À retenir</h3>
+              <ul>
+                {budgetInsights.map((insight) => (
+                  <li key={insight}>{insight}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {budgetQuickEditOpen ? (
             <div className="budget-actions-modal-overlay" onClick={() => setBudgetQuickEditOpen(false)}>
               <div className="budget-actions-modal budget-quick-edit-modal" onClick={(event) => event.stopPropagation()}>
@@ -5921,7 +6887,253 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('coaching') && isActiveView('operations') ? (
+        {isPilotageWidgetVisible('alerts') && isActiveView('budget') ? (
+        <article className="glass-card chart-card">
+          <div className="panel-title">
+            <h2>Alertes</h2>
+            <p>Signaux budget et dépenses inhabituelles du mois</p>
+          </div>
+          {alertMessages.length === 0 ? (
+                <p className="auth-note">
+                  Aucune alerte pour le moment. Continuez comme ça !
+                </p>
+          ) : (
+            <ul className="alert-list">
+              {alertMessages.map((alert) => (
+                <li key={alert.message} className={`alert--${alert.level}`}>
+                  <BellRing size={15} />
+                  <span>{alert.message}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </article>
+        ) : null}
+
+        {isPilotageWidgetVisible('savingsGoals') && isActiveView('budget') ? (
+        <article className="glass-card chart-card">
+          <div className="panel-title">
+            <h2>Budgets par catégorie</h2>
+            <p>Plafond mensuel par catégorie — {selectedProfileName}</p>
+          </div>
+          <ul className="goal-list">
+            {goalProgress.map((goal) => (
+              <li key={goal.category}>
+                <div>
+                  <strong>{goal.category}</strong>
+                  <small>
+                    {euroFormatter.format(goal.spent)} / {euroFormatter.format(goal.target)}
+                  </small>
+                </div>
+                <div className="goal-progress-track">
+                  <span style={{ width: `${goal.rate}%` }} />
+                </div>
+              </li>
+            ))}
+          </ul>
+          <form className="goal-editor" onSubmit={updateGoalTarget}>
+            <select
+              value={goalEditor.category}
+              onChange={(event) =>
+                setGoalEditor((previous) => ({
+                  ...previous,
+                  category: event.target.value as Category,
+                }))
+              }
+            >
+              {categories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min="1"
+              value={goalEditor.amount}
+              onChange={(event) =>
+                setGoalEditor((previous) => ({
+                  ...previous,
+                  amount: event.target.value,
+                }))
+              }
+              placeholder="Nouvel objectif"
+            />
+            <button type="submit">Mettre a jour</button>
+          </form>
+        </article>
+        ) : null}
+
+        {isPilotageWidgetVisible('recurringCharges') && isActiveView('budget') ? (
+        <article className="glass-card chart-card">
+          <div className="panel-title">
+            <div>
+              <h2>Charges récurrentes</h2>
+              <p>Transactions détectées sur 2+ mois pour {selectedProfileName.toLowerCase()}</p>
+            </div>
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => setShowRecurringPanel(true)}
+            >
+              <Repeat2 size={14} />
+              Gérer les règles ({recurringRules.filter((r) => r.member === selectedProfileId).length})
+            </button>
+          </div>
+          {recurringItems.length === 0 ? (
+            <p className="auth-note">Pas assez de données pour détecter des récurrences sur ce profil.</p>
+          ) : (
+            <ul className="recurring-list">
+              {recurringItems.map((item) => (
+                <li key={item.label}>
+                  <div>
+                    <strong>{item.label}</strong>
+                    <small>{item.monthCount} mois · moy. {euroFormatter.format(item.avgAmount)}</small>
+                  </div>
+                  <Repeat2 size={14} className="recurring-icon" />
+                </li>
+              ))}
+            </ul>
+          )}
+        </article>
+        ) : null}
+
+        {isPilotageWidgetVisible('savingsProjects') && isActiveView('budget') ? (
+        <article className="glass-card chart-card">
+          <div className="panel-title">
+            <div>
+              <h2>Projets d'épargne</h2>
+              <p>Projets financiers et leur progression estimée</p>
+            </div>
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => setShowGoalsPanel(true)}
+              title="Échéance, mensualité conseillée, lien vers un compte dédié"
+            >
+              <Target size={14} />
+              Gérer ({savingsTargets.length})
+            </button>
+          </div>
+          {savingsTargets.length > 0 ? (
+            <ul className="savings-target-list">
+              {savingsTargets.map((target) => {
+                const progress = Math.min(100, (allTimePositiveSurplus / target.targetAmount) * 100)
+                return (
+                  <li key={target.id}>
+                    <div className="savings-target-header">
+                      <strong>{target.label}</strong>
+                      <span>{euroFormatter.format(allTimePositiveSurplus)} / {euroFormatter.format(target.targetAmount)}</span>
+                      <button
+                        type="button"
+                        className="tx-btn tx-delete"
+                        onClick={() => {
+                          setSavingsTargets((prev) => {
+                            const next = prev.filter((t) => t.id !== target.id)
+                            window.localStorage.setItem(SAVINGS_TARGETS_STORAGE_KEY, JSON.stringify(next))
+                            return next
+                          })
+                        }}
+                        title="Supprimer cet objectif"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                    <div className="goal-progress-track">
+                      <span style={{ width: `${progress}%` }} />
+                    </div>
+                    <small>{progress.toFixed(0)}% atteint · basé sur les surplus mensuels cumulés</small>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <p className="auth-note">Aucun objectif défini. Ajoutez-en un ci-dessous.</p>
+          )}
+          <form
+            className="goal-editor savings-target-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              const amount = Number(savingsTargetDraft.amount)
+              if (!savingsTargetDraft.label.trim() || Number.isNaN(amount) || amount <= 0) return
+              const newTarget: SavingsTarget = {
+                id: `target-${Date.now()}`,
+                label: savingsTargetDraft.label.trim(),
+                targetAmount: amount,
+              }
+              setSavingsTargets((prev) => {
+                const next = [...prev, newTarget]
+                window.localStorage.setItem(SAVINGS_TARGETS_STORAGE_KEY, JSON.stringify(next))
+                return next
+              })
+              setSavingsTargetDraft({ label: '', amount: '' })
+            }}
+          >
+            <input
+              value={savingsTargetDraft.label}
+              onChange={(event) => setSavingsTargetDraft((prev) => ({ ...prev, label: event.target.value }))}
+              placeholder="Ex: Vacances, Voiture..."
+            />
+            <input
+              type="number"
+              min="1"
+              value={savingsTargetDraft.amount}
+              onChange={(event) => setSavingsTargetDraft((prev) => ({ ...prev, amount: event.target.value }))}
+              placeholder="Montant cible (€)"
+            />
+            <button type="submit"><Target size={14} /> Ajouter</button>
+          </form>
+        </article>
+        ) : null}
+
+        {isActiveView('budget') ? (
+        <article className="glass-card chart-card accounts-widget">
+          <div className="panel-title">
+            <div>
+              <h2>Comptes</h2>
+              <p>Solde consolidé pour {selectedProfileName.toLowerCase()}</p>
+            </div>
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => setShowAccountsPanel(true)}
+            >
+              <Landmark size={14} />
+              Gérer ({accounts.filter((a) => a.ownerMember === selectedProfileId && a.archivedAt === null).length})
+            </button>
+          </div>
+          {(() => {
+            const consolidated = computeConsolidatedBalance(accounts, transactions, selectedProfileId)
+            const breakdown = balanceByAccountType(accounts, transactions, selectedProfileId)
+            const nonZeroTypes = (Object.entries(breakdown) as Array<[keyof typeof breakdown, number]>)
+              .filter(([, amount]) => amount !== 0)
+            return (
+              <div className="accounts-widget-body">
+                <div className={`accounts-widget-total ${consolidated >= 0 ? 'is-positive' : 'is-negative'}`}>
+                  <span>{euroFormatter.format(consolidated)}</span>
+                  <small>Patrimoine net (hors investissement non liquide)</small>
+                </div>
+                {nonZeroTypes.length > 0 ? (
+                  <ul className="accounts-widget-breakdown">
+                    {nonZeroTypes.map(([type, amount]) => (
+                      <li key={type}>
+                        <span className="accounts-widget-type">{ACCOUNT_TYPE_LABELS[type]}</span>
+                        <span className={amount >= 0 ? 'is-positive' : 'is-negative'}>
+                          {euroFormatter.format(amount)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="auth-note">Aucun compte avec un solde non nul. Cliquez sur « Gérer » pour ajouter un compte.</p>
+                )}
+              </div>
+            )
+          })()}
+        </article>
+        ) : null}
+
+        {isPilotageWidgetVisible('coaching') && isActiveView('budget') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
             <h2>Coaching financier</h2>
@@ -5964,6 +7176,7 @@ Réponse attendue:
                   <p>{predictionResult}</p>
                 </div>
               ) : null}
+
             </div>
           ) : null}
         </article>
@@ -5972,7 +7185,7 @@ Réponse attendue:
         {isPilotageWidgetVisible('csvImport') && isActiveView('operations') ? (
         <article className="glass-card form-panel wide-card">
           <div className="panel-title">
-            <h2>Import CSV bancaire</h2>
+            <h2>Importer un relevé bancaire</h2>
             <p>Import premium avec catégorisation automatique et prévisualisation</p>
           </div>
 
@@ -6119,7 +7332,7 @@ Réponse attendue:
                   <h3>
                     <FileSpreadsheet size={16} /> Previsualisation avant import
                   </h3>
-                  <p className="auth-note">Verification rapide avant fusion dans le dashboard</p>
+                  <p className="auth-note">Vérifiez les lignes avant de les ajouter à vos dépenses</p>
                 </div>
                 <button type="button" onClick={importCsvPreview}>
                   Importer {csvPreview.length} ligne(s)
@@ -6150,281 +7363,17 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('alerts') && isActiveView('operations') ? (
-        <article className="glass-card chart-card">
-          <div className="panel-title">
-            <h2>Alertes intelligentes</h2>
-            <p>Signaux budget et dépenses inhabituelles du mois</p>
-          </div>
-          {alertMessages.length === 0 ? (
-                <p className="auth-note">
-                  Aucune alerte pour le moment. Continuez comme ça !
-                </p>
-          ) : (
-            <ul className="alert-list">
-              {alertMessages.map((alert) => (
-                <li key={alert.message} className={`alert--${alert.level}`}>
-                  <BellRing size={15} />
-                  <span>{alert.message}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </article>
-        ) : null}
 
-        {isPilotageWidgetVisible('savingsGoals') && isActiveView('operations') ? (
-        <article className="glass-card chart-card">
-          <div className="panel-title">
-            <h2>Objectifs d'épargne</h2>
-            <p>Suivi cible vs dépenses pour {selectedProfileName.toLowerCase()}</p>
-          </div>
-          <ul className="goal-list">
-            {goalProgress.map((goal) => (
-              <li key={goal.category}>
-                <div>
-                  <strong>{goal.category}</strong>
-                  <small>
-                    {euroFormatter.format(goal.spent)} / {euroFormatter.format(goal.target)}
-                  </small>
-                </div>
-                <div className="goal-progress-track">
-                  <span style={{ width: `${goal.rate}%` }} />
-                </div>
-              </li>
-            ))}
-          </ul>
-          <form className="goal-editor" onSubmit={updateGoalTarget}>
-            <select
-              value={goalEditor.category}
-              onChange={(event) =>
-                setGoalEditor((previous) => ({
-                  ...previous,
-                  category: event.target.value as Category,
-                }))
-              }
-            >
-              {categories.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-            <input
-              type="number"
-              min="1"
-              value={goalEditor.amount}
-              onChange={(event) =>
-                setGoalEditor((previous) => ({
-                  ...previous,
-                  amount: event.target.value,
-                }))
-              }
-              placeholder="Nouvel objectif"
-            />
-            <button type="submit">Mettre a jour</button>
-          </form>
-        </article>
-        ) : null}
 
-        {isActiveView('operations') ? (
-        <article className="glass-card chart-card accounts-widget">
-          <div className="panel-title">
-            <div>
-              <h2>Comptes</h2>
-              <p>Solde consolidé pour {selectedProfileName.toLowerCase()}</p>
-            </div>
-            <button
-              type="button"
-              className="hero-cta-button"
-              onClick={() => setShowAccountsPanel(true)}
-            >
-              <Landmark size={14} />
-              Gérer ({accounts.filter((a) => a.ownerMember === selectedProfileId && a.archivedAt === null).length})
-            </button>
-          </div>
-          {(() => {
-            const consolidated = computeConsolidatedBalance(accounts, transactions, selectedProfileId)
-            const breakdown = balanceByAccountType(accounts, transactions, selectedProfileId)
-            const nonZeroTypes = (Object.entries(breakdown) as Array<[keyof typeof breakdown, number]>)
-              .filter(([, amount]) => amount !== 0)
-            return (
-              <div className="accounts-widget-body">
-                <div className={`accounts-widget-total ${consolidated >= 0 ? 'is-positive' : 'is-negative'}`}>
-                  <span>{euroFormatter.format(consolidated)}</span>
-                  <small>Patrimoine net (hors investissement non liquide)</small>
-                </div>
-                {nonZeroTypes.length > 0 ? (
-                  <ul className="accounts-widget-breakdown">
-                    {nonZeroTypes.map(([type, amount]) => (
-                      <li key={type}>
-                        <span className="accounts-widget-type">{ACCOUNT_TYPE_LABELS[type]}</span>
-                        <span className={amount >= 0 ? 'is-positive' : 'is-negative'}>
-                          {euroFormatter.format(amount)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="auth-note">Aucun compte avec un solde non nul. Cliquez sur « Gérer » pour ajouter un compte.</p>
-                )}
-              </div>
-            )
-          })()}
-        </article>
-        ) : null}
 
-        {isPilotageWidgetVisible('recurringCharges') && isActiveView('operations') ? (
-        <article className="glass-card chart-card">
-          <div className="panel-title">
-            <div>
-              <h2>Charges récurrentes</h2>
-              <p>Transactions détectées sur 2+ mois pour {selectedProfileName.toLowerCase()}</p>
-            </div>
-            <button
-              type="button"
-              className="hero-cta-button"
-              onClick={() => setShowRecurringPanel(true)}
-            >
-              <Repeat2 size={14} />
-              Gérer les règles ({recurringRules.filter((r) => r.member === selectedProfileId).length})
-            </button>
-          </div>
-          {recurringItems.length === 0 ? (
-            <p className="auth-note">Pas assez de données pour détecter des récurrences sur ce profil.</p>
-          ) : (
-            <ul className="recurring-list">
-              {recurringItems.map((item) => (
-                <li key={item.label}>
-                  <div>
-                    <strong>{item.label}</strong>
-                    <small>{item.monthCount} mois · moy. {euroFormatter.format(item.avgAmount)}</small>
-                  </div>
-                  <Repeat2 size={14} className="recurring-icon" />
-                </li>
-              ))}
-            </ul>
-          )}
-        </article>
-        ) : null}
 
-        {isPilotageWidgetVisible('savingsProjects') && isActiveView('operations') ? (
-        <article className="glass-card chart-card">
-          <div className="panel-title">
-            <div>
-              <h2>Objectifs d'épargne projet</h2>
-              <p>Projets financiers et leur progression estimée</p>
-            </div>
-            <button
-              type="button"
-              className="hero-cta-button"
-              onClick={() => setShowGoalsPanel(true)}
-              title="Échéance, mensualité conseillée, lien vers un compte dédié"
-            >
-              <Target size={14} />
-              Gérer ({savingsTargets.length})
-            </button>
-          </div>
-          {savingsTargets.length > 0 ? (
-            <ul className="savings-target-list">
-              {savingsTargets.map((target) => {
-                const progress = Math.min(100, (allTimePositiveSurplus / target.targetAmount) * 100)
-                return (
-                  <li key={target.id}>
-                    <div className="savings-target-header">
-                      <strong>{target.label}</strong>
-                      <span>{euroFormatter.format(allTimePositiveSurplus)} / {euroFormatter.format(target.targetAmount)}</span>
-                      <button
-                        type="button"
-                        className="tx-btn tx-delete"
-                        onClick={() => {
-                          setSavingsTargets((prev) => {
-                            const next = prev.filter((t) => t.id !== target.id)
-                            window.localStorage.setItem(SAVINGS_TARGETS_STORAGE_KEY, JSON.stringify(next))
-                            return next
-                          })
-                        }}
-                        title="Supprimer cet objectif"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                    <div className="goal-progress-track">
-                      <span style={{ width: `${progress}%` }} />
-                    </div>
-                    <small>{progress.toFixed(0)}% atteint · basé sur les surplus mensuels cumulés</small>
-                  </li>
-                )
-              })}
-            </ul>
-          ) : (
-            <p className="auth-note">Aucun objectif défini. Ajoutez-en un ci-dessous.</p>
-          )}
-          <form
-            className="goal-editor savings-target-form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              const amount = Number(savingsTargetDraft.amount)
-              if (!savingsTargetDraft.label.trim() || Number.isNaN(amount) || amount <= 0) return
-              const newTarget: SavingsTarget = {
-                id: `target-${Date.now()}`,
-                label: savingsTargetDraft.label.trim(),
-                targetAmount: amount,
-              }
-              setSavingsTargets((prev) => {
-                const next = [...prev, newTarget]
-                window.localStorage.setItem(SAVINGS_TARGETS_STORAGE_KEY, JSON.stringify(next))
-                return next
-              })
-              setSavingsTargetDraft({ label: '', amount: '' })
-            }}
-          >
-            <input
-              value={savingsTargetDraft.label}
-              onChange={(event) => setSavingsTargetDraft((prev) => ({ ...prev, label: event.target.value }))}
-              placeholder="Ex: Vacances, Voiture..."
-            />
-            <input
-              type="number"
-              min="1"
-              value={savingsTargetDraft.amount}
-              onChange={(event) => setSavingsTargetDraft((prev) => ({ ...prev, amount: event.target.value }))}
-              placeholder="Montant cible (€)"
-            />
-            <button type="submit"><Target size={14} /> Ajouter</button>
-          </form>
-        </article>
-        ) : null}
 
-        {isPilotageWidgetVisible('expenseCalendar') && isActiveView('operations') ? (
-        <article className="glass-card chart-card wide-card">
-          <div className="panel-title">
-            <h2>Calendrier des dépenses</h2>
-            <p>Lecture rapide des jours les plus chargés</p>
-          </div>
-          <div className="calendar-grid">
-            {calendarData.map((entry) => (
-              <div
-                key={entry.day}
-                className="calendar-cell"
-                style={{
-                  background: `rgba(249, 115, 22, ${0.1 + entry.intensity * 0.7})`,
-                }}
-                title={`Jour ${entry.day}: ${euroFormatter.format(entry.total)}`}
-              >
-                <strong>{entry.day}</strong>
-                <small>{entry.total > 0 ? euroFormatter.format(entry.total) : '-'}</small>
-              </div>
-            ))}
-          </div>
-        </article>
-        ) : null}
 
         {dashboardWidgetState.visibleWidgets.length === 0 && isActiveView('operations') ? (
           <article className="glass-card chart-card wide-card">
             <div className="panel-title">
-              <h2>Aucun widget actif</h2>
-              <p>Activez au moins un widget ou appliquez un modèle.</p>
+              <h2>Aucun bloc actif</h2>
+              <p>Activez au moins un bloc ou choisissez un modèle.</p>
             </div>
             <div className="settings-inline-actions">
               <button type="button" onClick={() => applyDashboardWidgetTemplate('equilibre')}>
@@ -6521,396 +7470,50 @@ Réponse attendue:
       </section>
       ) : null}
 
-      {isActiveView('operations') ? (
-      <section id="operations" className="panel-grid">
-        <article className="glass-card chart-card">
-          <div className="panel-title">
-            <h2>Dépenses par catégorie</h2>
-            <p>Vue simplifiée pour ce mois</p>
-          </div>
-          <ul className="operations-category-list">
-            {pieData.map((entry) => (
-              <li key={entry.name} className="operations-category-item">
-                <span className="operations-category-name">{entry.name}</span>
-                <span className="operations-category-amount">{euroFormatter.format(entry.value)}</span>
-              </li>
-            ))}
-          </ul>
-          <div className="operations-category-total">
-            <strong>Total dépensé:</strong>
-            <strong>{euroFormatter.format(monthlyExpense)}</strong>
-          </div>
-        </article>
+      </div>
 
-        <article className="glass-card chart-card wide-card">
-          <div className="panel-title">
-            <h2>Comparaison N vs N-1</h2>
-            <p>{formatMonth(selectedMonth)} par rapport au même mois l'an dernier</p>
-          </div>
-          {yoyComparisonData.length === 0 ? (
-            <p className="auth-note">Aucune donnée disponible pour la comparaison annuelle.</p>
-          ) : (
-            <ul className="yoy-list">
-              {yoyComparisonData.map((item) => {
-                const maxVal = Math.max(item.current, item.previous, 1)
-                const hasImproved = item.delta <= 0
-                const pctChange = item.previous > 0
-                  ? Math.abs((item.delta / item.previous) * 100).toFixed(0)
-                  : null
-                return (
-                  <li key={item.category}>
-                    <div className="yoy-row">
-                      <strong>{item.category}</strong>
-                      <span className={hasImproved ? 'income' : 'expense'}>
-                        {hasImproved ? <ArrowDown size={12} /> : <ArrowUp size={12} />}
-                        {pctChange ? `${pctChange}%` : 'nouveau'}
-                      </span>
-                    </div>
-                    <div className="yoy-bars">
-                      <div
-                        className="yoy-bar yoy-bar--prev"
-                        style={{ width: `${(item.previous / maxVal) * 100}%` }}
-                        title={`N-1 : ${euroFormatter.format(item.previous)}`}
-                      />
-                      <div
-                        className="yoy-bar yoy-bar--curr"
-                        style={{ width: `${(item.current / maxVal) * 100}%` }}
-                        title={`N : ${euroFormatter.format(item.current)}`}
-                      />
-                    </div>
-                    <small>{euroFormatter.format(item.previous)} → {euroFormatter.format(item.current)}</small>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </article>
-
-        <article className="glass-card transaction-panel wide-card">
-          <div className="panel-title">
-            <div>
-              <h2>Transactions du mois</h2>
-              <p>{txFiltered.length} opération{txFiltered.length !== 1 ? 's' : ''} · {formatMonth(selectedMonth)} · {selectedProfileName.toLowerCase()}</p>
+      {isActiveView('overview') || isActiveView('operations') || isActiveView('family') ? (
+      <aside className="glass-card budget-advice-rail dashboard-right-rail overview-coaching-rail" aria-label="Assistant">
+        {!isBudgetAiConfigured ? (
+          <>
+            <div className="budget-assistant-title-row">
+              <div className="budget-assistant-title-main">
+                <p className="eyebrow">Assistant IA</p>
+              </div>
             </div>
-            <button
-              type="button"
-              className="hero-cta-button"
-              onClick={() => setShowHistoryPanel(true)}
-              title="Recherche, filtres, édition, export CSV sur tout l'historique"
-            >
-              <Layers3 size={14} />
-              Voir tout l'historique
+            <p className="budget-advice-helper">
+              <strong>Assistant IA non configuré.</strong>
+              <br />
+              Activez votre fournisseur IA dans les paramètres pour débloquer les analyses
+              automatiques et le coaching avancé.
+            </p>
+            <button type="button" className="hero-cta-button" onClick={() => openSettingsPanel('ai')}>
+              Configurer l&apos;IA
             </button>
-          </div>
-          <div className="tx-summary-bar">
-            <div className="tx-summary-card">
-              <strong>{txFilteredCount}</strong>
-              <span>résultat{txFilteredCount > 1 ? 's' : ''}</span>
+          </>
+        ) : (
+          <>
+            <div className="budget-assistant-title-row">
+              <div className="budget-assistant-title-main">
+                <p className="eyebrow">Conseils</p>
+                <span className="budget-assistant-ai-tag">
+                  <Brain size={12} /> Coaching financier
+                </span>
+              </div>
             </div>
-            <div className="tx-summary-card">
-              <strong className={txFilteredNet < 0 ? 'expense' : 'income'}>{txFilteredNet < 0 ? '-' : '+'}{euroFormatter.format(Math.abs(txFilteredNet))}</strong>
-              <span>solde des lignes filtrées</span>
-            </div>
-            <div className="tx-summary-context">
-              <span>{txFilterContext}</span>
-              {txShowAll ? <small>Vue complète active</small> : <small>Vue condensée 8 lignes</small>}
-            </div>
-          </div>
-          <div className="tx-toolbar">
-            <input
-              className="tx-search"
-              placeholder="Rechercher un libellé ou une catégorie..."
-              value={txSearch}
-              onChange={(event) => setTxSearch(event.target.value)}
-            />
-            <select
-              value={txFilterKind}
-              onChange={(event) => setTxFilterKind(event.target.value as 'tous' | TransactionKind)}
-            >
-              <option value="tous">Tous types</option>
-              <option value="depense">Dépenses</option>
-              <option value="revenu">Revenus</option>
-            </select>
-            <select
-              value={txSortField}
-              onChange={(event) => setTxSortField(event.target.value as 'date' | 'amount')}
-            >
-              <option value="date">Tri : date</option>
-              <option value="amount">Tri : montant</option>
-            </select>
-          </div>
-          {txFiltered.length === 0 ? (
-            <p className="auth-note">Aucune transaction pour ces critères.</p>
-          ) : (
-            <ul className="transaction-list">
-              {txDisplayed.map((item) => (
-                <li
-                  key={item.id}
-                  className={
-                    editingTxId === item.id
-                      ? 'tx-editing'
-                      : deletingTxId === item.id
-                      ? 'tx-confirming'
-                      : ''
-                  }
-                >
-                  <div>
-                    <p>{item.label}</p>
-                    <small>
-                      {item.date} · {item.category} · {item.envelope}
-                    </small>
-                  </div>
-                  {deletingTxId === item.id ? (
-                    <div className="tx-confirm-row">
-                      <span>Supprimer ?</span>
-                      <button
-                        type="button"
-                        className="tx-confirm-yes"
-                        onClick={() => {
-                          deleteTransaction(item.id)
-                          setDeletingTxId(null)
-                        }}
-                      >
-                        Oui
-                      </button>
-                      <button
-                        type="button"
-                        className="tx-confirm-no"
-                        onClick={() => setDeletingTxId(null)}
-                      >
-                        Non
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="tx-actions">
-                      <strong className={item.kind === 'depense' ? 'expense' : 'income'}>
-                        {item.kind === 'depense' ? '-' : '+'}
-                        {euroFormatter.format(item.amount)}
-                      </strong>
-                      <button
-                        type="button"
-                        className="tx-btn tx-edit"
-                        onClick={() => startEditTransaction(item)}
-                        title="Modifier"
-                      >
-                        <Pencil size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        className="tx-btn tx-delete"
-                        onClick={() => setDeletingTxId(item.id)}
-                        title="Supprimer"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  )}
+            <p className="budget-advice-helper">
+              Conseils rapides pour garder le cap ce mois-ci.
+            </p>
+            <ul className="alert-list coaching-list overview-coaching-list">
+              {(coachingTips.length > 0 ? coachingTips.slice(0, 4) : ['Ajoutez vos premières transactions pour obtenir des conseils personnalisés.']).map((tip) => (
+                <li key={tip}>
+                  <Brain size={15} />
+                  <span>{tip}</span>
                 </li>
               ))}
             </ul>
-          )}
-          {txFiltered.length > 8 && (
-            <button
-              type="button"
-              className="tx-show-more"
-              onClick={() => setTxShowAll((previous) => !previous)}
-            >
-              {txShowAll
-                ? 'Réduire la liste'
-                : `Voir toutes les ${txFiltered.length} opérations`}
-            </button>
-          )}
-        </article>
-
-        <article className="glass-card form-panel">
-          <div className="panel-title">
-            <h2>{editingTxId !== null ? "Modifier l'opération" : 'Ajouter une opération'}</h2>
-            <p>{editingTxId !== null ? 'Modifiez les champs puis validez' : 'Suivi en direct du budget personnel'}</p>
-          </div>
-          <form onSubmit={addTransaction}>
-            <label>
-              Libellé
-              <input
-                required
-                value={form.label}
-                onChange={(event) => {
-                  const nextLabel = event.target.value
-                  const suggestion = suggestCategoryFromLabel(nextLabel)
-
-                  setForm((previous) => ({
-                    ...previous,
-                    label: nextLabel,
-                    category: suggestion ?? previous.category,
-                    envelope: suggestion ? inferEnvelope(suggestion) : previous.envelope,
-                  }))
-                  setSmartCategory(suggestion)
-                }}
-                placeholder="Ex: Fournitures scolaires"
-              />
-              {smartCategory ? (
-                <small className="smart-hint">Catégorie suggérée automatiquement : {smartCategory}</small>
-              ) : null}
-            </label>
-            <label>
-              Montant
-              <input
-                required
-                type="number"
-                min="1"
-                value={form.amount}
-                onChange={(event) =>
-                  setForm((previous) => ({ ...previous, amount: event.target.value }))
-                }
-                placeholder="0"
-              />
-            </label>
-            {form.amount && form.kind === 'depense' && Number(form.amount) > 0 ? (
-              <p className={`impact-hint ${remaining - Number(form.amount) < 0 ? 'impact-negative' : 'impact-positive'}`}>
-                Après ajout : il restera{' '}
-                <strong>{euroFormatter.format(Math.max(0, remaining - Number(form.amount)))}</strong>
-                {remaining - Number(form.amount) < 0 ? ' — budget dépassé !' : ''}
-              </p>
-            ) : null}
-            <label>
-              Date
-              <input
-                required
-                type="date"
-                value={form.date}
-                onChange={(event) =>
-                  setForm((previous) => ({ ...previous, date: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              Catégorie
-              <select
-                value={form.category}
-                onChange={(event) =>
-                  setForm((previous) => ({
-                    ...previous,
-                    category: event.target.value as Category,
-                    envelope: inferEnvelope(event.target.value as Category),
-                  }))
-                }
-              >
-                {categories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Profil
-              <select
-                value={form.member}
-                onChange={(event) =>
-                  setForm((previous) => ({
-                    ...previous,
-                    member: event.target.value,
-                    // Reset accountId : il sera re-résolvé vers le compte par défaut
-                    // du nouveau membre au submit (cf. resolvedAccountId).
-                    accountId: '',
-                  }))
-                }
-              >
-                {profiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Compte
-              <select
-                value={form.accountId}
-                onChange={(event) =>
-                  setForm((previous) => ({ ...previous, accountId: event.target.value }))
-                }
-              >
-                <option value="">— compte par défaut —</option>
-                {accounts
-                  .filter((a) => a.ownerMember === form.member && a.archivedAt === null)
-                  .map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label>
-              Enveloppe
-              <select
-                value={form.envelope}
-                onChange={(event) =>
-                  setForm((previous) => ({
-                    ...previous,
-                    envelope: event.target.value as Envelope,
-                  }))
-                }
-              >
-                {envelopes.map((envelope) => (
-                  <option key={envelope} value={envelope}>
-                    {envelope}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Type
-              <select
-                value={form.kind}
-                onChange={(event) =>
-                  setForm((previous) => ({
-                    ...previous,
-                    kind: event.target.value as TransactionKind,
-                  }))
-                }
-              >
-                <option value="depense">Dépense</option>
-                <option value="revenu">Revenu</option>
-              </select>
-            </label>
-
-            <div className="form-actions">
-              <button type="submit">
-                {editingTxId !== null ? <><Pencil size={16} /> Mettre à jour</> : <><Plus size={16} /> Ajouter</>}
-              </button>
-              {editingTxId !== null && (
-                <button type="button" className="btn-cancel" onClick={cancelEditTransaction}>
-                  <X size={16} /> Annuler
-                </button>
-              )}
-            </div>
-          </form>
-        </article>
-      </section>
-      ) : null}
-      </div>
-
-      {isActiveView('overview') ? (
-      <aside className="glass-card budget-advice-rail dashboard-right-rail overview-coaching-rail" aria-label="Conseils coaching">
-        <div className="budget-assistant-title-row">
-          <div className="budget-assistant-title-main">
-            <p className="eyebrow">Conseils</p>
-            <span className="budget-assistant-ai-tag">
-              <Brain size={12} /> Coaching financier
-            </span>
-          </div>
-        </div>
-        <p className="budget-advice-helper">
-          Conseils rapides pour garder le cap ce mois-ci.
-        </p>
-        <ul className="alert-list coaching-list overview-coaching-list">
-          {(coachingTips.length > 0 ? coachingTips.slice(0, 4) : ['Ajoutez vos premières transactions pour obtenir des conseils personnalisés.']).map((tip) => (
-            <li key={tip}>
-              <Brain size={15} />
-              <span>{tip}</span>
-            </li>
-          ))}
-        </ul>
+          </>
+        )}
       </aside>
       ) : null}
 
@@ -7233,6 +7836,156 @@ Réponse attendue:
     ) : null}
 
     {/* ── Panneau RGPD : export + suppression compte ─────────────── */}
+    {/* ── Ajout rapide de dépense depuis le calendrier ────────────── */}
+    {quickAddDate ? (
+      <div className="budget-actions-modal-overlay" onClick={closeQuickAdd}>
+        <div className="budget-actions-modal quick-add-modal" onClick={(event) => event.stopPropagation()}>
+          <button
+            type="button"
+            className="budget-actions-modal-close"
+            onClick={closeQuickAdd}
+            aria-label="Fermer"
+          >
+            ✕
+          </button>
+          <h3>
+            {quickAddEditingId !== null ? 'Modifier la dépense' : 'Ajouter une dépense'} —{' '}
+            {new Date(`${quickAddDate}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </h3>
+          <form onSubmit={handleQuickAddSubmit} className="quick-add-form">
+            <label>
+              Libellé
+              <input
+                value={quickAddForm.label}
+                onChange={(event) => {
+                  const label = event.target.value
+                  setQuickAddForm((previous) => ({
+                    ...previous,
+                    label,
+                    category: quickAddTouchedRef.current.category
+                      ? previous.category
+                      : suggestCategoryFromLabel(label) ?? previous.category,
+                  }))
+                  scheduleQuickAddAi(label)
+                }}
+                placeholder="Ex: Courses Carrefour"
+                autoFocus
+                required
+              />
+            </label>
+            <div className="quick-add-selects">
+              <label>
+                Montant (€)
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={quickAddForm.amount}
+                  onChange={(event) => setQuickAddForm((previous) => ({ ...previous, amount: event.target.value }))}
+                  placeholder="Ex: 42,50"
+                  required
+                />
+              </label>
+              <label>
+                Date
+                <input
+                  type="date"
+                  value={quickAddDate}
+                  onChange={(event) => {
+                    if (event.target.value) setQuickAddDate(event.target.value)
+                  }}
+                  required
+                />
+              </label>
+            </div>
+            <div className="quick-add-selects">
+              <label>
+                Catégorie
+                {quickAddAiBusy ? (
+                  <small className="quick-add-hint"> ✨ analyse…</small>
+                ) : quickAddAiApplied ? (
+                  <small className="quick-add-hint"> ✨ suggéré par l'IA — modifiable</small>
+                ) : null}
+                <select
+                  value={quickAddForm.category}
+                  onChange={(event) => {
+                    quickAddTouchedRef.current.category = true
+                    setQuickAddForm((previous) => ({ ...previous, category: event.target.value as Category }))
+                  }}
+                >
+                  {categories.map((category) => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Poche
+                <select
+                  value={quickAddForm.envelope}
+                  onChange={(event) => setQuickAddForm((previous) => ({ ...previous, envelope: event.target.value as Envelope }))}
+                >
+                  {envelopes.map((envelope) => (
+                    <option key={envelope} value={envelope}>{envelope}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <label>
+              Tags <small className="quick-add-hint">(optionnel, séparés par des virgules)</small>
+              <input
+                value={quickAddForm.tags}
+                onChange={(event) => {
+                  quickAddTouchedRef.current.tags = true
+                  setQuickAddForm((previous) => ({ ...previous, tags: event.target.value }))
+                }}
+                placeholder="Ex: vacances, remboursable"
+              />
+            </label>
+            {!isBudgetAiConfigured ? (
+              <button
+                type="button"
+                className="quick-add-ai-nudge"
+                onClick={() => {
+                  closeQuickAdd()
+                  openSettingsPanel('ai')
+                }}
+              >
+                ✨ Besoin d'aller plus vite ? Configurez votre assistant IA pour trouver
+                automatiquement la catégorie et les tags de vos dépenses.
+              </button>
+            ) : null}
+            {quickAddEditingId === null ? (
+              <label>
+                Répéter
+                <select
+                  value={quickAddForm.recurrence}
+                  onChange={(event) =>
+                    setQuickAddForm((previous) => ({
+                      ...previous,
+                      recurrence: event.target.value as 'none' | RecurringFrequency,
+                    }))
+                  }
+                >
+                  <option value="none">Jamais (dépense unique)</option>
+                  <option value="weekly">Chaque semaine</option>
+                  <option value="monthly">Chaque mois</option>
+                  <option value="quarterly">Chaque trimestre</option>
+                  <option value="yearly">Chaque année</option>
+                </select>
+              </label>
+            ) : null}
+            <div className="quick-add-actions">
+              <button type="button" className="ghost-button" onClick={closeQuickAdd}>
+                Annuler
+              </button>
+              <button type="submit" className="hero-cta-button">
+                {quickAddEditingId !== null ? 'Enregistrer' : 'Ajouter la dépense'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    ) : null}
+
     {showPrivacyPanel ? (
       <PrivacyPanel
         userEmail={userEmail}

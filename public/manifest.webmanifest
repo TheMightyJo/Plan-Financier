@@ -1,0 +1,25 @@
+{
+  "name": "Plan Financier",
+  "short_name": "Plan Financier",
+  "description": "Cockpit budgétaire familial : dépenses, budgets et objectifs d'épargne.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FDFAF6",
+  "theme_color": "#8B6C52",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

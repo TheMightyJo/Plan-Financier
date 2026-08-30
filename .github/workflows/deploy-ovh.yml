@@ -10,6 +10,10 @@
 #   OVH_REMOTE_PATH   : chemin distant (ex. /www ou /home/<login>/www)
 #   VITE_SUPABASE_URL       : URL Supabase (https://<ref>.supabase.co)
 #   VITE_SUPABASE_ANON_KEY  : clé anon publique Supabase
+#   VITE_TURNSTILE_SITE_KEY : site key Cloudflare Turnstile (publique).
+#                             Sans elle, le CAPTCHA est désactivé côté app —
+#                             si le CAPTCHA reste activé dans Supabase, toute
+#                             connexion échouera en prod.
 #
 # Optionnel : déclencher manuellement via "Run workflow" depuis l'onglet Actions.
 # =============================================================================
@@ -51,6 +55,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
         run: npm run build
 
       - name: Verify .htaccess in dist

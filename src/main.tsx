@@ -5,6 +5,13 @@ import './index.css'
 import App from './App.tsx'
 import AppErrorBoundary from './AppErrorBoundary.tsx'
 
+// PWA : service worker en prod uniquement (en dev il interférerait avec HMR).
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js')
+  })
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AppErrorBoundary>
