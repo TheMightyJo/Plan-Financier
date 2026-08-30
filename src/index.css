@@ -5842,6 +5842,22 @@ h1 {
   z-index: 999;
 }
 
+/* Les modales sont OPAQUES : l'effet translucide de --surface laissait
+   transparaître le contenu de la page derrière et gênait la lecture. */
+.budget-actions-modal,
+.quick-add-modal,
+.recurring-modal,
+.profile-modal:not(.profile-modal--inline),
+.settings-modal-card,
+.onboarding-modal,
+.tx-history-modal,
+.accounts-modal,
+.goals-modal,
+.privacy-modal,
+.legal-modal {
+  background: var(--bg-2) !important;
+}
+
 .budget-actions-modal {
   background: var(--surface);
   border: 1px solid var(--border);
