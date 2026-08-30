@@ -121,7 +121,7 @@ import {
   type ReportPrefs,
 } from './repos/reportPrefsRepo'
 import { shiftDay, shiftMonth } from './lib/calendar'
-import { weeklyStats } from './lib/weeklyStats'
+import { mondayOf, weeklyStats } from './lib/weeklyStats'
 import {
   computeConsolidatedBalance,
   balanceByAccountType,
@@ -3493,7 +3493,26 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
         items.push({ date, label: rule.label, amount: rule.amount, kind: rule.kind })
       }
     }
-    return items.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6)
+    items.sort((a, b) => a.date.localeCompare(b.date))
+    // Regroupe par semaine (lundi → dimanche) avec libellé parlant.
+    const currentMonday = mondayOf(todayIso)
+    const weeks = new Map<string, { label: string; items: typeof items; totalSpent: number }>()
+    for (const item of items.slice(0, 12)) {
+      const monday = mondayOf(item.date)
+      if (!weeks.has(monday)) {
+        const label =
+          monday === currentMonday
+            ? 'Cette semaine'
+            : monday === shiftDay(currentMonday, 7)
+            ? 'Semaine prochaine'
+            : `Semaine du ${new Date(`${monday}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`
+        weeks.set(monday, { label, items: [], totalSpent: 0 })
+      }
+      const bucket = weeks.get(monday)!
+      bucket.items.push(item)
+      if (item.kind === 'depense') bucket.totalSpent += item.amount
+    }
+    return [...weeks.values()]
   }, [recurringRules, activeTransactions, selectedProfileId, todayIso])
 
   const topExpensesMonth = useMemo(
@@ -8293,19 +8312,29 @@ Réponse attendue:
           {upcomingCharges.length === 0 ? (
             <p className="ops-rail__empty">Aucune échéance programmée.</p>
           ) : (
-            <ul className="ops-rail__list">
-              {upcomingCharges.map((item) => (
-                <li key={`${item.date}-${item.label}-${item.amount}`}>
-                  <span className="ops-rail__date">
-                    {new Date(`${item.date}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
-                  </span>
-                  <span className="ops-rail__label">{item.label}</span>
-                  <strong className={item.kind === 'revenu' ? 'income' : 'expense'}>
-                    {item.kind === 'revenu' ? '+' : '−'}{euroFormatter.format(item.amount)}
-                  </strong>
-                </li>
-              ))}
-            </ul>
+            upcomingCharges.map((week) => (
+              <div key={week.label} className="ops-rail__week">
+                <div className="ops-rail__week-head">
+                  <span>{week.label}</span>
+                  {week.totalSpent > 0 ? (
+                    <strong className="expense">−{euroFormatter.format(week.totalSpent)}</strong>
+                  ) : null}
+                </div>
+                <ul className="ops-rail__list">
+                  {week.items.map((item) => (
+                    <li key={`${item.date}-${item.label}-${item.amount}`}>
+                      <span className="ops-rail__date">
+                        {new Date(`${item.date}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })}
+                      </span>
+                      <span className="ops-rail__label">{item.label}</span>
+                      <strong className={item.kind === 'revenu' ? 'income' : 'expense'}>
+                        {item.kind === 'revenu' ? '+' : '−'}{euroFormatter.format(item.amount)}
+                      </strong>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))
           )}
         </div>
         <div className="ops-rail__section">

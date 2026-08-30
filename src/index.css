@@ -11142,3 +11142,29 @@ button.envelope-card:hover .envelope-card__body {
 
 .chat-scroll-hint--up { top: 0.5rem; }
 .chat-scroll-hint--down { bottom: 0.5rem; }
+
+/* ── Rail Dépenses : échéances regroupées par semaine ─────────────── */
+.ops-rail__week {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.ops-rail__week + .ops-rail__week {
+  margin-top: 0.35rem;
+}
+
+.ops-rail__week-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: var(--text-2xs);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-2);
+}
+
+.ops-rail__week-head strong {
+  font-size: var(--text-2xs);
+}
