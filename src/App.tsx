@@ -6688,7 +6688,7 @@ Réponse attendue:
           </div>
           <div className="stats-chart-wrap">
             <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={weeklyStatsData} barGap={2}>
+              <LineChart data={weeklyStatsData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(160, 128, 96, 0.2)" />
                 <XAxis dataKey="label" stroke="#a1a1aa" fontSize={11} interval="preserveStartEnd" />
                 <YAxis stroke="#a1a1aa" fontSize={11} />
@@ -6699,9 +6699,25 @@ Réponse attendue:
                   ]}
                   labelFormatter={(label) => `Semaine du ${label}`}
                 />
-                <Bar dataKey="income" name="income" fill="#3A7D44" radius={[5, 5, 0, 0]} />
-                <Bar dataKey="spent" name="spent" fill="#C05C2A" radius={[5, 5, 0, 0]} />
-              </BarChart>
+                <Line
+                  type="monotone"
+                  dataKey="income"
+                  name="income"
+                  stroke="#3A7D44"
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: '#3A7D44' }}
+                  activeDot={{ r: 5 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="spent"
+                  name="spent"
+                  stroke="#C05C2A"
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: '#C05C2A' }}
+                  activeDot={{ r: 5 }}
+                />
+              </LineChart>
             </ResponsiveContainer>
           </div>
           <div className="stats-legend">
