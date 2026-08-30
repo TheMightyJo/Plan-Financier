@@ -9631,3 +9631,56 @@ h1 {
   flex-shrink: 0;
   margin-right: 0.15rem;
 }
+
+/* ── Corrections de spécificité : .form-panel button écrasait les styles
+   des puces fournisseurs et des boutons ghost (dégradé partout). ───── */
+.form-panel .ghost-button {
+  background: var(--ui-btn-bg);
+  border: 1px solid var(--ui-btn-border);
+  color: var(--text-1);
+  font-weight: 700;
+  margin-top: 0;
+}
+
+.form-panel .ai-provider-chip {
+  background: var(--surface-soft);
+  color: var(--text-1);
+  border: 1.5px solid var(--border-soft);
+  border-radius: 0.7rem;
+  padding: 0.5rem 0.8rem;
+  margin-top: 0;
+  font-weight: 700;
+  font-size: var(--text-sm);
+}
+
+.form-panel .ai-provider-chip--active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.3);
+  background: rgba(var(--accent-rgb), 0.1);
+}
+
+.form-panel .ai-provider-chip--soon {
+  opacity: 0.6;
+}
+
+.form-panel .ai-provider-chip small {
+  color: var(--text-2);
+}
+
+/* Respiration de la section Assistant IA. */
+.ai-provider-label {
+  margin-top: 0.4rem;
+}
+
+.ai-provider-grid {
+  gap: 0.55rem;
+  margin-bottom: 0.3rem;
+}
+
+.ai-settings-card .settings-inline-actions {
+  margin-top: 0.4rem;
+}
+
+.ai-key-links {
+  margin-top: -0.3rem;
+}
