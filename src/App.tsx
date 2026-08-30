@@ -3480,39 +3480,23 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
   // ── Rail latéral de la vue Dépenses (échéances, top dépenses, tags) ──
   const upcomingCharges = useMemo(() => {
-    const from = shiftDay(todayIso, 1)
-    const to = shiftDay(todayIso, 30)
+    // Uniquement la semaine PROCHAINE (lundi → dimanche suivants).
+    const nextMonday = shiftDay(mondayOf(todayIso), 7)
+    const nextSunday = shiftDay(nextMonday, 6)
     const materialized = new Set(
       activeTransactions.filter((t) => t.recurringRuleId).map((t) => `${t.recurringRuleId}|${t.date}`),
     )
     const items: Array<{ date: string; label: string; amount: number; kind: TransactionKind }> = []
     for (const rule of recurringRules) {
       if (rule.pausedAt !== null || rule.member !== selectedProfileId) continue
-      for (const date of getOccurrencesBetween(rule, from, to)) {
+      for (const date of getOccurrencesBetween(rule, nextMonday, nextSunday)) {
         if (materialized.has(`${rule.id}|${date}`)) continue
         items.push({ date, label: rule.label, amount: rule.amount, kind: rule.kind })
       }
     }
     items.sort((a, b) => a.date.localeCompare(b.date))
-    // Regroupe par semaine (lundi → dimanche) avec libellé parlant.
-    const currentMonday = mondayOf(todayIso)
-    const weeks = new Map<string, { label: string; items: typeof items; totalSpent: number }>()
-    for (const item of items.slice(0, 12)) {
-      const monday = mondayOf(item.date)
-      if (!weeks.has(monday)) {
-        const label =
-          monday === currentMonday
-            ? 'Cette semaine'
-            : monday === shiftDay(currentMonday, 7)
-            ? 'Semaine prochaine'
-            : `Semaine du ${new Date(`${monday}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`
-        weeks.set(monday, { label, items: [], totalSpent: 0 })
-      }
-      const bucket = weeks.get(monday)!
-      bucket.items.push(item)
-      if (item.kind === 'depense') bucket.totalSpent += item.amount
-    }
-    return [...weeks.values()]
+    const totalSpent = items.reduce((sum, item) => sum + (item.kind === 'depense' ? item.amount : 0), 0)
+    return { items: items.slice(0, 8), totalSpent }
   }, [recurringRules, activeTransactions, selectedProfileId, todayIso])
 
   const topExpensesMonth = useMemo(
@@ -8308,33 +8292,28 @@ Réponse attendue:
       <aside className="glass-card budget-advice-rail dashboard-right-rail ops-rail" aria-label="Repères dépenses">
         <div className="ops-rail__section">{renderCashAdvice()}</div>
         <div className="ops-rail__section">
-          <p className="eyebrow">⏳ À venir sous 30 jours</p>
-          {upcomingCharges.length === 0 ? (
-            <p className="ops-rail__empty">Aucune échéance programmée.</p>
+          <div className="ops-rail__week-head">
+            <span>⏳ À venir la semaine prochaine</span>
+            {upcomingCharges.totalSpent > 0 ? (
+              <strong className="expense">−{euroFormatter.format(upcomingCharges.totalSpent)}</strong>
+            ) : null}
+          </div>
+          {upcomingCharges.items.length === 0 ? (
+            <p className="ops-rail__empty">Aucune échéance la semaine prochaine.</p>
           ) : (
-            upcomingCharges.map((week) => (
-              <div key={week.label} className="ops-rail__week">
-                <div className="ops-rail__week-head">
-                  <span>{week.label}</span>
-                  {week.totalSpent > 0 ? (
-                    <strong className="expense">−{euroFormatter.format(week.totalSpent)}</strong>
-                  ) : null}
-                </div>
-                <ul className="ops-rail__list">
-                  {week.items.map((item) => (
-                    <li key={`${item.date}-${item.label}-${item.amount}`}>
-                      <span className="ops-rail__date">
-                        {new Date(`${item.date}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })}
-                      </span>
-                      <span className="ops-rail__label">{item.label}</span>
-                      <strong className={item.kind === 'revenu' ? 'income' : 'expense'}>
-                        {item.kind === 'revenu' ? '+' : '−'}{euroFormatter.format(item.amount)}
-                      </strong>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))
+            <ul className="ops-rail__list">
+              {upcomingCharges.items.map((item) => (
+                <li key={`${item.date}-${item.label}-${item.amount}`}>
+                  <span className="ops-rail__date">
+                    {new Date(`${item.date}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })}
+                  </span>
+                  <span className="ops-rail__label">{item.label}</span>
+                  <strong className={item.kind === 'revenu' ? 'income' : 'expense'}>
+                    {item.kind === 'revenu' ? '+' : '−'}{euroFormatter.format(item.amount)}
+                  </strong>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
         <div className="ops-rail__section">
