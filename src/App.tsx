@@ -3496,7 +3496,11 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
     items.sort((a, b) => a.date.localeCompare(b.date))
     const totalSpent = items.reduce((sum, item) => sum + (item.kind === 'depense' ? item.amount : 0), 0)
-    return { items: items.slice(0, 8), totalSpent }
+    const fmt = (iso: string, withMonth: boolean) =>
+      new Date(`${iso}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', ...(withMonth ? { month: 'short' } : {}) })
+    const sameMonth = nextMonday.slice(0, 7) === nextSunday.slice(0, 7)
+    const rangeLabel = `${fmt(nextMonday, !sameMonth)} – ${fmt(nextSunday, true)}`
+    return { items: items.slice(0, 8), totalSpent, rangeLabel }
   }, [recurringRules, activeTransactions, selectedProfileId, todayIso])
 
   const topExpensesMonth = useMemo(
@@ -8293,7 +8297,7 @@ Réponse attendue:
         <div className="ops-rail__section">{renderCashAdvice()}</div>
         <div className="ops-rail__section">
           <div className="ops-rail__week-head">
-            <span>⏳ À venir la semaine prochaine</span>
+            <span>⏳ À venir · semaine du {upcomingCharges.rangeLabel}</span>
             {upcomingCharges.totalSpent > 0 ? (
               <strong className="expense">−{euroFormatter.format(upcomingCharges.totalSpent)}</strong>
             ) : null}
