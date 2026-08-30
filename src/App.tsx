@@ -813,6 +813,16 @@ const formatChatThreadActivity = (value: number) => {
   })
 }
 
+/** ℹ️ cliquable : l'explication ne s'affiche qu'à la demande. */
+function InfoHint({ text }: { text: string }) {
+  return (
+    <details className="info-hint">
+      <summary aria-label="Plus d'informations" title="Plus d'informations">ℹ️</summary>
+      <span className="info-hint__pop" role="note">{text}</span>
+    </details>
+  )
+}
+
 function App() {
   type SettingsSection = 'profiles' | 'ai' | 'security' | 'backup' | 'reset' | 'theme' | 'rgpd' | 'account' | 'report' | 'a11y'
   const currentMonth = new Date().toISOString().slice(0, 7)
@@ -5198,7 +5208,10 @@ Réponse attendue:
                   <div className="settings-section-grid">
                     <article className="glass-card settings-section-card form-panel">
                       <div className="panel-title">
-                        <h2>Profils</h2>
+                        <h2>
+                          Profils
+                          <InfoHint text="Après l'ajout, basculez de profil via les cercles en haut du menu — chaque profil a son budget et ses dépenses." />
+                        </h2>
                         <p>Crée, mets à jour et désigne le profil par défaut depuis un espace dédié.</p>
                       </div>
                       <form onSubmit={handleAddProfile}>
@@ -5220,7 +5233,6 @@ Réponse attendue:
                           />
                         </label>
                         <button type="submit">Ajouter le profil</button>
-                        <p className="auth-note">Bascule ensuite dans le header pour piloter le bon contexte.</p>
                       </form>
                       <div className="family-invite-block">
                         <h3>🤝 Inviter un proche</h3>
@@ -5303,7 +5315,10 @@ Réponse attendue:
 
                     <article className="glass-card settings-section-card form-panel">
                       <div className="panel-title">
-                        <h2>Profil actif</h2>
+                        <h2>
+                          Profil actif
+                          <InfoHint text="Le profil par défaut sert de filet de sécurité : si un profil est supprimé, ses données lui sont rattachées." />
+                        </h2>
                         <p>Réglages du profil sélectionné et choix du profil de repli.</p>
                       </div>
                       <form onSubmit={handleUpdateManagedProfile}>
@@ -5389,7 +5404,6 @@ Réponse attendue:
                             Supprimer
                           </button>
                         </div>
-                        <p className="auth-note">Le profil par défaut sert de filet de sécurité si un profil est supprimé.</p>
                       </form>
                     </article>
                   </div>
@@ -5499,7 +5513,10 @@ Réponse attendue:
                   <div className="settings-section-grid settings-section-grid--single">
                     <article className="glass-card settings-section-card form-panel">
                       <div className="panel-title">
-                        <h2>♿ Accessibilité</h2>
+                        <h2>
+                          ♿ Accessibilité
+                          <InfoHint text="Astuce : la vue Budget propose aussi un « Mode simple » qui agrandit encore ses textes." />
+                        </h2>
                         <p>Adaptez l'application à vos besoins de lecture et de confort.</p>
                       </div>
 
@@ -5551,9 +5568,6 @@ Réponse attendue:
                         </span>
                       </label>
 
-                      <p className="auth-note">
-                        Astuce : la vue Budget propose aussi un « Mode simple » qui agrandit encore ses textes.
-                      </p>
                     </article>
                   </div>
                 ) : null}
@@ -5688,11 +5702,13 @@ Réponse attendue:
                   <div className="settings-section-grid">
                     <article className="glass-card settings-section-card form-panel">
                       <div className="panel-title">
-                        <h2>Sauvegarde chiffrée</h2>
+                        <h2>
+                          Sauvegarde chiffrée
+                          <InfoHint text="Le fichier exporté est chiffré avec votre PIN : vous pouvez le déplacer d'un appareil à l'autre en toute sécurité." />
+                        </h2>
                         <p>Exporte ou restaure les données locales avec le PIN parent.</p>
                       </div>
                       <div className="backup-zone backup-zone--standalone">
-                        <p className="auth-note">Le fichier exporté est chiffré : vous pouvez le déplacer d’un appareil à l’autre.</p>
                         <div className="settings-inline-actions">
                           <button type="button" onClick={() => void handleExportEncryptedBackup()}>
                             Exporter ma sauvegarde
@@ -5717,7 +5733,10 @@ Réponse attendue:
                   <div className="settings-section-grid">
                     <article className="glass-card settings-section-card form-panel">
                       <div className="panel-title">
-                        <h2>Thème</h2>
+                        <h2>
+                          Thème
+                          <InfoHint text="Le mode Système suit automatiquement les préférences (clair/sombre) de votre appareil." />
+                        </h2>
                         <p>Choisissez l'apparence de l'application.</p>
                       </div>
                       <div className="theme-picker">
@@ -5738,9 +5757,6 @@ Réponse attendue:
                           </button>
                         ))}
                       </div>
-                      <p className="auth-note">
-                        Le mode Système suit automatiquement les préférences de votre appareil.
-                      </p>
                       <div className="panel-title" style={{ marginTop: '0.9rem' }}>
                         <h2>Palette de couleurs</h2>
                         <p>La teinte d'accent utilisée par les boutons, liens et indicateurs.</p>
@@ -5784,7 +5800,10 @@ Réponse attendue:
                   <div className="settings-section-grid">
                     <article className="glass-card settings-section-card form-panel">
                       <div className="panel-title">
-                        <h2>Mes données RGPD</h2>
+                        <h2>
+                          Mes données RGPD
+                          <InfoHint text="Vos données restent stockées sur cet appareil et dans votre espace personnel sécurisé." />
+                        </h2>
                         <p>
                           Consultez, exportez ou supprimez vos données personnelles : export complet,
                           journal d'activité, suppression du compte.
@@ -5797,9 +5816,6 @@ Réponse attendue:
                       >
                         🔒 Ouvrir mes données RGPD
                       </button>
-                      <p className="auth-note">
-                        Vos données restent stockées sur cet appareil et dans votre espace Supabase personnel.
-                      </p>
                     </article>
                   </div>
                 ) : null}
