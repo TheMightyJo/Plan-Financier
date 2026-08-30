@@ -199,3 +199,37 @@ export const inferEnvelope = (category: Category): Envelope => {
 
   return 'Perso'
 }
+
+// Emoji représentatif d'une catégorie (repli d'icône quand aucun marchand
+// n'est reconnu sur la ligne).
+const CATEGORY_EMOJI: Record<string, string> = {
+  Courses: '🛒',
+  Transport: '🚗',
+  Ecole: '🎒',
+  Loisirs: '🎭',
+  Sante: '💊',
+  Maison: '🏠',
+  Autre: '💳',
+}
+
+const GROUP_EMOJI: Record<string, string> = {
+  'Vie quotidienne': '🛒',
+  'Logement': '🏠',
+  'Transport': '🚗',
+  'Enfants & école': '🎒',
+  'Santé': '💊',
+  'Loisirs & culture': '🎭',
+  'Finances & obligations': '🏛️',
+  'Revenus du travail': '💼',
+  'Aides & pensions': '🏛️',
+  'Argent reçu': '🎁',
+  'Placements': '📈',
+}
+
+export const categoryEmoji = (category: Category): string => {
+  if (CATEGORY_EMOJI[category]) return CATEGORY_EMOJI[category]
+  const group =
+    EXPENSE_CATEGORY_GROUPS.find((entry) => entry.options.includes(category)) ??
+    INCOME_CATEGORY_GROUPS.find((entry) => entry.options.includes(category))
+  return (group && GROUP_EMOJI[group.label]) || '💳'
+}

@@ -44,3 +44,14 @@ describe('merchantFaviconUrl', () => {
     )
   })
 })
+
+describe('faux positifs en sous-chaîne', () => {
+  it('« Trained Manager » ne matche ni train (emoji) ni un domaine', () => {
+    expect(suggestMerchantIcon('Trained Manager')).toBeNull()
+    expect(suggestMerchantDomain('Trained Manager')).toBeNull()
+  })
+
+  it('« train » seul matche toujours', () => {
+    expect(suggestMerchantIcon('Billet de train')).not.toBeNull()
+  })
+})

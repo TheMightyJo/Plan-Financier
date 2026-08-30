@@ -83,7 +83,7 @@ import {
   MONEY_AVATAR_PRESETS,
   readAndResizeImage,
 } from './lib/avatar'
-import { isValidTxIcon, suggestMerchantDomain, suggestMerchantIcon } from './lib/merchantIcons'
+import { isValidTxIcon, suggestMerchantIcon } from './lib/merchantIcons'
 import { generateDueTransactions, getOccurrencesBetween } from './lib/recurring'
 import { loadRecurringRules, saveRecurringRules } from './repos/recurringRulesRepo'
 import { RecurringRulesPanel } from './components/RecurringRulesPanel'
@@ -138,6 +138,7 @@ import {
   INCOME_CATEGORY_GROUPS,
   allExpenseCategories,
   categories,
+  categoryEmoji,
   colorForCategory,
   envelopes,
   envelopeColors,
@@ -2927,7 +2928,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       Math.round(monthlyIncome),
       Math.round(remaining),
       Math.round(usageRate),
-      activeSectionId === 'budget' ? 'budget' : 'general',
+      ['budget', 'stats', 'operations'].includes(activeSectionId) ? activeSectionId : 'general',
     ].join('|'),
     [activeSectionId, monthlyExpense, monthlyIncome, remaining, selectedMonth, selectedProfileId, usageRate],
   )
@@ -3080,6 +3081,71 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     setEnvelopeOpenName(null)
     setEnvModalDeleteAsk(false)
   }
+
+  /** Bloc Conseils de Cash — partagé entre les vues (Accueil, Budget, Stats, Dépenses, Famille). */
+  const renderCashAdvice = () => (
+    <>
+        {!isBudgetAiConfigured ? (
+          <>
+            <div className="budget-assistant-title-row">
+              <div className="budget-assistant-title-main">
+                <p className="eyebrow">Assistant IA</p>
+              </div>
+            </div>
+            <p className="budget-advice-helper">
+              <strong>Assistant IA non configuré.</strong>
+              <br />
+              Activez votre fournisseur IA dans les paramètres pour débloquer les analyses
+              automatiques et le coaching avancé.
+            </p>
+            <button type="button" className="hero-cta-button" onClick={() => openSettingsPanel('ai')}>
+              Configurer l&apos;IA
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="budget-assistant-title-row">
+              <div className="budget-assistant-title-main">
+                <p className="eyebrow">Conseils</p>
+                <span className="budget-assistant-ai-tag">
+                  <Bot size={12} /> Cash · IA
+                </span>
+              </div>
+            </div>
+            <p className="budget-advice-helper">
+              {activeSectionId === 'budget'
+                ? 'Cash analyse votre budget, vos poches et vos plafonds.'
+                : activeSectionId === 'stats'
+                ? 'Cash analyse vos semaines et leurs tendances.'
+                : activeSectionId === 'operations'
+                ? 'Cash analyse vos dépenses du mois.'
+                : 'Cash analyse votre mois en cours et vous conseille.'}
+            </p>
+            {budgetAssistantError ? (
+              <>
+                <p className="budget-assistant-error">{budgetAssistantError}</p>
+                <ul className="alert-list coaching-list overview-coaching-list">
+                  {coachingTips.slice(0, 3).map((tip) => (
+                    <li key={tip}>
+                      <Brain size={15} />
+                      <span>{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : budgetAssistantLoading || !budgetAssistantAdvice ? (
+              <div className="budget-assistant-skeleton" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : (
+              <p className="budget-assistant-answer">{budgetAssistantAdvice}</p>
+            )}
+          </>
+        )}
+    </>
+  )
 
   const createEnvelope = (rawName: string) => {
     const name = rawName.trim().slice(0, 40)
@@ -4428,7 +4494,13 @@ Contexte:
 - Reste: ${euroFormatter.format(remaining)}
 - État: ${budgetStatusLabel}
 - Projection: ${projectedMessage}
-${activeSectionId === 'budget'
+${activeSectionId === 'stats'
+  ? `- Dernières semaines (lun→dim): ${weeklyStatsData.slice(-4).map((w) => `${w.label} ${w.net >= 0 ? '+' : ''}${Math.round(w.net)}€ (${w.type})`).join(' · ')}
+`
+  : ''}${activeSectionId === 'operations'
+  ? `- Top dépenses du mois: ${topExpensesMonth.map((t) => `${t.label} ${euroFormatter.format(t.amount)} (${t.category})`).join(' · ') || 'aucune'}
+`
+  : ''}${activeSectionId === 'budget'
   ? `- Poches (dispo / objectif): ${envelopeCards.map((c) => `${c.name} ${euroFormatter.format(c.inside)} dispo${c.target > 0 ? ` / obj ${euroFormatter.format(c.target)} (${Math.round((c.ratio ?? 0) * 100)}%)` : ''}`).join(' · ')}
 - Plafonds par catégorie: ${goalProgress.map((g) => `${g.category} ${g.rate.toFixed(0)}%`).join(' · ')}
 `
@@ -4492,7 +4564,7 @@ Réponse attendue:
   useEffect(() => {
     // L'analyse IA alimente le rail Conseils du Budget, de l'Accueil,
     // des Opérations et de la Famille.
-    if (!['budget', 'overview', 'family'].includes(activeSectionId)) {
+    if (!['budget', 'overview', 'family', 'operations', 'stats'].includes(activeSectionId)) {
       return
     }
 
@@ -5058,7 +5130,7 @@ Réponse attendue:
               </div>
               {onboardingProvider !== null && (() => {
                 const selectedProvider = ONBOARDING_PROVIDERS.find((provider) => provider.id === onboardingProvider) ?? ONBOARDING_PROVIDERS[0]
-                return (
+  return (
                   <>
                     <div className="onboarding-provider-help glass-card">
                       <div>
@@ -5254,7 +5326,7 @@ Réponse attendue:
       </div>
     ) : null}
 
-    <main className={`dashboard-shell${isActiveView('budget') || isActiveView('overview') || isActiveView('operations') || isActiveView('family') ? ' dashboard-shell--three-columns' : ''}`} id="app-main" aria-label="Tableau de bord budgétaire">
+    <main className={`dashboard-shell${isActiveView('budget') || isActiveView('overview') || isActiveView('operations') || isActiveView('family') || isActiveView('stats') ? ' dashboard-shell--three-columns' : ''}`} id="app-main" aria-label="Tableau de bord budgétaire">
       <h1 className="sr-only">Plan Financier — Tableau de bord</h1>
       <aside className="glass-card side-menu" aria-label="Navigation principale">
         <div className="side-menu-profiles" role="tablist" aria-label="Sélection du profil">
@@ -5475,11 +5547,7 @@ Réponse attendue:
                   onClick={() => openQuickEdit(tx)}
                   aria-label={`Modifier ${tx.label}`}
                 >
-                  {tx.icon || suggestMerchantDomain(tx.label) ? (
-                    <MerchantLogo label={tx.label} fallbackIcon={tx.icon} />
-                  ) : (
-                    <span className="recent-tx-dot" style={{ background: colorForCategory(tx.category) }} aria-hidden="true" />
-                  )}
+                  <MerchantLogo label={tx.label} fallbackIcon={tx.icon ?? categoryEmoji(tx.category)} />
                   <span className="recent-tx-label">
                     {tx.label}
                     {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
@@ -6619,7 +6687,7 @@ Réponse attendue:
                 >
                   <div>
                     <p>
-                      <MerchantLogo label={item.label} fallbackIcon={item.icon} />
+                      <MerchantLogo label={item.label} fallbackIcon={item.icon ?? categoryEmoji(item.category)} />
                       {item.label}
                       {item.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
                     </p>
@@ -8180,6 +8248,7 @@ Réponse attendue:
 
       {isActiveView('operations') ? (
       <aside className="glass-card budget-advice-rail dashboard-right-rail ops-rail" aria-label="Repères dépenses">
+        <div className="ops-rail__section">{renderCashAdvice()}</div>
         <div className="ops-rail__section">
           <p className="eyebrow">⏳ À venir sous 30 jours</p>
           {upcomingCharges.length === 0 ? (
@@ -8208,7 +8277,7 @@ Réponse attendue:
             <ul className="ops-rail__list">
               {topExpensesMonth.map((tx) => (
                 <li key={tx.id}>
-                  <MerchantLogo label={tx.label} fallbackIcon={tx.icon ?? '💳'} className="ops-rail__icon" />
+                  <MerchantLogo label={tx.label} fallbackIcon={tx.icon ?? categoryEmoji(tx.category)} className="ops-rail__icon" />
                   <span className="ops-rail__label">
                     {tx.label}
                     <small>{tx.category}</small>
@@ -8235,63 +8304,15 @@ Réponse attendue:
       </aside>
       ) : null}
 
+      {isActiveView('stats') ? (
+      <aside className="glass-card budget-advice-rail dashboard-right-rail overview-coaching-rail" aria-label="Assistant">
+        {renderCashAdvice()}
+      </aside>
+      ) : null}
+
       {isActiveView('overview') || isActiveView('family') || isActiveView('budget') ? (
       <aside className="glass-card budget-advice-rail dashboard-right-rail overview-coaching-rail" aria-label="Assistant">
-        {!isBudgetAiConfigured ? (
-          <>
-            <div className="budget-assistant-title-row">
-              <div className="budget-assistant-title-main">
-                <p className="eyebrow">Assistant IA</p>
-              </div>
-            </div>
-            <p className="budget-advice-helper">
-              <strong>Assistant IA non configuré.</strong>
-              <br />
-              Activez votre fournisseur IA dans les paramètres pour débloquer les analyses
-              automatiques et le coaching avancé.
-            </p>
-            <button type="button" className="hero-cta-button" onClick={() => openSettingsPanel('ai')}>
-              Configurer l&apos;IA
-            </button>
-          </>
-        ) : (
-          <>
-            <div className="budget-assistant-title-row">
-              <div className="budget-assistant-title-main">
-                <p className="eyebrow">Conseils</p>
-                <span className="budget-assistant-ai-tag">
-                  <Bot size={12} /> Cash · IA
-                </span>
-              </div>
-            </div>
-            <p className="budget-advice-helper">
-              {activeSectionId === 'budget'
-                ? 'Cash analyse votre budget, vos poches et vos plafonds.'
-                : 'Cash analyse votre mois en cours et vous conseille.'}
-            </p>
-            {budgetAssistantError ? (
-              <>
-                <p className="budget-assistant-error">{budgetAssistantError}</p>
-                <ul className="alert-list coaching-list overview-coaching-list">
-                  {coachingTips.slice(0, 3).map((tip) => (
-                    <li key={tip}>
-                      <Brain size={15} />
-                      <span>{tip}</span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : budgetAssistantLoading || !budgetAssistantAdvice ? (
-              <div className="budget-assistant-skeleton" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </div>
-            ) : (
-              <p className="budget-assistant-answer">{budgetAssistantAdvice}</p>
-            )}
-          </>
-        )}
+        {renderCashAdvice()}
       </aside>
       ) : null}
 

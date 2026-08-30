@@ -18,7 +18,7 @@ const MERCHANT_ICONS: Array<[string[], string]> = [
   [['edf', 'engie', 'electricite', 'totalenergies'], '⚡'],
   [['veolia', 'suez', 'eau '], '💧'],
   [['orange', 'sfr', 'bouygues telecom', 'free mobile', 'freebox', 'internet', 'mobile'], '📶'],
-  [['mcdo', 'mcdonald', 'burger king', 'kfc', 'quick', 'kebab', 'pizza', 'sushi', 'restaurant', 'resto', 'brasserie', 'cafe ', 'bistrot'], '🍽️'],
+  [['mcdo', 'mcdonald', 'mcdonalds', 'burger king', 'kfc', 'quick', 'kebab', 'pizza', 'sushi', 'restaurant', 'resto', 'brasserie', 'cafe', 'bistrot'], '🍽️'],
   [['pharmacie', 'medecin', 'docteur', 'dentiste', 'mutuelle', 'hopital'], '💊'],
   [['loyer', 'agence immo', 'syndic'], '🏠'],
   [['assurance', 'maif', 'macif', 'axa', 'matmut', 'gmf'], '🛡️'],
@@ -33,11 +33,16 @@ const MERCHANT_ICONS: Array<[string[], string]> = [
   [['vacances', 'hotel', 'airbnb', 'booking', 'camping', 'vol ', 'avion'], '🏖️'],
 ]
 
+/** Vrai si le mot-clé apparaît en MOTS ENTIERS dans le libellé normalisé
+ * (« train » ne doit pas matcher « Trained Manager »). */
+const matchesWholeWords = (normalizedPadded: string, keyword: string): boolean =>
+  normalizedPadded.includes(` ${keyword.trim()} `)
+
 /** Emoji du marchand déduit du libellé, ou null si inconnu. */
 export const suggestMerchantIcon = (label: string): string | null => {
   const normalized = ` ${normalizeText(label)} `
   for (const [keywords, icon] of MERCHANT_ICONS) {
-    if (keywords.some((keyword) => normalized.includes(keyword.trim()) )) {
+    if (keywords.some((keyword) => matchesWholeWords(normalized, keyword))) {
       return icon
     }
   }
@@ -76,7 +81,7 @@ const MERCHANT_DOMAINS: Array<[keywords: string[], domain: string]> = [
   [['uber eats', 'ubereats'], 'ubereats.com'],
   [[' uber '], 'uber.com'],
   [['deliveroo'], 'deliveroo.fr'],
-  [['mcdo', 'mcdonald'], 'mcdonalds.fr'],
+  [['mcdo', 'mcdonald', 'mcdonalds'], 'mcdonalds.fr'],
   [['burger king'], 'burgerking.fr'],
   [['sncf', 'ouigo', 'tgv'], 'sncf-connect.com'],
   [['ratp', 'navigo'], 'ratp.fr'],
@@ -122,9 +127,7 @@ const MERCHANT_DOMAINS: Array<[keywords: string[], domain: string]> = [
 export const suggestMerchantDomain = (label: string): string | null => {
   const normalized = ` ${normalizeText(label)} `
   for (const [keywords, domain] of MERCHANT_DOMAINS) {
-    // Pas de trim : un mot-clé avec espace final (« canal  ») exige bien
-    // une fin de mot, pour éviter les faux positifs (« canalisation »).
-    if (keywords.some((keyword) => normalized.includes(keyword))) {
+    if (keywords.some((keyword) => matchesWholeWords(normalized, keyword))) {
       return domain
     }
   }
