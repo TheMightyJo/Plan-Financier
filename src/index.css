@@ -3026,7 +3026,8 @@ h1 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1rem;
-  padding: 0.85rem;
+  /* Pas de fond propre : les trois cartes posent directement sur la page. */
+  padding: 0;
   animation: fade-up 700ms ease both;
   animation-delay: 100ms;
 }

@@ -5088,7 +5088,7 @@ Réponse attendue:
         ) : null}
 
         {isActiveView('overview') ? (
-        <section className="glass-card kpi-summary" style={{ margin: '0 0 1rem 0' }}>
+        <section className="kpi-summary" style={{ margin: '0 0 1rem 0' }}>
           <div className="kpi-card kpi-card--secondary">
             <div className="kpi-card-label">Revenus ce mois</div>
             <div className="kpi-card-value">{euroFormatter.format(monthlyIncome)}</div>
