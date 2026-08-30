@@ -1751,7 +1751,7 @@ Voici les données financières de l'utilisateur pour ${formatMonth(selectedMont
 - Objectifs d'épargne : ${goalsText || 'aucun'}
 - Alertes actives : ${alertMessages.length > 0 ? alertMessages.map((a) => a.message).join(' | ') : 'aucune'}
 
-Réponds en français, de façon concise et bienveillante. Tu peux analyser les données ci-dessus et répondre à toutes les questions (pas seulement financières).`
+Réponds en français, de façon concise et bienveillante, en vouvoyant l'utilisateur. Tu peux analyser les données ci-dessus et répondre à toutes les questions (pas seulement financières).`
   }
 
   const handlePredictMonth = async () => {
@@ -4148,7 +4148,7 @@ Contexte:
 
 Réponse attendue:
 - 4 lignes maximum
-- français simple
+- français simple, en vouvoyant l'utilisateur
 - format: "Résumé" puis 2 actions courtes
 - pas de markdown
 - ton bienveillant et direct.`
