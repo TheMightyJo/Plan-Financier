@@ -3514,6 +3514,15 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     setQuickAddDate(date)
   }
 
+  /** Règle récurrente encore active liée à une transaction (le cas échéant). */
+  const activeRuleOf = (tx: Transaction | undefined): RecurringRule | undefined => {
+    if (!tx?.recurringRuleId) return undefined
+    const rule = recurringRules.find((r) => r.id === tx.recurringRuleId)
+    if (!rule || rule.pausedAt !== null) return undefined
+    if (rule.endDate && rule.endDate <= todayIso) return undefined
+    return rule
+  }
+
   const openQuickEdit = (tx: Transaction) => {
     setQuickAddForm({
       label: tx.label,
@@ -3522,7 +3531,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       category: tx.category,
       envelope: tx.envelope,
       tags: (tx.tags ?? []).join(', '),
-      recurrence: 'none',
+      // Pré-remplit avec la fréquence de la règle liée si elle tourne encore.
+      recurrence: activeRuleOf(tx)?.frequency ?? 'none',
       budgetMonth: tx.budgetMonth ?? '',
     })
     setQuickAddEditingId(tx.id)
@@ -3568,7 +3578,62 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
             : tx,
         ),
       )
-      showToast(quickAddForm.kind === 'revenu' ? 'Revenu mis à jour' : 'Dépense mise à jour')
+      // Récurrence en édition : arrêt, changement de fréquence, ou création
+      // d'une règle depuis une opération existante.
+      const editedTx = transactions.find((tx) => tx.id === quickAddEditingId)
+      const linkedRule = activeRuleOf(editedTx)
+      const chosen = quickAddForm.recurrence
+      if (linkedRule && chosen === 'none') {
+        // « Ne plus répéter » : la règle s'arrête à la date de l'opération.
+        setRecurringRules((previous) =>
+          previous.map((rule) =>
+            rule.id === linkedRule.id ? { ...rule, endDate: quickAddDate, updatedAt: Date.now() } : rule,
+          ),
+        )
+        showToast('Cette opération ne se répétera plus')
+      } else if (linkedRule && chosen !== 'none' && chosen !== linkedRule.frequency) {
+        const dayOfPeriod =
+          chosen === 'weekly'
+            ? ((new Date(`${quickAddDate}T12:00:00`).getDay() + 6) % 7) + 1
+            : Number(quickAddDate.slice(8, 10))
+        setRecurringRules((previous) =>
+          previous.map((rule) =>
+            rule.id === linkedRule.id
+              ? { ...rule, frequency: chosen, dayOfPeriod, amount, label: quickAddForm.label.trim(), updatedAt: Date.now() }
+              : rule,
+          ),
+        )
+        showToast('Fréquence de répétition mise à jour')
+      } else if (!linkedRule && chosen !== 'none' && editedTx) {
+        const dayOfPeriod =
+          chosen === 'weekly'
+            ? ((new Date(`${quickAddDate}T12:00:00`).getDay() + 6) % 7) + 1
+            : Number(quickAddDate.slice(8, 10))
+        const rule: RecurringRule = {
+          id: `rule-${Date.now()}`,
+          member: selectedProfileId,
+          category: quickAddForm.category,
+          envelope: quickAddForm.envelope,
+          label: quickAddForm.label.trim(),
+          amount,
+          kind: quickAddForm.kind,
+          frequency: chosen,
+          dayOfPeriod,
+          startDate: quickAddDate,
+          endDate: null,
+          lastGeneratedOn: quickAddDate,
+          pausedAt: null,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }
+        setRecurringRules((previous) => [...previous, rule])
+        setTransactions((previous) =>
+          previous.map((tx) => (tx.id === quickAddEditingId ? { ...tx, recurringRuleId: rule.id } : tx)),
+        )
+        showToast('Cette opération se répétera automatiquement')
+      } else {
+        showToast(quickAddForm.kind === 'revenu' ? 'Revenu mis à jour' : 'Dépense mise à jour')
+      }
       closeQuickAdd()
       return
     }
@@ -8335,8 +8400,7 @@ Réponse attendue:
                 automatiquement la catégorie et les tags de vos dépenses.
               </button>
             ) : null}
-            {quickAddEditingId === null ? (
-              <label>
+            <label>
                 Répéter
                 <select
                   value={quickAddForm.recurrence}
@@ -8347,14 +8411,17 @@ Réponse attendue:
                     }))
                   }
                 >
-                  <option value="none">Jamais (dépense unique)</option>
+                  <option value="none">
+                    {quickAddEditingId !== null && activeRuleOf(transactions.find((tx) => tx.id === quickAddEditingId))
+                      ? 'Ne plus répéter'
+                      : 'Jamais (opération unique)'}
+                  </option>
                   <option value="weekly">Chaque semaine</option>
                   <option value="monthly">Chaque mois</option>
                   <option value="quarterly">Chaque trimestre</option>
                   <option value="yearly">Chaque année</option>
                 </select>
               </label>
-            ) : null}
             <div className="quick-add-actions">
               <button type="button" className="ghost-button" onClick={closeQuickAdd}>
                 Annuler
