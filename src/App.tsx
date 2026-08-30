@@ -107,6 +107,13 @@ import {
   type SentInvite,
 } from './repos/familyRepo'
 import { FamilyView } from './components/FamilyView'
+import {
+  defaultReportPrefs,
+  getReportPrefs,
+  saveReportPrefs,
+  sendTestReport,
+  type ReportPrefs,
+} from './repos/reportPrefsRepo'
 import { shiftMonth } from './lib/calendar'
 import {
   computeConsolidatedBalance,
@@ -763,7 +770,7 @@ const formatChatThreadActivity = (value: number) => {
 }
 
 function App() {
-  type SettingsSection = 'profiles' | 'ai' | 'security' | 'backup' | 'reset' | 'theme' | 'rgpd' | 'account'
+  type SettingsSection = 'profiles' | 'ai' | 'security' | 'backup' | 'reset' | 'theme' | 'rgpd' | 'account' | 'report'
   const currentMonth = new Date().toISOString().slice(0, 7)
   const todayIso = new Date().toISOString().slice(0, 10)
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
@@ -822,6 +829,10 @@ function App() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteFeedback, setInviteFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  // ── Rapport par email ──
+  const [reportPrefs, setReportPrefs] = useState<ReportPrefs>(defaultReportPrefs)
+  const [reportBusy, setReportBusy] = useState(false)
+  const [reportFeedback, setReportFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [sentInvites, setSentInvites] = useState<SentInvite[]>([])
   // Cadre de relance : 1× par 24 h et par invitation (horodatage local).
   const [relanceTick, setRelanceTick] = useState(0)
@@ -2188,7 +2199,38 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return
     }
     void refreshFamily()
+    void getReportPrefs().then(setReportPrefs)
   }, [isAuthenticated])
+
+  const handleReportPrefsChange = async (next: Pick<ReportPrefs, 'frequency' | 'format'>) => {
+    setReportPrefs((previous) => ({ ...previous, ...next }))
+    setReportFeedback(null)
+    const ok = await saveReportPrefs(next)
+    if (ok) {
+      showToast(next.frequency === 'none' ? 'Rapport automatique désactivé' : '📧 Préférences de rapport enregistrées')
+    } else {
+      setReportFeedback({ kind: 'error', text: "Impossible d'enregistrer (la migration 0005 est-elle appliquée ?)." })
+    }
+  }
+
+  const handleSendTestReport = async () => {
+    if (reportBusy) return
+    setReportBusy(true)
+    setReportFeedback(null)
+    const result = await sendTestReport()
+    if (result.ok) {
+      setReportFeedback({ kind: 'ok', text: `✅ Rapport envoyé à ${userEmail} — vérifiez votre boîte mail.` })
+      showToast('📧 Rapport test envoyé')
+    } else {
+      setReportFeedback({
+        kind: 'error',
+        text: result.detail
+          ? `L'envoi a échoué : ${result.detail}`
+          : "L'envoi a échoué (fonction send-report déployée ? clé Resend configurée ?).",
+      })
+    }
+    setReportBusy(false)
+  }
 
   const handleSendFamilyInvite = async () => {
     const email = inviteEmail.trim().toLowerCase()
@@ -4944,6 +4986,7 @@ Réponse attendue:
                     group: 'Données',
                     items: [
                       ['backup', '💾', 'Sauvegarde'],
+                      ['report', '📧', 'Rapport par email'],
                       ['security', '🔐', 'Sécurité'],
                     ],
                   },
@@ -5272,6 +5315,66 @@ Réponse attendue:
                       {claudeTestMessage ? (
                         <p className={`claude-status-text claude-status-text--${claudeTestState}`}>
                           {claudeTestMessage}
+                        </p>
+                      ) : null}
+                    </article>
+                  </div>
+                ) : null}
+
+                {settingsSection === 'report' ? (
+                  <div className="settings-section-grid settings-section-grid--single">
+                    <article className="glass-card settings-section-card form-panel">
+                      <div className="panel-title">
+                        <h2>📧 Rapport par email</h2>
+                        <p>
+                          Recevez automatiquement un résumé de vos finances sur {userEmail || 'votre adresse'} —
+                          construit à partir de vos données synchronisées.
+                        </p>
+                      </div>
+                      <label>
+                        Fréquence
+                        <select
+                          value={reportPrefs.frequency}
+                          onChange={(event) =>
+                            void handleReportPrefsChange({
+                              frequency: event.target.value as ReportPrefs['frequency'],
+                              format: reportPrefs.format,
+                            })
+                          }
+                        >
+                          <option value="none">Jamais (désactivé)</option>
+                          <option value="weekly">Chaque semaine</option>
+                          <option value="monthly">Chaque mois (bilan du mois précédent)</option>
+                        </select>
+                      </label>
+                      <label>
+                        Contenu
+                        <select
+                          value={reportPrefs.format}
+                          onChange={(event) =>
+                            void handleReportPrefsChange({
+                              frequency: reportPrefs.frequency,
+                              format: event.target.value as ReportPrefs['format'],
+                            })
+                          }
+                        >
+                          <option value="summary">L'essentiel (totaux + top catégories)</option>
+                          <option value="detailed">Détaillé (avec la liste des opérations)</option>
+                        </select>
+                      </label>
+                      <div className="settings-inline-actions">
+                        <button type="button" onClick={() => void handleSendTestReport()} disabled={reportBusy}>
+                          {reportBusy ? 'Envoi…' : 'Recevoir un rapport test maintenant'}
+                        </button>
+                      </div>
+                      {reportFeedback ? (
+                        <p className={reportFeedback.kind === 'ok' ? 'auth-success' : 'auth-error'}>
+                          {reportFeedback.text}
+                        </p>
+                      ) : null}
+                      {reportPrefs.lastSentAt ? (
+                        <p className="auth-note">
+                          Dernier rapport automatique : {new Date(reportPrefs.lastSentAt).toLocaleDateString('fr-FR')}
                         </p>
                       ) : null}
                     </article>
