@@ -897,6 +897,73 @@ function App() {
   const [reportFeedback, setReportFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [reportCcDraft, setReportCcDraft] = useState('')
   const [adviceQuestion, setAdviceQuestion] = useState('')
+  const [adviceAttachment, setAdviceAttachment] = useState<{ name: string; mediaType: string; data: string } | null>(null)
+  const [adviceListening, setAdviceListening] = useState(false)
+  const adviceFileInputRef = useRef<HTMLInputElement | null>(null)
+  const adviceRecognitionRef = useRef<{ stop: () => void } | null>(null)
+
+  type SpeechRecognitionLike = {
+    lang: string
+    interimResults: boolean
+    continuous: boolean
+    onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null
+    onend: (() => void) | null
+    onerror: (() => void) | null
+    start: () => void
+    stop: () => void
+  }
+
+  const speechRecognitionCtor = (() => {
+    if (typeof window === 'undefined') return null
+    const w = window as unknown as {
+      SpeechRecognition?: new () => SpeechRecognitionLike
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike
+    }
+    return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null
+  })()
+
+  const toggleAdviceDictation = () => {
+    if (adviceListening) {
+      adviceRecognitionRef.current?.stop()
+      return
+    }
+    if (!speechRecognitionCtor) return
+    const recognition = new speechRecognitionCtor()
+    recognition.lang = 'fr-FR'
+    recognition.interimResults = true
+    recognition.continuous = false
+    recognition.onresult = (event) => {
+      const text = Array.from({ length: event.results.length }, (_, i) => event.results[i][0].transcript).join(' ')
+      setAdviceQuestion(text)
+    }
+    recognition.onend = () => setAdviceListening(false)
+    recognition.onerror = () => setAdviceListening(false)
+    adviceRecognitionRef.current = recognition
+    setAdviceListening(true)
+    recognition.start()
+  }
+
+  const handleAdviceFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Fichier trop lourd — 5 Mo maximum', 'danger')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result ?? '')
+      const comma = result.indexOf(',')
+      if (comma < 0) return
+      setAdviceAttachment({
+        name: file.name,
+        mediaType: file.type || 'application/octet-stream',
+        data: result.slice(comma + 1),
+      })
+    }
+    reader.readAsDataURL(file)
+  }
   const [sentInvites, setSentInvites] = useState<SentInvite[]>([])
   // Cadre de relance : 1× par 24 h et par invitation (horodatage local).
   const [relanceTick, setRelanceTick] = useState(0)
@@ -1739,10 +1806,29 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
   }
 
-  const sendChatMessage = async (presetMessage?: string) => {    const message = (presetMessage ?? chatInput).trim()
+  const sendChatMessage = async (
+    presetMessage?: string,
+    attachment?: { name: string; mediaType: string; data: string } | null,
+  ) => {
+    const message = (presetMessage ?? chatInput).trim()
     if (!message || !anthropicKey || chatLoading) return
 
-    const newMessages: ChatMessage[] = [...chatMessages, { role: 'user', content: message }]
+    // Historique affiché/stocké : texte seul (la pièce jointe est signalée par
+    // son nom). Elle n'est transmise au modèle que pour ce tour-ci.
+    const displayContent = attachment ? `📎 ${attachment.name}\n${message}` : message
+    const newMessages: ChatMessage[] = [...chatMessages, { role: 'user', content: displayContent }]
+    const lastApiContent = attachment
+      ? [
+          attachment.mediaType === 'application/pdf'
+            ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: attachment.data } }
+            : { type: 'image', source: { type: 'base64', media_type: attachment.mediaType, data: attachment.data } },
+          { type: 'text', text: message },
+        ]
+      : message
+    const apiMessages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [
+      ...chatMessages,
+      { role: 'user', content: lastApiContent },
+    ]
     // Timestamp réel de l'action utilisateur (handler, pas du render).
     // eslint-disable-next-line react-hooks/purity
     updateChatThreadActivity(activeChatThread.id, Date.now())
@@ -1763,7 +1849,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 1024,
           system: buildFinancialContext(),
-          messages: newMessages,
+          messages: apiMessages,
         }),
       })
 
@@ -7584,19 +7670,61 @@ Réponse attendue:
                 if (!question) return
                 setAdviceQuestion('')
                 setChatOpen(true)
-                void sendChatMessage(question)
+                void sendChatMessage(question, adviceAttachment)
+                setAdviceAttachment(null)
               }}
             >
+              {adviceAttachment ? (
+                <span className="advice-attachment-chip">
+                  📎 {adviceAttachment.name}
+                  <button
+                    type="button"
+                    onClick={() => setAdviceAttachment(null)}
+                    aria-label="Retirer la pièce jointe"
+                  >
+                    ✕
+                  </button>
+                </span>
+              ) : null}
+              <div className="advice-chat-row">
+                <button
+                  type="button"
+                  className="advice-icon-btn"
+                  onClick={() => adviceFileInputRef.current?.click()}
+                  title="Joindre une image ou un PDF (ticket, facture…)"
+                  aria-label="Joindre une pièce jointe"
+                >
+                  📎
+                </button>
+                {speechRecognitionCtor ? (
+                  <button
+                    type="button"
+                    className={`advice-icon-btn${adviceListening ? ' advice-icon-btn--live' : ''}`}
+                    onClick={toggleAdviceDictation}
+                    title={adviceListening ? 'Arrêter la dictée' : 'Dicter la question'}
+                    aria-label={adviceListening ? 'Arrêter la dictée' : 'Dicter la question'}
+                  >
+                    🎤
+                  </button>
+                ) : null}
+                <input
+                  type="text"
+                  value={adviceQuestion}
+                  onChange={(event) => setAdviceQuestion(event.target.value)}
+                  placeholder={adviceListening ? '🎤 Je vous écoute…' : 'Votre question…'}
+                  aria-label="Question à l'assistant IA"
+                />
+                <button type="submit" disabled={!adviceQuestion.trim() || chatLoading} aria-label="Envoyer la question" title="Envoyer">
+                  ➤
+                </button>
+              </div>
               <input
-                type="text"
-                value={adviceQuestion}
-                onChange={(event) => setAdviceQuestion(event.target.value)}
-                placeholder="Posez une question sur vos finances…"
-                aria-label="Question à l'assistant IA"
+                type="file"
+                hidden
+                ref={adviceFileInputRef}
+                accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+                onChange={handleAdviceFile}
               />
-              <button type="submit" disabled={!adviceQuestion.trim() || chatLoading}>
-                Demander
-              </button>
             </form>
             ) : null}
           </>
