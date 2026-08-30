@@ -7505,7 +7505,7 @@ h1 {
   right: 1.5rem;
   z-index: 199;
   width: min(28rem, calc(100vw - 2rem));
-  max-height: min(78vh, 46rem);
+  height: min(80vh, 52rem);
   display: flex;
   flex-direction: column;
   border-radius: 1.2rem;
