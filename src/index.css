@@ -10423,3 +10423,9 @@ h1 {
 .stats-export-btn {
   font-size: var(--text-sm);
 }
+
+/* Le titre de mois des Statistiques garde sa taille malgré le style picker. */
+.stats-month-title span {
+  font-size: var(--text-base);
+  font-weight: 800;
+}

@@ -6820,9 +6820,23 @@ Réponse attendue:
                 onClick={() => { setStatsMonth(shiftMonth(statsMonth, -1)); setStatsSelectedWeek(null) }}
                 aria-label="Mois précédent"
               >‹</button>
-              <strong className="stats-month-title">
-                {formatMonth(statsMonth).charAt(0).toUpperCase() + formatMonth(statsMonth).slice(1)}
-              </strong>
+              <label className="month-picker-label stats-month-title" title="Choisir le mois et l'année">
+                <span>
+                  {formatMonth(statsMonth).charAt(0).toUpperCase() + formatMonth(statsMonth).slice(1)}
+                </span>
+                <input
+                  type="month"
+                  value={statsMonth}
+                  max={todayIso.slice(0, 7)}
+                  onChange={(event) => {
+                    if (!event.target.value) return
+                    setStatsMonth(event.target.value > todayIso.slice(0, 7) ? todayIso.slice(0, 7) : event.target.value)
+                    setStatsSelectedWeek(null)
+                  }}
+                  className="month-picker-input"
+                  aria-label="Sélecteur de mois des statistiques"
+                />
+              </label>
               <button
                 type="button"
                 onClick={() => { setStatsMonth(shiftMonth(statsMonth, 1)); setStatsSelectedWeek(null) }}
