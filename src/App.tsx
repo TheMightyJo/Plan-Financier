@@ -5258,6 +5258,29 @@ Réponse attendue:
               ? `≈ ${euroFormatter.format(dailyAllowance)} / jour sur les ${daysLeftInMonth} jours restants`
               : 'Budget dépassé — réduisez une catégorie ou ajustez le budget.'}
           </p>
+          {(() => {
+            const week = weeklyStatsData.at(-1)
+            if (!week) return null
+            return (
+              <button
+                type="button"
+                className="hero-week-status"
+                onClick={() => navigateToSection('stats')}
+                title="Voir les statistiques hebdomadaires"
+              >
+                <span className="hero-week-status__label">Semaine du {week.label} :</span>
+                <span className={`stats-week-type stats-week-type--${week.type}`}>
+                  {week.type === 'danger' ? '⚠️ Danger'
+                    : week.type === 'highest' ? '🏆 Highest ever'
+                    : week.type === 'up' ? '📈 Up'
+                    : 'Normal'}
+                </span>
+                <strong className={week.net < 0 ? 'expense' : 'income'}>
+                  {week.net >= 0 ? '+' : ''}{euroFormatter.format(week.net)}
+                </strong>
+              </button>
+            )
+          })()}
           <div className="hero-primary-actions">
             <button type="button" className="hero-cta-button" onClick={() => openQuickAdd(todayIso)}>
               <Plus size={16} /> Ajouter une dépense ou un revenu
@@ -5301,29 +5324,6 @@ Réponse attendue:
 
         {isActiveView('overview') ? (
         <section className="kpi-summary" style={{ margin: '0 0 1rem 0' }}>
-          {(() => {
-            const week = weeklyStatsData.at(-1)
-            if (!week) return null
-            return (
-              <button
-                type="button"
-                className="kpi-card kpi-card--week"
-                onClick={() => navigateToSection('stats')}
-                title="Voir les statistiques hebdomadaires"
-              >
-                <div className="kpi-card-label">Semaine en cours</div>
-                <div className={`kpi-card-value ${week.net < 0 ? 'expense' : 'income'}`}>
-                  {week.net >= 0 ? '+' : ''}{euroFormatter.format(week.net)}
-                </div>
-                <span className={`stats-week-type stats-week-type--${week.type}`}>
-                  {week.type === 'danger' ? '⚠️ Danger'
-                    : week.type === 'highest' ? '🏆 Highest ever'
-                    : week.type === 'up' ? '📈 Up'
-                    : 'Normal'}
-                </span>
-              </button>
-            )
-          })()}
           <div className="kpi-card kpi-card--secondary">
             <div className="kpi-card-label">Revenus ce mois</div>
             <div className="kpi-card-value">{euroFormatter.format(monthlyIncome)}</div>

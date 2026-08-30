@@ -10305,19 +10305,38 @@ h1 {
   .stats-week-amounts { display: none; }
 }
 
-/* ── Accueil : carte « Semaine en cours » (cliquable → Statistiques) ─ */
-.kpi-card--week {
+/* ── Hero : statut de la semaine en cours (cliquable → Statistiques) ─ */
+.hero-week-status {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  margin: 0.55rem 0 0;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
   background: var(--surface-soft);
+  color: var(--text-1);
   font: inherit;
-  color: inherit;
-  text-align: left;
+  font-size: var(--text-xs);
   cursor: pointer;
-  justify-items: start;
+  justify-self: start;
+  width: auto;
+  transition: border-color 0.12s ease;
 }
 
-.kpi-card--week:hover {
-  border-color: rgba(var(--accent-rgb), 0.55);
+.hero-week-status:hover {
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+.hero-week-status__label {
+  color: var(--text-2);
+  font-weight: 700;
+}
+
+.hero-week-status strong {
+  font-size: var(--text-sm);
 }
 
 /* ── Statistiques : navigation de période + export ────────────────── */
