@@ -9777,3 +9777,28 @@ h1 {
   opacity: 0.55;
   cursor: default;
 }
+
+/* ── Modale d'ajout : bascule Dépense / Revenu ────────────────────── */
+.quick-add-kind {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.quick-add-kind__option {
+  flex: 1 1 0;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.7rem;
+  border: 1.5px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.quick-add-kind__option--active {
+  border-color: rgba(var(--accent-rgb), 0.6);
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--text-1);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.22);
+}

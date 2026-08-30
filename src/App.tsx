@@ -3287,6 +3287,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const [quickAddForm, setQuickAddForm] = useState({
     label: '',
     amount: '',
+    kind: 'depense' as TransactionKind,
     category: 'Courses' as Category,
     envelope: 'Maison' as Envelope,
     tags: '',
@@ -3356,7 +3357,9 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const scheduleQuickAddAi = (label: string) => {
-    if (!isBudgetAiConfigured || quickAddEditingId !== null) return
+    // La classification IA (catégorie/tags/emoji marchand) ne vaut que pour
+    // les dépenses.
+    if (!isBudgetAiConfigured || quickAddEditingId !== null || quickAddForm.kind === 'revenu') return
     if (quickAddAiTimerRef.current !== null) window.clearTimeout(quickAddAiTimerRef.current)
     if (label.trim().length < 3) return
     quickAddAiTimerRef.current = window.setTimeout(() => {
@@ -3366,7 +3369,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const openQuickAdd = (date: string) => {
-    setQuickAddForm({ label: '', amount: '', category: 'Courses', envelope: 'Maison', tags: '', recurrence: 'none' })
+    setQuickAddForm({ label: '', amount: '', kind: 'depense', category: 'Courses', envelope: 'Maison', tags: '', recurrence: 'none' })
     setQuickAddEditingId(null)
     quickAddTouchedRef.current = { category: false, tags: false }
     quickAddAiIconRef.current = null
@@ -3378,6 +3381,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     setQuickAddForm({
       label: tx.label,
       amount: String(tx.amount).replace('.', ','),
+      kind: tx.kind,
       category: tx.category,
       envelope: tx.envelope,
       tags: (tx.tags ?? []).join(', '),
@@ -3416,6 +3420,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
                 ...tx,
                 label: quickAddForm.label.trim(),
                 amount,
+                kind: quickAddForm.kind,
                 category: quickAddForm.category,
                 envelope: quickAddForm.envelope,
                 date: quickAddDate,
@@ -3424,7 +3429,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
             : tx,
         ),
       )
-      showToast('Dépense mise à jour')
+      showToast(quickAddForm.kind === 'revenu' ? 'Revenu mis à jour' : 'Dépense mise à jour')
       closeQuickAdd()
       return
     }
@@ -3445,7 +3450,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
         envelope: quickAddForm.envelope,
         label: quickAddForm.label.trim(),
         amount,
-        kind: 'depense',
+        kind: quickAddForm.kind,
         frequency,
         dayOfPeriod,
         startDate: quickAddDate,
@@ -3472,7 +3477,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       category: quickAddForm.category,
       member: selectedProfileId,
       date: quickAddDate,
-      kind: 'depense',
+      kind: quickAddForm.kind,
       envelope: quickAddForm.envelope,
       ...(icon ? { icon } : {}),
       ...(parsedTags.length > 0 ? { tags: parsedTags } : {}),
@@ -3480,7 +3485,11 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       accountId: resolvedAccountId,
     }
     setTransactions((previous) => [...previous, newTransaction])
-    showToast(createdRuleId ? 'Dépense ajoutée — elle se répétera automatiquement' : 'Dépense ajoutée')
+    showToast(
+      quickAddForm.kind === 'revenu'
+        ? (createdRuleId ? 'Revenu ajouté — il se répétera automatiquement' : 'Revenu ajouté')
+        : (createdRuleId ? 'Dépense ajoutée — elle se répétera automatiquement' : 'Dépense ajoutée'),
+    )
     closeQuickAdd()
   }
 
@@ -4953,7 +4962,7 @@ Réponse attendue:
           </p>
           <div className="hero-primary-actions">
             <button type="button" className="hero-cta-button" onClick={() => openQuickAdd(todayIso)}>
-              <Plus size={16} /> Ajouter une dépense
+              <Plus size={16} /> Ajouter une dépense ou un revenu
             </button>
             <button type="button" className="ghost-button" onClick={() => void exportMonthlyPdf()}>
               <Download size={16} /> PDF mensuel
@@ -7927,10 +7936,38 @@ Réponse attendue:
             ✕
           </button>
           <h3>
-            {quickAddEditingId !== null ? 'Modifier la dépense' : 'Ajouter une dépense'} —{' '}
-            {new Date(`${quickAddDate}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+            {quickAddEditingId !== null
+              ? (quickAddForm.kind === 'revenu' ? 'Modifier le revenu' : 'Modifier la dépense')
+              : (quickAddForm.kind === 'revenu' ? 'Ajouter un revenu' : 'Ajouter une dépense')}{' '}
+            — {new Date(`${quickAddDate}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
           </h3>
           <form onSubmit={handleQuickAddSubmit} className="quick-add-form">
+            <div className="quick-add-kind" role="radiogroup" aria-label="Type d'opération">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={quickAddForm.kind === 'depense'}
+                className={`quick-add-kind__option${quickAddForm.kind === 'depense' ? ' quick-add-kind__option--active' : ''}`}
+                onClick={() => setQuickAddForm((previous) => ({ ...previous, kind: 'depense' }))}
+              >
+                💸 Dépense
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={quickAddForm.kind === 'revenu'}
+                className={`quick-add-kind__option${quickAddForm.kind === 'revenu' ? ' quick-add-kind__option--active' : ''}`}
+                onClick={() =>
+                  setQuickAddForm((previous) => ({
+                    ...previous,
+                    kind: 'revenu',
+                    category: quickAddTouchedRef.current.category ? previous.category : 'Autre',
+                  }))
+                }
+              >
+                💰 Revenu
+              </button>
+            </div>
             <label>
               Libellé
               <input
