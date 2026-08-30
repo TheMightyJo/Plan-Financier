@@ -8286,7 +8286,7 @@ Réponse attendue:
               </button>
             </div>
             <label>
-              Libellé
+              <span>Libellé <span className="required-star" aria-hidden="true">*</span></span>
               <input
                 value={quickAddForm.label}
                 onChange={(event) => {
@@ -8307,7 +8307,7 @@ Réponse attendue:
             </label>
             <div className="quick-add-selects">
               <label>
-                Montant (€)
+                <span>Montant (€) <span className="required-star" aria-hidden="true">*</span></span>
                 <input
                   type="text"
                   inputMode="decimal"
@@ -8318,7 +8318,7 @@ Réponse attendue:
                 />
               </label>
               <label>
-                Date
+                <span>Date <span className="required-star" aria-hidden="true">*</span></span>
                 <input
                   type="date"
                   value={quickAddDate}
@@ -8422,6 +8422,9 @@ Réponse attendue:
                   <option value="yearly">Chaque année</option>
                 </select>
               </label>
+            <p className="quick-add-required-note">
+              <span className="required-star" aria-hidden="true">*</span> Champs obligatoires pour enregistrer.
+            </p>
             <div className="quick-add-actions">
               <button type="button" className="ghost-button" onClick={closeQuickAdd}>
                 Annuler

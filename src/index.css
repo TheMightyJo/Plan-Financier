@@ -10113,3 +10113,15 @@ h1 {
   background: rgba(var(--accent-rgb), 0.13);
   box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.22);
 }
+
+/* ── Modale : marquage des champs obligatoires ────────────────────── */
+.required-star {
+  color: var(--danger, #C05C2A);
+  font-weight: 800;
+}
+
+.quick-add-required-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--text-2xs);
+}
