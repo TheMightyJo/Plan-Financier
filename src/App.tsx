@@ -26,6 +26,8 @@ import {
   BellRing,
   Upload,
   FileSpreadsheet,
+  ChevronDown,
+  ChevronUp,
   Download,
   Layers3,
   Brain,
@@ -897,6 +899,17 @@ function App() {
   const chatRecognitionRef = useRef<{ stop: () => void } | null>(null)
   // Bulle d'invitation près de la bulle de chat (1× par jour, discrète).
   const [chatNudgeVisible, setChatNudgeVisible] = useState(false)
+  // Indicateurs de défilement du chat (du contenu caché en haut / en bas ?).
+  const chatScrollRef = useRef<HTMLDivElement | null>(null)
+  const [chatScrollHints, setChatScrollHints] = useState({ up: false, down: false })
+
+  const updateChatScrollHints = () => {
+    const el = chatScrollRef.current
+    if (!el) return
+    const up = el.scrollTop > 48
+    const down = el.scrollTop + el.clientHeight < el.scrollHeight - 48
+    setChatScrollHints((previous) => (previous.up === up && previous.down === down ? previous : { up, down }))
+  }
 
   type SpeechRecognitionLike = {
     lang: string
@@ -1927,6 +1940,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
       chatInputRef.current?.focus()
     }
+    const timer = window.setTimeout(updateChatScrollHints, 350)
+    return () => window.clearTimeout(timer)
   }, [chatMessages, chatOpen, chatLoading])
   // ──────────────────────────────────────────────────────────────────────
 
@@ -8395,7 +8410,37 @@ Réponse attendue:
               </div>
             ) : null}
 
-            <div className="chat-messages" aria-live="polite" aria-relevant="additions text">
+            <div className="chat-messages-wrap">
+              {chatScrollHints.up ? (
+                <button
+                  type="button"
+                  className="chat-scroll-hint chat-scroll-hint--up"
+                  onClick={() => chatScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+                  aria-label="Remonter la conversation"
+                >
+                  <ChevronUp size={18} />
+                </button>
+              ) : null}
+              {chatScrollHints.down ? (
+                <button
+                  type="button"
+                  className="chat-scroll-hint chat-scroll-hint--down"
+                  onClick={() => {
+                    const el = chatScrollRef.current
+                    el?.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+                  }}
+                  aria-label="Descendre en bas de la conversation"
+                >
+                  <ChevronDown size={18} />
+                </button>
+              ) : null}
+            <div
+              className="chat-messages"
+              ref={chatScrollRef}
+              onScroll={updateChatScrollHints}
+              aria-live="polite"
+              aria-relevant="additions text"
+            >
               {chatMessages.length === 0 ? (
                 <div className="chat-empty">
                   <Bot size={32} />
@@ -8439,6 +8484,7 @@ Réponse attendue:
                 </div>
               ) : null}
               <div ref={chatEndRef} />
+            </div>
             </div>
 
             {chatAttachment ? (
