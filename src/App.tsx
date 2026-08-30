@@ -6939,6 +6939,13 @@ Réponse attendue:
                     name === 'income' ? 'Revenus' : 'Dépenses',
                   ]}
                   labelFormatter={(label) => (statsSelectedWeek ? String(label) : `Semaine du ${label}`)}
+                  contentStyle={{
+                    background: 'var(--bg-2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 10,
+                    color: 'var(--text-1)',
+                  }}
+                  labelStyle={{ color: 'var(--text-1)', fontWeight: 700 }}
                 />
                 <Line
                   type="linear"

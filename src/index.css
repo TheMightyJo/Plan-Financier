@@ -10297,11 +10297,19 @@ h1 {
   justify-content: space-between;
   gap: 0.7rem;
   flex-wrap: wrap;
-  padding: 0.55rem 0.75rem;
-  border-radius: 0.7rem;
-  border: 1.5px solid rgba(var(--accent-rgb), 0.45);
-  background: rgba(var(--accent-rgb), 0.08);
-  font-size: var(--text-sm);
+  margin: 0.35rem 0 0.75rem;
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.stats-week-detail-bar strong {
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.stats-week-detail-bar .ghost-button {
+  padding: 0.3rem 0.65rem;
+  font-size: var(--text-xs);
 }
 
 .stats-week-label {
