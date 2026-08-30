@@ -4841,6 +4841,7 @@ Réponse attendue:
             today={todayIso}
             onAddExpense={openQuickAdd}
             onEditExpense={openQuickEdit}
+            recurringRules={recurringRules.filter((rule) => rule.member === selectedProfileId)}
           />
         </section>
         ) : null}

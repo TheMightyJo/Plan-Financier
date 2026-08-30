@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { buildMonthGrid, shiftDay, shiftMonth } from '../lib/calendar'
+import { getOccurrencesBetween } from '../lib/recurring'
 import { euroFormatter } from '../lib/format'
 import { categoryColors } from '../lib/categories'
-import type { Transaction } from '../types'
+import type { RecurringRule, Transaction } from '../types'
 
 type CalendarView = 'day' | 'month' | 'year'
 
@@ -18,6 +19,8 @@ type Props = {
   onAddExpense?: (date: string) => void
   /** Si fourni : bouton ✏️ sur chaque opération de la vue jour. */
   onEditExpense?: (transaction: Transaction) => void
+  /** Règles récurrentes du profil : projette les échéances À VENIR (« prévu »). */
+  recurringRules?: RecurringRule[]
 }
 
 const WEEKDAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
@@ -45,7 +48,7 @@ const formatDayTitle = (isoDate: string): string =>
     year: 'numeric',
   })
 
-export function ExpenseCalendar({ month, transactions, onMonthChange, today, onAddExpense, onEditExpense }: Props) {
+export function ExpenseCalendar({ month, transactions, onMonthChange, today, onAddExpense, onEditExpense, recurringRules = [] }: Props) {
   const [view, setView] = useState<CalendarView>('month')
   const [selectedDay, setSelectedDay] = useState<string>(() => `${month}-01`)
 
@@ -76,6 +79,28 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
   }, [transactions, year])
 
   const weeks = useMemo(() => buildMonthGrid(month), [month])
+
+  // Échéances récurrentes À VENIR (strictement après aujourd'hui) sur la
+  // plage affichée — montrées en « prévu », sans compter dans les totaux.
+  const plannedByDay = useMemo(() => {
+    const map = new Map<string, { total: number; items: Array<{ label: string; amount: number; kind: Transaction['kind'] }> }>()
+    if (recurringRules.length === 0) return map
+    const gridStart = weeks[0]?.days[0]?.date
+    const gridEnd = weeks.at(-1)?.days.at(-1)?.date
+    if (!gridStart || !gridEnd) return map
+    const from = shiftDay(today, 1) > gridStart ? shiftDay(today, 1) : gridStart
+    if (from > gridEnd) return map
+    for (const rule of recurringRules) {
+      if (rule.pausedAt !== null) continue
+      for (const date of getOccurrencesBetween(rule, from, gridEnd)) {
+        const entry = map.get(date) ?? { total: 0, items: [] }
+        entry.total += rule.kind === 'depense' ? rule.amount : 0
+        entry.items.push({ label: rule.label, amount: rule.amount, kind: rule.kind })
+        map.set(date, entry)
+      }
+    }
+    return map
+  }, [recurringRules, weeks, today])
   const monthMaxSpent = useMemo(
     () =>
       Math.max(
@@ -183,6 +208,11 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
                     <span className="expense-calendar__daynum">{cell.day}</span>
                     {spent > 0 ? <span className="expense-calendar__spent">−{compactEuro(spent)}</span> : null}
                     {income > 0 ? <span className="expense-calendar__income">+{compactEuro(income)}</span> : null}
+                    {(plannedByDay.get(cell.date)?.total ?? 0) > 0 ? (
+                      <span className="expense-calendar__planned" title="Échéance prévue (charge récurrente)">
+                        ⏳{compactEuro(plannedByDay.get(cell.date)!.total)}
+                      </span>
+                    ) : null}
                   </button>
                 )
               })}
@@ -259,6 +289,23 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
               ))}
             </ul>
           )}
+          {(plannedByDay.get(selectedDay)?.items.length ?? 0) > 0 ? (
+            <div className="expense-calendar__planned-block">
+              <p className="expense-calendar__planned-title">⏳ Prévu ce jour (charges récurrentes)</p>
+              <ul className="expense-calendar__day-list">
+                {plannedByDay.get(selectedDay)!.items.map((item, index) => (
+                  <li key={`${item.label}-${index}`} className="expense-calendar__planned-row">
+                    <span className="recurring-badge" aria-hidden="true">🔁</span>
+                    <span className="expense-calendar__day-label">{item.label}</span>
+                    <span className="expense-calendar__day-cat">automatique</span>
+                    <span className={item.kind === 'depense' ? 'expense-calendar__spent' : 'expense-calendar__income'}>
+                      {item.kind === 'depense' ? '−' : '+'}{euroFormatter.format(item.amount)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <div className="expense-calendar__day-actions">
             {onAddExpense ? (
               <button type="button" className="hero-cta-button" onClick={() => onAddExpense(selectedDay)}>
