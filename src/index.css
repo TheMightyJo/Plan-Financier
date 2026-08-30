@@ -7548,9 +7548,9 @@ h1 {
   width: 1.75rem;
   height: 1.75rem;
   border-radius: 0.45rem;
-  border: 1px solid rgba(192, 92, 42, 0.45);
-  background: rgba(192, 92, 42, 0.12);
-  color: var(--danger, #C05C2A);
+  border: 0;
+  background: #C05C2A;
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -7559,7 +7559,7 @@ h1 {
 }
 
 .chat-clear-btn:hover:not(:disabled) {
-  background: rgba(192, 92, 42, 0.22);
+  background: #a84d22;
 }
 
 .chat-clear-btn:disabled {
@@ -7741,10 +7741,15 @@ h1 {
 .chat-messages {
   flex: 1;
   overflow-y: auto;
+  scrollbar-width: none;
   padding: 0.8rem;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+}
+
+.chat-messages::-webkit-scrollbar {
+  display: none;
 }
 
 .chat-empty {
