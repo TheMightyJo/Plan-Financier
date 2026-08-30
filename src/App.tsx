@@ -27,8 +27,6 @@ import {
   Upload,
   FileSpreadsheet,
   Download,
-  ChevronDown,
-  ChevronUp,
   Layers3,
   Brain,
   Landmark,
@@ -195,6 +193,7 @@ const MANUAL_ONBOARDING_PHASES = [
 ]
 const FIRST_TX_TOUR_DONE_KEY = 'plan-financier-first-tx-tour-done-v1'
 const ENVELOPE_BUDGETS_STORAGE_KEY = 'plan-financier-envelope-budgets-v1'
+const ENVELOPE_FUNDS_STORAGE_KEY = 'plan-financier-envelope-funds-v1'
 const THEME_STORAGE_KEY = 'plan-financier-theme-v1'
 const PALETTE_STORAGE_KEY = 'plan-financier-palette-v1'
 const NOTES_STORAGE_KEY = 'plan-financier-notes-v1'
@@ -1057,10 +1056,6 @@ function App() {
   const [rolloverState, setRolloverState] = useState<RolloverState>(() =>
     loadRolloverState(currentMonth, loadProfiles()),
   )
-  const [goalEditor, setGoalEditor] = useState<{ category: Category; amount: string }>({
-    category: 'Courses',
-    amount: '',
-  })
   const [smartCategory, setSmartCategory] = useState<Category | null>(null)
   const [selectedEnvelope, setSelectedEnvelope] = useState<'Tous' | Envelope>('Tous')
   const [csvBankKey, setCsvBankKey] = useState('')
@@ -1094,13 +1089,12 @@ function App() {
   const [budgetCompareMonths, setBudgetCompareMonths] = useState(false)
   const [budgetInfoOpen, setBudgetInfoOpen] = useState<'type' | 'filter' | 'period' | 'compare' | null>(null)
   const [budgetInfoDotOpen, setBudgetInfoDotOpen] = useState<'summary' | 'budget' | 'spent' | 'remaining' | 'trend' | null>(null)
-  const [budgetExportFormat, setBudgetExportFormat] = useState<'txt' | 'csv' | 'json' | 'pdf'>('pdf')
-  const [budgetExportOpen, setBudgetExportOpen] = useState(false)
   const [budgetAssistantAdvice, setBudgetAssistantAdvice] = useState('')
   const [budgetAssistantError, setBudgetAssistantError] = useState('')
   const [budgetAssistantLoading, setBudgetAssistantLoading] = useState(false)
   const [budgetAssistantContextLoaded, setBudgetAssistantContextLoaded] = useState('')
-  const [budgetSimpleMode, setBudgetSimpleMode] = useState(true)
+  // Mode simple permanent (le bascule a été retiré de l'interface).
+  const budgetSimpleMode = true
   // Objectifs par poche (enveloppes) : Record<profileId, Record<poche, montant>>.
   const [envelopeBudgets, setEnvelopeBudgets] = useState<Record<string, Record<string, number>>>(() => {
     try {
@@ -1112,6 +1106,19 @@ function App() {
   })
   const [envelopeEditing, setEnvelopeEditing] = useState<string | null>(null)
   const [envelopeDraft, setEnvelopeDraft] = useState('')
+  // Argent « mis dans » chaque poche (provision) : Record<profileId, Record<poche, montant>>.
+  const [envelopeFunds, setEnvelopeFunds] = useState<Record<string, Record<string, number>>>(() => {
+    try {
+      const raw = window.localStorage.getItem(ENVELOPE_FUNDS_STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as Record<string, Record<string, number>>) : {}
+    } catch {
+      return {}
+    }
+  })
+  const [envelopeOpenName, setEnvelopeOpenName] = useState<string | null>(null)
+  const [goalRowEditing, setGoalRowEditing] = useState<string | null>(null)
+  const [goalRowDraft, setGoalRowDraft] = useState('')
+  const [envelopeAddDraft, setEnvelopeAddDraft] = useState('')
   const [budgetQuickEditOpen, setBudgetQuickEditOpen] = useState(false)
   const [budgetQuickEditValue, setBudgetQuickEditValue] = useState('')
   const [budgetAssistantVisible, setBudgetAssistantVisible] = useState(true)
@@ -3058,7 +3065,27 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
   }, [envelopeBudgets, demoMode])
 
+  useEffect(() => {
+    if (demoMode) return
+    try {
+      window.localStorage.setItem(ENVELOPE_FUNDS_STORAGE_KEY, JSON.stringify(envelopeFunds))
+    } catch {
+      /* stockage indisponible : silencieux */
+    }
+  }, [envelopeFunds, demoMode])
+
   const profileEnvelopeBudgets = envelopeBudgets[selectedProfileId] ?? {}
+  const profileEnvelopeFunds = envelopeFunds[selectedProfileId] ?? {}
+
+  const addToEnvelopeFund = (name: string, delta: number) => {
+    setEnvelopeFunds((previous) => {
+      const forProfile = { ...(previous[selectedProfileId] ?? {}) }
+      const next = Math.max(0, Math.round(((forProfile[name] ?? 0) + delta) * 100) / 100)
+      if (next > 0) forProfile[name] = next
+      else delete forProfile[name]
+      return { ...previous, [selectedProfileId]: forProfile }
+    })
+  }
 
   const saveEnvelopeBudget = (name: string, value: number) => {
     setEnvelopeBudgets((previous) => {
@@ -3081,6 +3108,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       .map((name) => {
         const spent = spentBy.get(name) ?? 0
         const target = profileEnvelopeBudgets[name] ?? 0
+        const fund = profileEnvelopeFunds[name] ?? 0
         const ratio = target > 0 ? spent / target : null
         const weather =
           ratio === null
@@ -3092,10 +3120,10 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
             : ratio <= 1
             ? { icon: '🌧️', label: 'Pluie — la limite approche', tone: 'rain' as const }
             : { icon: '⛈️', label: 'Orage — objectif dépassé !', tone: 'storm' as const }
-        return { name, spent, target, ratio, weather }
+        return { name, spent, target, fund, inside: fund - spent, ratio, weather }
       })
       .sort((a, b) => b.spent - a.spent)
-  }, [activeMonthTransactions, profileEnvelopeBudgets])
+  }, [activeMonthTransactions, profileEnvelopeBudgets, profileEnvelopeFunds])
 
   const envelopeBreakdown = useMemo(
     () =>
@@ -3883,23 +3911,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
   }
 
-  const updateGoalTarget = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const amount = Number(goalEditor.amount)
-    if (Number.isNaN(amount) || amount <= 0) {
-      return
-    }
-
-    setSavingsGoals((previous) => ({
-      ...previous,
-      [selectedProfileId]: {
-        ...(previous[selectedProfileId] ?? defaultGoalTemplate),
-        [goalEditor.category]: amount,
-      },
-    }))
-    setGoalEditor((previous) => ({ ...previous, amount: '' }))
-  }
-
   const handleCsvFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) {
@@ -4156,94 +4167,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     })
 
     document.save(`bilan-${selectedProfileName.toLowerCase().replace(/\s+/g, '-')}-${currentMonth}.pdf`)
-  }
-
-  const exportBudgetSummary = async () => {
-    const todayLabel = new Date().toLocaleDateString('fr-FR')
-    const fileBase = `resume-budget-${currentMonth}`
-    const summary = {
-      date: todayLabel,
-      profil: selectedProfileName,
-      mois: currentMonth,
-      budget,
-      depense: monthlyExpense,
-      revenu: monthlyIncome,
-      reste: remaining,
-      utilisationPercent: Number(usageRate.toFixed(0)),
-      etat: budgetStatusLabel,
-      score: budgetMasteryScore,
-      projectionDepense: Math.round(projectionData.projectedExpense),
-      projectionEcart: Math.round(projectionData.projectedOverrun),
-      message: budgetSimpleMessage,
-      actions: budgetActionsList,
-    }
-
-    const downloadBlob = (content: BlobPart, mimeType: string, extension: string) => {
-      const blob = new Blob([content], { type: mimeType })
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = `${fileBase}.${extension}`
-      document.body.appendChild(anchor)
-      anchor.click()
-      anchor.remove()
-      URL.revokeObjectURL(url)
-    }
-
-    if (budgetExportFormat === 'txt') {
-      const text = [
-        `Résumé Budget - ${todayLabel}`,
-        `Profil: ${selectedProfileName}`,
-        `Mois: ${currentMonth}`,
-        '',
-        `Budget: ${euroFormatter.format(budget)}`,
-        `Dépensé: ${euroFormatter.format(monthlyExpense)}`,
-        `Revenus: ${euroFormatter.format(monthlyIncome)}`,
-        `Reste: ${euroFormatter.format(remaining)}`,
-        `Utilisation: ${usageRate.toFixed(0)}%`,
-        `Score de maîtrise: ${budgetMasteryScore}/100`,
-        `Projection dépenses fin de mois: ${euroFormatter.format(projectionData.projectedExpense)}`,
-        `État: ${budgetStatusLabel}`,
-        '',
-        'Actions recommandées:',
-        ...budgetActionsList.map((action) => `- ${action}`),
-      ].join('\n')
-      downloadBlob(text, 'text/plain;charset=utf-8', 'txt')
-      return
-    }
-
-    if (budgetExportFormat === 'csv') {
-      const escapeCsvCell = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`
-      const csvRows = [
-        ['date', 'profil', 'mois', 'budget', 'depense', 'revenu', 'reste', 'utilisation_percent', 'score', 'projection_depense', 'projection_ecart', 'etat', 'message'],
-        [
-          summary.date,
-          summary.profil,
-          summary.mois,
-          summary.budget,
-          summary.depense,
-          summary.revenu,
-          summary.reste,
-          summary.utilisationPercent,
-          summary.score,
-          summary.projectionDepense,
-          summary.projectionEcart,
-          summary.etat,
-          summary.message,
-        ],
-      ]
-      const actionsRows = budgetActionsList.map((action) => ['action', action])
-      const csv = [...csvRows.map((row) => row.map(escapeCsvCell).join(',')), ...actionsRows.map((row) => row.map(escapeCsvCell).join(','))].join('\n')
-      downloadBlob(csv, 'text/csv;charset=utf-8', 'csv')
-      return
-    }
-
-    if (budgetExportFormat === 'json') {
-      downloadBlob(JSON.stringify(summary, null, 2), 'application/json;charset=utf-8', 'json')
-      return
-    }
-
-    await exportMonthlyPdf()
   }
 
 
@@ -5930,7 +5853,7 @@ Réponse attendue:
                       <div className="panel-title">
                         <h2>
                           ♿ Accessibilité
-                          <InfoHint text="Astuce : la vue Budget propose aussi un « Mode simple » qui agrandit encore ses textes." />
+                         
                         </h2>
                         <p>Adaptez l'application à vos besoins de lecture et de confort.</p>
                       </div>
@@ -7024,12 +6947,21 @@ Réponse attendue:
             {envelopeCards.map((card, index) => (
               <div
                 key={card.name}
-                className={`envelope-card envelope-card--${card.weather.tone}`}
+                className={`envelope-card envelope-card--${card.weather.tone}${envelopeOpenName === card.name ? ' envelope-card--open' : ''}`}
                 style={{ animationDelay: `${index * 70}ms` }}
               >
                 <div className="envelope-card__flap" aria-hidden="true" />
                 <div className="envelope-card__body">
-                  <div className="envelope-card__top">
+                  <button
+                    type="button"
+                    className="envelope-card__top"
+                    onClick={() => {
+                      setEnvelopeAddDraft('')
+                      setEnvelopeOpenName((previous) => (previous === card.name ? null : card.name))
+                    }}
+                    aria-expanded={envelopeOpenName === card.name}
+                    title={envelopeOpenName === card.name ? 'Fermer la poche' : 'Ouvrir la poche'}
+                  >
                     <strong className="envelope-card__name">{card.name}</strong>
                     <span
                       className={`envelope-card__weather envelope-card__weather--${card.weather.tone}`}
@@ -7038,7 +6970,57 @@ Réponse attendue:
                     >
                       {card.weather.icon}
                     </span>
-                  </div>
+                  </button>
+                  {envelopeOpenName === card.name ? (
+                    <div className="envelope-card__inside">
+                      <p className="envelope-card__inside-balance">
+                        💰 Dans la poche :{' '}
+                        <strong className={card.inside >= 0 ? 'income' : 'expense'}>
+                          {euroFormatter.format(card.inside)}
+                        </strong>
+                      </p>
+                      <small>
+                        {euroFormatter.format(card.fund)} mis · {euroFormatter.format(card.spent)} dépensés
+                      </small>
+                      <div className="envelope-card__add">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="10"
+                          value={envelopeAddDraft}
+                          onChange={(event) => setEnvelopeAddDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              const amount = Number(envelopeAddDraft.replace(',', '.'))
+                              if (amount > 0) {
+                                addToEnvelopeFund(card.name, amount)
+                                showToast(`💰 ${euroFormatter.format(amount)} mis dans la poche ${card.name}`)
+                                setEnvelopeAddDraft('')
+                              }
+                            }
+                          }}
+                          placeholder="Montant"
+                          aria-label={`Montant à mettre dans la poche ${card.name}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const amount = Number(envelopeAddDraft.replace(',', '.'))
+                            if (amount > 0) {
+                              addToEnvelopeFund(card.name, amount)
+                              showToast(`💰 ${euroFormatter.format(amount)} mis dans la poche ${card.name}`)
+                              setEnvelopeAddDraft('')
+                            }
+                          }}
+                          disabled={!(Number(envelopeAddDraft.replace(',', '.')) > 0)}
+                        >
+                          + Mettre
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                   <p className="envelope-card__spent">
                     −{euroFormatter.format(card.spent)}
                     <small> dépensés</small>
@@ -7103,61 +7085,8 @@ Réponse attendue:
               <h2>
                 <span className="budget-title-main">Mon budget · {formatMonth(selectedMonth)}</span>
               </h2>
-              <button
-                type="button"
-                className={`budget-export-toggle budget-export-toggle-inline${budgetExportOpen ? ' open' : ''}`}
-                onClick={() => setBudgetExportOpen((open) => !open)}
-                aria-expanded={budgetExportOpen}
-                aria-controls="budget-export-panel-content"
-              >
-                <span>Exporter</span>
-                {budgetExportOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-              </button>
-            </div>
-            <div
-              id="budget-export-panel-content"
-              className={`budget-export-controls budget-export-controls-inline${budgetExportOpen ? ' open' : ''}`}
-              aria-hidden={!budgetExportOpen}
-            >
-              <label className="budget-export-label" htmlFor="budget-export-format">
-                Format du fichier
-              </label>
-              <div className="budget-export-row">
-                <select
-                  id="budget-export-format"
-                  value={budgetExportFormat}
-                  onChange={(event) => setBudgetExportFormat(event.target.value as 'txt' | 'csv' | 'json' | 'pdf')}
-                  aria-label="Choisir le format de téléchargement"
-                >
-                  <option value="pdf">PDF</option>
-                  <option value="txt">TXT</option>
-                  <option value="csv">CSV</option>
-                  <option value="json">JSON</option>
-                </select>
-                <button
-                  type="button"
-                  className="budget-export-link"
-                  onClick={() => { void exportBudgetSummary() }}
-                  aria-label="Télécharger le résumé du budget"
-                >
-                  <Download size={14} />
-                  Télécharger le résumé
-                </button>
-              </div>
             </div>
             <div className="budget-quick-actions-row">
-              <button
-                type="button"
-                className={`budget-switch${budgetSimpleMode ? ' on' : ''}`}
-                onClick={() => setBudgetSimpleMode((previous) => !previous)}
-                aria-pressed={budgetSimpleMode}
-                aria-label="Activer ou désactiver le mode simple"
-              >
-                <span className="budget-switch-label">Mode simple</span>
-                <span className="budget-switch-track" aria-hidden="true">
-                  <span className="budget-switch-thumb" />
-                </span>
-              </button>
               <button
                 type="button"
                 className="budget-mini-btn budget-mini-btn-primary"
@@ -7604,51 +7533,81 @@ Réponse attendue:
             <h2>Budgets par catégorie</h2>
             <p>Plafond mensuel par catégorie — {selectedProfileName}</p>
           </div>
-          <ul className="goal-list">
-            {goalProgress.map((goal) => (
-              <li key={goal.category}>
-                <div>
-                  <strong>{goal.category}</strong>
-                  <small>
-                    {euroFormatter.format(goal.spent)} / {euroFormatter.format(goal.target)}
-                  </small>
-                </div>
-                <div className="goal-progress-track">
-                  <span style={{ width: `${goal.rate}%` }} />
-                </div>
-              </li>
-            ))}
+          <ul className="goal-list goal-list--v2">
+            {goalProgress.map((goal) => {
+              const tone = goal.rate <= 70 ? 'sun' : goal.rate <= 90 ? 'cloud' : goal.rate <= 100 ? 'rain' : 'storm'
+              return (
+                <li key={goal.category}>
+                  <div className="goal-row-head">
+                    <span className="recent-tx-dot" style={{ background: colorForCategory(goal.category) }} aria-hidden="true" />
+                    <strong className="goal-row-name">{goal.category}</strong>
+                    {goalRowEditing === goal.category ? (
+                      <span className="goal-row-edit">
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min="1"
+                          step="10"
+                          value={goalRowDraft}
+                          onChange={(event) => setGoalRowDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              const amount = Number(goalRowDraft)
+                              if (amount > 0) {
+                                setSavingsGoals((previous) => ({
+                                  ...previous,
+                                  [selectedProfileId]: {
+                                    ...(previous[selectedProfileId] ?? defaultGoalTemplate),
+                                    [goal.category]: Math.round(amount),
+                                  },
+                                }))
+                              }
+                              setGoalRowEditing(null)
+                            }
+                            if (event.key === 'Escape') setGoalRowEditing(null)
+                          }}
+                          onBlur={() => {
+                            const amount = Number(goalRowDraft)
+                            if (amount > 0) {
+                              setSavingsGoals((previous) => ({
+                                ...previous,
+                                [selectedProfileId]: {
+                                  ...(previous[selectedProfileId] ?? defaultGoalTemplate),
+                                  [goal.category]: Math.round(amount),
+                                },
+                              }))
+                            }
+                            setGoalRowEditing(null)
+                          }}
+                          aria-label={`Plafond mensuel pour ${goal.category} (euros)`}
+                          autoFocus
+                        />
+                        <small>€</small>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="goal-row-amount"
+                        onClick={() => {
+                          setGoalRowDraft(String(goal.target))
+                          setGoalRowEditing(goal.category)
+                        }}
+                        title="Modifier le plafond"
+                      >
+                        {euroFormatter.format(goal.spent)} <small>/ {euroFormatter.format(goal.target)}</small>
+                      </button>
+                    )}
+                    <span className={`goal-row-rate goal-row-rate--${tone}`}>{goal.rate.toFixed(0)}%</span>
+                  </div>
+                  <div className="goal-progress-track goal-progress-track--v2">
+                    <span className={`goal-progress-fill--${tone}`} style={{ width: `${Math.min(100, goal.rate)}%` }} />
+                  </div>
+                </li>
+              )
+            })}
           </ul>
-          <form className="goal-editor" onSubmit={updateGoalTarget}>
-            <select
-              value={goalEditor.category}
-              onChange={(event) =>
-                setGoalEditor((previous) => ({
-                  ...previous,
-                  category: event.target.value as Category,
-                }))
-              }
-            >
-              {categories.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-            <input
-              type="number"
-              min="1"
-              value={goalEditor.amount}
-              onChange={(event) =>
-                setGoalEditor((previous) => ({
-                  ...previous,
-                  amount: event.target.value,
-                }))
-              }
-              placeholder="Nouvel objectif"
-            />
-            <button type="submit">Mettre a jour</button>
-          </form>
+          <p className="goal-list-hint">Appuyez sur un montant pour ajuster le plafond de la catégorie.</p>
         </article>
         ) : null}
 
@@ -7805,7 +7764,12 @@ Réponse attendue:
                   <ul className="accounts-widget-breakdown">
                     {nonZeroTypes.map(([type, amount]) => (
                       <li key={type}>
-                        <span className="accounts-widget-type">{ACCOUNT_TYPE_LABELS[type]}</span>
+                        <span className="accounts-widget-type">
+                          <span aria-hidden="true">
+                            {({ checking: '🏦', savings: '💰', cash: '💵', envelope: '✉️', credit_card: '💳', investment: '📈' } as Record<string, string>)[type] ?? '🏦'}
+                          </span>{' '}
+                          {ACCOUNT_TYPE_LABELS[type]}
+                        </span>
                         <span className={amount >= 0 ? 'is-positive' : 'is-negative'}>
                           {euroFormatter.format(amount)}
                         </span>

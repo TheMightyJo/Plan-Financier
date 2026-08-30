@@ -10724,3 +10724,222 @@ button.stats-month-title {
   font-size: var(--text-2xs);
   font-weight: 600;
 }
+
+/* ── Poche ouverte : rabat levé + panneau « mettre de l'argent » ──── */
+.envelope-card--open .envelope-card__flap {
+  transform: rotateX(150deg);
+}
+
+button.envelope-card__top {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  text-align: left;
+}
+
+.envelope-card__inside {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.7rem;
+  border: 1px dashed rgba(var(--accent-rgb), 0.5);
+  background: rgba(var(--accent-rgb), 0.06);
+  animation: fade-up 320ms ease both;
+}
+
+.envelope-card__inside-balance {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.envelope-card__inside small {
+  color: var(--text-2);
+  font-size: var(--text-2xs);
+}
+
+.envelope-card__add {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.envelope-card__add input {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 0.6rem;
+  border: 1px solid var(--border);
+  background: var(--field-bg);
+  color: var(--text-1);
+  padding: 0.4rem 0.55rem;
+  font-size: var(--text-sm);
+  outline: none;
+}
+
+.envelope-card__add button {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 0.6rem;
+  padding: 0.4rem 0.7rem;
+  background: linear-gradient(130deg, #33703d, #4f9159);
+  color: #fff;
+  font-weight: 800;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.envelope-card__add button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Budgets par catégorie v2 : lignes aérées + barres colorées ───── */
+.goal-list--v2 {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.goal-list--v2 li {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.goal-row-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.goal-row-name {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+  font-size: var(--text-sm);
+}
+
+.goal-row-amount {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.4rem;
+}
+
+.goal-row-amount small {
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+.goal-row-amount:hover {
+  background: var(--surface-soft);
+}
+
+.goal-row-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.goal-row-edit input {
+  width: 6rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(var(--accent-rgb), 0.7);
+  background: var(--field-bg);
+  color: var(--text-1);
+  padding: 0.25rem 0.45rem;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  outline: none;
+}
+
+.goal-row-rate {
+  flex-shrink: 0;
+  min-width: 3.1rem;
+  text-align: center;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: var(--text-2xs);
+  font-weight: 800;
+  border: 1px solid var(--border-soft);
+  color: var(--text-2);
+}
+
+.goal-row-rate--sun { color: #3A7D44; border-color: rgba(58, 125, 68, 0.5); }
+.goal-row-rate--cloud { color: #B8963E; border-color: rgba(184, 150, 62, 0.55); }
+.goal-row-rate--rain { color: #cf7a3f; border-color: rgba(207, 122, 63, 0.6); }
+.goal-row-rate--storm { color: #C05C2A; border-color: rgba(192, 92, 42, 0.65); background: rgba(192, 92, 42, 0.1); }
+
+.goal-progress-track--v2 {
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--border-soft);
+  overflow: hidden;
+}
+
+.goal-progress-track--v2 span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s ease;
+}
+
+.goal-progress-fill--sun { background: #3A7D44; }
+.goal-progress-fill--cloud { background: #B8963E; }
+.goal-progress-fill--rain { background: #cf7a3f; }
+.goal-progress-fill--storm { background: #C05C2A; }
+
+.goal-list-hint {
+  margin: 0.6rem 0 0;
+  color: var(--text-2);
+  font-size: var(--text-2xs);
+}
+
+/* ── Comptes : rangées propres avec icônes ────────────────────────── */
+.accounts-widget-breakdown {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.accounts-widget-breakdown li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  font-size: var(--text-sm);
+}
+
+.accounts-widget-type {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.accounts-widget-breakdown .is-positive { color: #3A7D44; font-weight: 800; }
+.accounts-widget-breakdown .is-negative { color: #C05C2A; font-weight: 800; }
