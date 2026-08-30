@@ -107,6 +107,7 @@ import {
   type SentInvite,
 } from './repos/familyRepo'
 import { FamilyView } from './components/FamilyView'
+import { NotesView, type ExtractedTx, type NoteItem } from './components/NotesView'
 import {
   defaultReportPrefs,
   getReportPrefs,
@@ -185,6 +186,25 @@ const MANUAL_ONBOARDING_PHASES = [
 const FIRST_TX_TOUR_DONE_KEY = 'plan-financier-first-tx-tour-done-v1'
 const THEME_STORAGE_KEY = 'plan-financier-theme-v1'
 const PALETTE_STORAGE_KEY = 'plan-financier-palette-v1'
+const NOTES_STORAGE_KEY = 'plan-financier-notes-v1'
+
+const loadNotes = (): NoteItem[] => {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(NOTES_STORAGE_KEY)
+    const parsed = raw ? (JSON.parse(raw) as unknown) : []
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (item): item is NoteItem =>
+        !!item &&
+        typeof (item as NoteItem).id === 'number' &&
+        typeof (item as NoteItem).content === 'string' &&
+        typeof (item as NoteItem).updatedAt === 'number',
+    )
+  } catch {
+    return []
+  }
+}
 // Palettes d'accent prédéfinies (voir index.css [data-palette=…]). Les pastilles
 // `dots` montrent la teinte claire (thème sombre) et foncée (thème clair).
 const COLOR_PALETTES = [
@@ -829,6 +849,9 @@ function App() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteFeedback, setInviteFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  // ── Notes ──
+  const [notes, setNotes] = useState<NoteItem[]>(loadNotes)
+
   // ── Rapport par email ──
   const [reportPrefs, setReportPrefs] = useState<ReportPrefs>(defaultReportPrefs)
   const [reportBusy, setReportBusy] = useState(false)
@@ -841,6 +864,7 @@ function App() {
       { id: 'overview',    label: '🏠 Accueil' },
       { id: 'operations',  label: '💳 Dépenses' },
       { id: 'budget',      label: '📅 Budget' },
+      { id: 'notes',       label: '🗒️ Notes' },
       ...(familyPeers.length >= 2 ? [{ id: 'family', label: '👨‍👩‍👧 Famille' }] : []),
     ],
     [familyPeers.length],
@@ -3378,6 +3402,28 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     closeQuickAdd()
   }
 
+  const handleImportExtracted = (rows: ExtractedTx[]) => {
+    const resolvedAccountId =
+      accounts.find(
+        (a) => a.ownerMember === selectedProfileId && a.type === 'checking' && a.archivedAt === null,
+      )?.id || undefined
+    const base = Date.now()
+    const imported: Transaction[] = rows.map((row, index) => ({
+      id: base + index,
+      label: row.label,
+      amount: row.amount,
+      category: row.category,
+      member: selectedProfileId,
+      date: row.date ?? todayIso,
+      kind: row.kind,
+      envelope: inferEnvelope(row.category),
+      ...(row.tags.length > 0 ? { tags: row.tags } : {}),
+      accountId: resolvedAccountId,
+    }))
+    setTransactions((previous) => [...previous, ...imported])
+    showToast(`✨ ${imported.length} opération${imported.length > 1 ? 's' : ''} ajoutée${imported.length > 1 ? 's' : ''} depuis vos notes`)
+  }
+
   const startEditTransaction = (tx: Transaction) => {
     navigateToSection('operations')
     setEditingTxId(tx.id)
@@ -4995,6 +5041,17 @@ Réponse attendue:
 
       {isActiveView('family') ? (
         <FamilyView month={selectedMonth} peers={familyPeers} myUserId={myUserId} />
+      ) : null}
+
+      {isActiveView('notes') ? (
+        <NotesView
+          notes={notes}
+          onChange={setNotes}
+          aiEnabled={isBudgetAiConfigured}
+          anthropicKey={anthropicKey ?? ''}
+          onImportTransactions={handleImportExtracted}
+          onConfigureAi={() => openSettingsPanel('ai')}
+        />
       ) : null}
 
       {isActiveView('envelopes') ? (
