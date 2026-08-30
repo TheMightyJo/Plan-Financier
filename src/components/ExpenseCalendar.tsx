@@ -90,9 +90,17 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
     if (!gridStart || !gridEnd) return map
     const from = shiftDay(today, 1) > gridStart ? shiftDay(today, 1) : gridStart
     if (from > gridEnd) return map
+    // Échéances déjà transformées en vraie transaction (même règle, même
+    // jour) : ne pas les réafficher en « prévu » — sinon doublon à l'écran.
+    const materialized = new Set(
+      transactions
+        .filter((tx) => tx.recurringRuleId)
+        .map((tx) => `${tx.recurringRuleId}|${tx.date}`),
+    )
     for (const rule of recurringRules) {
       if (rule.pausedAt !== null) continue
       for (const date of getOccurrencesBetween(rule, from, gridEnd)) {
+        if (materialized.has(`${rule.id}|${date}`)) continue
         const entry = map.get(date) ?? { total: 0, items: [] }
         entry.total += rule.kind === 'depense' ? rule.amount : 0
         entry.items.push({ label: rule.label, amount: rule.amount, kind: rule.kind })
@@ -100,7 +108,7 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
       }
     }
     return map
-  }, [recurringRules, weeks, today])
+  }, [recurringRules, transactions, weeks, today])
   const monthMaxSpent = useMemo(
     () =>
       Math.max(
