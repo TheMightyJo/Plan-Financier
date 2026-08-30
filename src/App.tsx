@@ -3194,10 +3194,79 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
   // Null = création ; sinon id de la transaction en cours de modification.
   const [quickAddEditingId, setQuickAddEditingId] = useState<number | null>(null)
+  // Classification IA (catégorie + tags) : proposée automatiquement quand
+  // l'assistant est configuré, sans jamais écraser un choix manuel.
+  const quickAddAiTimerRef = useRef<number | null>(null)
+  const quickAddTouchedRef = useRef({ category: false, tags: false })
+  const [quickAddAiBusy, setQuickAddAiBusy] = useState(false)
+  const [quickAddAiApplied, setQuickAddAiApplied] = useState(false)
+
+  const runQuickAddAi = async (label: string) => {
+    if (!anthropicKey) return
+    setQuickAddAiBusy(true)
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-haiku-20241022',
+          max_tokens: 120,
+          system:
+            'Tu classes une dépense de budget familial français. Réponds UNIQUEMENT un objet JSON de la forme {"category": "...", "tags": ["..."]} sans autre texte. category doit être exactement une valeur parmi: Courses, Transport, Ecole, Loisirs, Sante, Maison, Autre. tags: 0 à 3 étiquettes courtes en minuscules, utiles et non redondantes avec la catégorie (ex: "abonnement", "vacances", "cadeau"), sinon tableau vide.',
+          messages: [{ role: 'user', content: label }],
+        }),
+      })
+      if (!response.ok) return
+      const data = (await response.json()) as { content: Array<{ type: string; text: string }> }
+      const text = data.content.find((c) => c.type === 'text')?.text ?? ''
+      const match = /\{[\s\S]*\}/.exec(text)
+      if (!match) return
+      const parsed = JSON.parse(match[0]) as { category?: string; tags?: unknown }
+      const aiCategory = categories.includes(parsed.category as Category)
+        ? (parsed.category as Category)
+        : null
+      const aiTags = Array.isArray(parsed.tags)
+        ? parsed.tags.filter((t): t is string => typeof t === 'string' && t.length > 0).slice(0, 3)
+        : []
+      setQuickAddForm((previous) => {
+        // Ne s'applique que si le libellé n'a pas changé entre-temps et que
+        // l'utilisateur n'a pas déjà fait un choix manuel sur le champ.
+        if (previous.label !== label) return previous
+        const next = { ...previous }
+        if (aiCategory && !quickAddTouchedRef.current.category) next.category = aiCategory
+        if (aiTags.length > 0 && !quickAddTouchedRef.current.tags && !previous.tags.trim()) {
+          next.tags = aiTags.join(', ')
+        }
+        return next
+      })
+      setQuickAddAiApplied(true)
+    } catch {
+      // Silencieux : la suggestion locale reste en place.
+    } finally {
+      setQuickAddAiBusy(false)
+    }
+  }
+
+  const scheduleQuickAddAi = (label: string) => {
+    if (!isBudgetAiConfigured || quickAddEditingId !== null) return
+    if (quickAddAiTimerRef.current !== null) window.clearTimeout(quickAddAiTimerRef.current)
+    if (label.trim().length < 3) return
+    quickAddAiTimerRef.current = window.setTimeout(() => {
+      quickAddAiTimerRef.current = null
+      void runQuickAddAi(label)
+    }, 700)
+  }
 
   const openQuickAdd = (date: string) => {
     setQuickAddForm({ label: '', amount: '', category: 'Courses', envelope: 'Maison', tags: '', recurrence: 'none' })
     setQuickAddEditingId(null)
+    quickAddTouchedRef.current = { category: false, tags: false }
+    setQuickAddAiApplied(false)
     setQuickAddDate(date)
   }
 
@@ -3215,6 +3284,10 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const closeQuickAdd = () => {
+    if (quickAddAiTimerRef.current !== null) {
+      window.clearTimeout(quickAddAiTimerRef.current)
+      quickAddAiTimerRef.current = null
+    }
     setQuickAddDate(null)
     setQuickAddEditingId(null)
   }
@@ -7521,8 +7594,11 @@ Réponse attendue:
                   setQuickAddForm((previous) => ({
                     ...previous,
                     label,
-                    category: suggestCategoryFromLabel(label) ?? previous.category,
+                    category: quickAddTouchedRef.current.category
+                      ? previous.category
+                      : suggestCategoryFromLabel(label) ?? previous.category,
                   }))
+                  scheduleQuickAddAi(label)
                 }}
                 placeholder="Ex: Courses Carrefour"
                 autoFocus
@@ -7556,9 +7632,17 @@ Réponse attendue:
             <div className="quick-add-selects">
               <label>
                 Catégorie
+                {quickAddAiBusy ? (
+                  <small className="quick-add-hint"> ✨ analyse…</small>
+                ) : quickAddAiApplied ? (
+                  <small className="quick-add-hint"> ✨ suggéré par l'IA — modifiable</small>
+                ) : null}
                 <select
                   value={quickAddForm.category}
-                  onChange={(event) => setQuickAddForm((previous) => ({ ...previous, category: event.target.value as Category }))}
+                  onChange={(event) => {
+                    quickAddTouchedRef.current.category = true
+                    setQuickAddForm((previous) => ({ ...previous, category: event.target.value as Category }))
+                  }}
                 >
                   {categories.map((category) => (
                     <option key={category} value={category}>{category}</option>
@@ -7581,7 +7665,10 @@ Réponse attendue:
               Tags <small className="quick-add-hint">(optionnel, séparés par des virgules)</small>
               <input
                 value={quickAddForm.tags}
-                onChange={(event) => setQuickAddForm((previous) => ({ ...previous, tags: event.target.value }))}
+                onChange={(event) => {
+                  quickAddTouchedRef.current.tags = true
+                  setQuickAddForm((previous) => ({ ...previous, tags: event.target.value }))
+                }}
                 placeholder="Ex: vacances, remboursable"
               />
             </label>
