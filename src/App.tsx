@@ -8349,7 +8349,9 @@ Réponse attendue:
           <div className="chat-panel glass-card" role="dialog" aria-label="Cash, votre assistant budget">
             <div className="chat-header">
               <Bot size={18} />
-              <span>Cash 🪙</span>
+              <span className="chat-header-title">
+                Cash 💰 <small>· votre assistant virtuel</small>
+              </span>
               {chatMessages.length > 0 ? (
                 <button
                   type="button"
@@ -8398,7 +8400,7 @@ Réponse attendue:
                 <div className="chat-empty">
                   <Bot size={32} />
                   <p>
-                    Bonjour, moi c'est <strong>Cash</strong> 🪙 Je compte vos sous plus vite que
+                    Bonjour, moi c'est <strong>Cash</strong> 💰 Je compte vos sous plus vite que
                     votre banquier — et sans commission. Une question sur vos finances ?
                   </p>
                   <div className="chat-suggestions">
