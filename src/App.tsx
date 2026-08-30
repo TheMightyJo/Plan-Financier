@@ -3106,7 +3106,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     setEnvelopeOpenName(name)
     setEnvModalName(name)
     setEnvModalTarget(profileEnvelopeBudgets[name] ? String(profileEnvelopeBudgets[name]) : '')
-    setEnvModalAdd('')
+    const inside = envelopeCards.find((card) => card.name === name)?.inside ?? 0
+    setEnvModalAdd(String(Math.round(inside * 100) / 100))
     setEnvModalDeleteAsk(false)
     window.setTimeout(() => setEnvelopeModal({ mode: 'edit', name }), 340)
   }
@@ -3131,6 +3132,15 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       ...previous,
       [selectedProfileId]: [...(previous[selectedProfileId] ?? []), name],
     }))
+    const target = Number(envModalTarget)
+    if (target > 0) saveEnvelopeBudget(name, target)
+    const available = Number(envModalAdd.replace(',', '.'))
+    if (available > 0) {
+      setEnvelopeFunds((previous) => ({
+        ...previous,
+        [selectedProfileId]: { ...(previous[selectedProfileId] ?? {}), [name]: Math.round(available * 100) / 100 },
+      }))
+    }
     showToast(`✉️ Poche « ${name} » créée`)
     closeEnvelopeModal()
   }
@@ -3205,11 +3215,21 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     closeEnvelopeModal()
   }
 
-  const addToEnvelopeFund = (name: string, delta: number) => {
+  // Groupes de poches pour la modale d'opération : les poches créées par
+  // l'utilisateur apparaissent en tête, dans un groupe « Mes poches ».
+  const envelopeGroupsWithCustom = useMemo(() => {
+    const known = new Set(ENVELOPE_GROUPS.flatMap((group) => group.options))
+    const custom = profileCustomEnvelopes.filter((name) => !known.has(name))
+    return custom.length > 0 ? [{ label: 'Mes poches', options: custom }, ...ENVELOPE_GROUPS] : ENVELOPE_GROUPS
+  }, [profileCustomEnvelopes])
+
+  /** Fixe l'argent DISPONIBLE d'une poche (le fonds est recalculé : dispo + dépensé du mois). */
+  const setEnvelopeAvailable = (name: string, availableTarget: number) => {
+    const spent = envelopeCards.find((card) => card.name === name)?.spent ?? 0
+    const fund = Math.max(0, Math.round((availableTarget + spent) * 100) / 100)
     setEnvelopeFunds((previous) => {
       const forProfile = { ...(previous[selectedProfileId] ?? {}) }
-      const next = Math.max(0, Math.round(((forProfile[name] ?? 0) + delta) * 100) / 100)
-      if (next > 0) forProfile[name] = next
+      if (fund > 0) forProfile[name] = fund
       else delete forProfile[name]
       return { ...previous, [selectedProfileId]: forProfile }
     })
@@ -8554,12 +8574,30 @@ Réponse attendue:
                   placeholder="Ex : Cadeaux, Voiture, Études…"
                   maxLength={40}
                   autoFocus
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      createEnvelope(envModalName)
-                    }
-                  }}
+                />
+              </label>
+              <label>
+                🎯 Objectif mensuel (€)
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  step="10"
+                  value={envModalTarget}
+                  onChange={(event) => setEnvModalTarget(event.target.value)}
+                  placeholder="0 = pas d'objectif"
+                />
+              </label>
+              <label>
+                💰 Argent disponible dans la poche (€)
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="10"
+                  value={envModalAdd}
+                  onChange={(event) => setEnvModalAdd(event.target.value)}
+                  placeholder="Ex : 100"
                 />
               </label>
               <div className="quick-add-actions">
@@ -8585,16 +8623,16 @@ Réponse attendue:
                 />
               </label>
               <label>
-                💰 Mettre de l'argent dans la poche (€)
+                💰 Argent disponible dans la poche (€)
                 <input
                   type="number"
                   inputMode="decimal"
-                  min="0"
                   step="10"
                   value={envModalAdd}
                   onChange={(event) => setEnvModalAdd(event.target.value)}
                   placeholder="Ex : 100"
                 />
+                <small className="field-hint">Le montant actuellement utilisable — modifiez-le librement.</small>
               </label>
               <label>
                 ✏️ Renommer la poche
@@ -8630,14 +8668,14 @@ Réponse attendue:
                   onClick={() => {
                     const target = Number(envModalTarget)
                     saveEnvelopeBudget(envelopeModal.name, Number.isNaN(target) ? 0 : target)
-                    const add = Number(envModalAdd.replace(',', '.'))
-                    if (add > 0) {
-                      addToEnvelopeFund(envelopeModal.name, add)
-                      showToast(`💰 ${euroFormatter.format(add)} mis dans la poche ${envelopeModal.name}`)
+                    const available = Number(envModalAdd.replace(',', '.'))
+                    if (!Number.isNaN(available)) {
+                      setEnvelopeAvailable(envelopeModal.name, available)
                     }
                     if (envModalName.trim() && envModalName.trim() !== envelopeModal.name) {
                       renameEnvelope(envelopeModal.name, envModalName)
                     } else {
+                      showToast(`✉️ Poche ${envelopeModal.name} mise à jour`)
                       closeEnvelopeModal()
                     }
                   }}
@@ -8843,7 +8881,7 @@ Réponse attendue:
                 Poche
                 <GroupedSearchSelect
                   value={quickAddForm.envelope}
-                  groups={ENVELOPE_GROUPS}
+                  groups={envelopeGroupsWithCustom}
                   onChange={(envelope) => setQuickAddForm((previous) => ({ ...previous, envelope }))}
                   selectAriaLabel="Poche"
                   customPlaceholder="Votre poche…"

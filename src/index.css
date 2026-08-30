@@ -11045,3 +11045,8 @@ button.envelope-card:hover .envelope-card__body {
   color: var(--text-1);
   border-color: rgba(var(--accent-rgb), 0.6);
 }
+
+/* Respiration entre le titre « Mon budget · … » et les cartes du résumé. */
+#budget .panel-title {
+  margin-bottom: 0.9rem;
+}
