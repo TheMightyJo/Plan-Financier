@@ -63,6 +63,7 @@ function PrivacyContent() {
       <h3>1. Responsable du traitement</h3>
       <p>
         <strong>Éditeur :</strong> ProtoJo Digital — Johan Quille (auto-entrepreneur)<br />
+        <strong>SIREN :</strong> 818 819 484<br />
         <strong>Adresse :</strong> 59 voie des sculpteurs, 92800 Puteaux, France<br />
         <strong>Contact RGPD :</strong>{' '}
         <a href="mailto:contact@protojo.fr">contact@protojo.fr</a>
@@ -295,6 +296,7 @@ function TermsContent() {
       <h3>10. Mentions légales</h3>
       <p>
         <strong>Éditeur :</strong> ProtoJo Digital — Johan Quille (auto-entrepreneur)<br />
+        <strong>SIREN :</strong> 818 819 484<br />
         <strong>Adresse :</strong> 59 voie des sculpteurs, 92800 Puteaux, France
         <br />
         <strong>Contact :</strong>{' '}
