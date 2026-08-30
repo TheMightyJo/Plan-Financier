@@ -9311,3 +9311,23 @@ h1 {
 .expense-calendar__planned-row {
   opacity: 0.85;
 }
+
+/* Encart « configurez l'IA » dans la modale de dépense. */
+.quick-add-ai-nudge {
+  appearance: none;
+  text-align: left;
+  border: 1px dashed rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--text-1);
+  border-radius: 0.7rem;
+  padding: 0.55rem 0.7rem;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+.quick-add-ai-nudge:hover {
+  background: rgba(var(--accent-rgb), 0.15);
+  border-color: var(--accent);
+}

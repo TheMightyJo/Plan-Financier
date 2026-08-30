@@ -7672,6 +7672,19 @@ Réponse attendue:
                 placeholder="Ex: vacances, remboursable"
               />
             </label>
+            {!isBudgetAiConfigured ? (
+              <button
+                type="button"
+                className="quick-add-ai-nudge"
+                onClick={() => {
+                  closeQuickAdd()
+                  openSettingsPanel('ai')
+                }}
+              >
+                ✨ Besoin d'aller plus vite ? Configurez votre assistant IA pour trouver
+                automatiquement la catégorie et les tags de vos dépenses.
+              </button>
+            ) : null}
             {quickAddEditingId === null ? (
               <label>
                 Répéter
