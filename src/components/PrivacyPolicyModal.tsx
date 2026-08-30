@@ -62,7 +62,7 @@ function PrivacyContent() {
 
       <h3>1. Responsable du traitement</h3>
       <p>
-        <strong>Éditeur :</strong> Johan Quille (auto-entrepreneur)<br />
+        <strong>Éditeur :</strong> ProtoJo Digital — Johan Quille (auto-entrepreneur)<br />
         <strong>Adresse :</strong> 59 voie des sculpteurs, 92800 Puteaux, France<br />
         <strong>Contact RGPD :</strong>{' '}
         <a href="mailto:contact@protojo.fr">contact@protojo.fr</a>
@@ -177,8 +177,10 @@ function PrivacyContent() {
       <p>
         Plan Financier n'utilise pas de cookies au sens de la directive ePrivacy.
         L'application utilise uniquement le <code>localStorage</code> du navigateur
-        pour stocker vos données métier (cache offline en attendant la sync
-        Supabase) et votre PIN haché.
+        pour stocker vos données métier (cache local en attendant la
+        synchronisation) et vos préférences d'affichage. Aucun cookie de
+        mesure d'audience ni publicitaire — c'est pourquoi aucune bannière de
+        consentement n'est nécessaire.
       </p>
 
       <h3>10. Mineurs</h3>
@@ -292,7 +294,7 @@ function TermsContent() {
 
       <h3>10. Mentions légales</h3>
       <p>
-        <strong>Éditeur :</strong> Johan Quille (auto-entrepreneur)<br />
+        <strong>Éditeur :</strong> ProtoJo Digital — Johan Quille (auto-entrepreneur)<br />
         <strong>Adresse :</strong> 59 voie des sculpteurs, 92800 Puteaux, France
         <br />
         <strong>Contact :</strong>{' '}

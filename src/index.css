@@ -11574,3 +11574,37 @@ button.envelope-card:hover .envelope-card__body {
 .landing .landing-hero h1 em {
   color: var(--accent);
 }
+
+/* Pied de vitrine : marque + liens légaux. */
+.landing-footer-brand {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.landing-footer-links {
+  display: flex;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.landing-footer-links button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.landing-footer-links button:hover {
+  color: var(--text-1);
+}
+
+.settings-legal-credit {
+  color: var(--text-2);
+  font-size: var(--text-2xs);
+}
