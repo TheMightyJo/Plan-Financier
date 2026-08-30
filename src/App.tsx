@@ -896,6 +896,7 @@ function App() {
   const [reportBusy, setReportBusy] = useState(false)
   const [reportFeedback, setReportFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [reportCcDraft, setReportCcDraft] = useState('')
+  const [adviceQuestion, setAdviceQuestion] = useState('')
   const [sentInvites, setSentInvites] = useState<SentInvite[]>([])
   // Cadre de relance : 1× par 24 h et par invitation (horodatage local).
   const [relanceTick, setRelanceTick] = useState(0)
@@ -7538,18 +7539,6 @@ Réponse attendue:
                   <Bot size={12} /> Analyse IA
                 </span>
               </div>
-              <button
-                type="button"
-                className="budget-assistant-hide"
-                onClick={() => {
-                  setBudgetAssistantError('')
-                  setBudgetAssistantContextLoaded('')
-                  void requestBudgetAssistantAdvice()
-                }}
-                disabled={budgetAssistantLoading}
-              >
-                Actualiser
-              </button>
             </div>
             <p className="budget-advice-helper">
               Votre assistant analyse le mois en cours et vous conseille.
@@ -7575,6 +7564,32 @@ Réponse attendue:
             ) : (
               <p className="budget-assistant-answer">{budgetAssistantAdvice}</p>
             )}
+            {/* Même condition que le panneau de chat : sans lui, la question
+                n'aurait nulle part où s'afficher (mode démo notamment). */}
+            {isAuthenticated && anthropicKey ? (
+            <form
+              className="advice-chat-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                const question = adviceQuestion.trim()
+                if (!question) return
+                setAdviceQuestion('')
+                setChatOpen(true)
+                void sendChatMessage(question)
+              }}
+            >
+              <input
+                type="text"
+                value={adviceQuestion}
+                onChange={(event) => setAdviceQuestion(event.target.value)}
+                placeholder="Posez une question sur vos finances…"
+                aria-label="Question à l'assistant IA"
+              />
+              <button type="submit" disabled={!adviceQuestion.trim() || chatLoading}>
+                Demander
+              </button>
+            </form>
+            ) : null}
           </>
         )}
       </aside>
