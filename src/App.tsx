@@ -120,6 +120,7 @@ import {
   type ReportPrefs,
 } from './repos/reportPrefsRepo'
 import { shiftDay, shiftMonth } from './lib/calendar'
+import { weeklyStats } from './lib/weeklyStats'
 import {
   computeConsolidatedBalance,
   balanceByAccountType,
@@ -980,6 +981,7 @@ function App() {
       { id: 'overview',    label: '🏠 Accueil' },
       { id: 'operations',  label: '💳 Dépenses' },
       { id: 'budget',      label: '📅 Budget' },
+      { id: 'stats',       label: '📊 Statistiques' },
       { id: 'notes',       label: '🗒️ Notes' },
       ...(familyPeers.length >= 2 ? [{ id: 'family', label: '👨‍👩‍👧 Famille' }] : []),
     ],
@@ -3301,6 +3303,12 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
   }, [activeMonthTransactions])
+
+  // Vue Statistiques : 12 dernières semaines (lundi → dimanche).
+  const weeklyStatsData = useMemo(
+    () => weeklyStats(activeTransactions, todayIso, 12),
+    [activeTransactions, todayIso],
+  )
 
   const recurringItems = useMemo(() => {
     type RecurringEntry = { label: string; avgAmount: number; monthCount: number }
@@ -6665,6 +6673,70 @@ Réponse attendue:
               )}
             </div>
           </form>
+        </article>
+      </section>
+      ) : null}
+
+      {isActiveView('stats') ? (
+      <section id="stats" className="panel-grid">
+        <article className="glass-card chart-card wide-card">
+          <div className="panel-title">
+            <div>
+              <h2>Dépenses vs Revenus par semaine</h2>
+              <p>12 dernières semaines, du lundi au dimanche · {selectedProfileName}</p>
+            </div>
+          </div>
+          <div className="stats-chart-wrap">
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={weeklyStatsData} barGap={2}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(160, 128, 96, 0.2)" />
+                <XAxis dataKey="label" stroke="#a1a1aa" fontSize={11} interval="preserveStartEnd" />
+                <YAxis stroke="#a1a1aa" fontSize={11} />
+                <Tooltip
+                  formatter={(value, name) => [
+                    euroFormatter.format(Number(value)),
+                    name === 'income' ? 'Revenus' : 'Dépenses',
+                  ]}
+                  labelFormatter={(label) => `Semaine du ${label}`}
+                />
+                <Bar dataKey="income" name="income" fill="#3A7D44" radius={[5, 5, 0, 0]} />
+                <Bar dataKey="spent" name="spent" fill="#C05C2A" radius={[5, 5, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="stats-legend">
+            <span><i className="stats-legend__dot" style={{ background: '#3A7D44' }} /> Revenus</span>
+            <span><i className="stats-legend__dot" style={{ background: '#C05C2A' }} /> Dépenses</span>
+          </div>
+        </article>
+
+        <article className="glass-card chart-card wide-card">
+          <div className="panel-title">
+            <div>
+              <h2>Semaine par semaine</h2>
+              <p>Le solde de chaque semaine et sa tendance.</p>
+            </div>
+          </div>
+          <ul className="stats-week-list">
+            {[...weeklyStatsData].reverse().map((week) => (
+              <li key={week.weekStart}>
+                <span className="stats-week-label">{week.label}</span>
+                <span className="stats-week-amounts">
+                  <span className="income">+{euroFormatter.format(week.income)}</span>
+                  <span className="expense">−{euroFormatter.format(week.spent)}</span>
+                </span>
+                <strong className={`stats-week-net ${week.net < 0 ? 'expense' : 'income'}`}>
+                  {week.net >= 0 ? '+' : ''}{euroFormatter.format(week.net)}
+                </strong>
+                <span className={`stats-week-type stats-week-type--${week.type}`}>
+                  {week.type === 'danger' ? '⚠️ Danger'
+                    : week.type === 'highest' ? '🏆 Highest ever'
+                    : week.type === 'up' ? '📈 Up'
+                    : 'Normal'}
+                </span>
+              </li>
+            ))}
+          </ul>
         </article>
       </section>
       ) : null}
