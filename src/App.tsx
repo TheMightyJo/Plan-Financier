@@ -3311,16 +3311,43 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     () => weeklyStats(activeTransactions, todayIso, 12),
     [activeTransactions, todayIso],
   )
-  const [statsAnchor, setStatsAnchor] = useState(todayIso)
+  // Mois affiché dans la vue Statistiques (YYYY-MM) + semaine dépliée.
+  const [statsMonth, setStatsMonth] = useState(todayIso.slice(0, 7))
+  const [statsSelectedWeek, setStatsSelectedWeek] = useState<string | null>(null)
+  const statsMonthEnd = useMemo(() => shiftDay(`${shiftMonth(statsMonth, 1)}-01`, -1), [statsMonth])
   const statsViewData = useMemo(
-    () => weeklyStats(activeTransactions, statsAnchor, 12),
-    [activeTransactions, statsAnchor],
+    () => weeklyStats(activeTransactions, statsMonthEnd, 12),
+    [activeTransactions, statsMonthEnd],
   )
+  // Semaines qui touchent le mois sélectionné (liste « Semaine par semaine »).
+  const statsMonthWeeks = useMemo(() => {
+    const firstDay = `${statsMonth}-01`
+    return statsViewData.filter((week) => week.weekStart <= statsMonthEnd && week.weekEnd >= firstDay)
+  }, [statsViewData, statsMonth, statsMonthEnd])
+  // Détail quotidien de la semaine sélectionnée (Lun → Dim).
+  const statsWeekDaily = useMemo(() => {
+    if (!statsSelectedWeek) return null
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = shiftDay(statsSelectedWeek, i)
+      let spent = 0
+      let income = 0
+      for (const tx of activeTransactions) {
+        if (tx.date !== date) continue
+        if (tx.kind === 'depense') spent += tx.amount
+        else income += tx.amount
+      }
+      return {
+        label: new Date(`${date}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' }),
+        spent: Math.round(spent * 100) / 100,
+        income: Math.round(income * 100) / 100,
+      }
+    })
+  }, [statsSelectedWeek, activeTransactions])
   const statsChartRef = useRef<HTMLDivElement | null>(null)
 
-  const exportWeeklyStatsPdf = async () => {
+  const exportWeeklyStatsPdf = async (targetWeek?: (typeof statsViewData)[number]) => {
     const svg = statsChartRef.current?.querySelector('svg')
-    const lastWeek = statsViewData.at(-1)
+    const lastWeek = targetWeek ?? statsMonthWeeks.at(-1) ?? statsViewData.at(-1)
     if (!svg || !lastWeek) return
     const { default: JsPdf } = await import('jspdf')
 
@@ -3365,7 +3392,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(160, 128, 96)
     doc.text(`Exporté le ${reportDate} · ${selectedProfileName}`, 14, 23)
-    doc.text(`Période affichée : du ${statsViewData[0].weekStart} au ${lastWeek.weekEnd}`, 14, 29)
+    doc.text(`Période affichée : du ${statsViewData[0].weekStart} au ${statsViewData.at(-1)!.weekEnd}`, 14, 29)
 
     doc.setFontSize(12)
     doc.setTextColor(61, 43, 31)
@@ -3385,7 +3412,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     const imgWidth = pageWidth - 28
     const imgHeight = (height / width) * imgWidth
     doc.addImage(png, 'PNG', 14, 52, imgWidth, imgHeight)
-    doc.save(`statistiques-semaines-${todayIso}.pdf`)
+    doc.save(`statistiques-semaine-${lastWeek.weekStart}.pdf`)
     showToast('📄 Statistiques exportées en PDF')
   }
 
@@ -6785,26 +6812,47 @@ Réponse attendue:
           <div className="panel-title">
             <div>
               <h2>Dépenses vs Revenus par semaine</h2>
-              <p>
-                12 semaines, du lundi au dimanche · du{' '}
-                {new Date(`${statsViewData[0].weekStart}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} au{' '}
-                {new Date(`${statsViewData.at(-1)!.weekEnd}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
-              </p>
+              <p>Semaines du lundi au dimanche · 12 semaines affichées sur le graphique.</p>
             </div>
             <div className="stats-toolbar">
-              <button type="button" onClick={() => setStatsAnchor(shiftDay(statsAnchor, -28))} aria-label="4 semaines plus tôt">‹</button>
-              <button type="button" onClick={() => setStatsAnchor(shiftDay(statsAnchor, 28) > todayIso ? todayIso : shiftDay(statsAnchor, 28))} aria-label="4 semaines plus tard" disabled={statsAnchor === todayIso}>›</button>
-              {statsAnchor !== todayIso ? (
-                <button type="button" onClick={() => setStatsAnchor(todayIso)}>Aujourd&apos;hui</button>
+              <button
+                type="button"
+                onClick={() => { setStatsMonth(shiftMonth(statsMonth, -1)); setStatsSelectedWeek(null) }}
+                aria-label="Mois précédent"
+              >‹</button>
+              <strong className="stats-month-title">
+                {formatMonth(statsMonth).charAt(0).toUpperCase() + formatMonth(statsMonth).slice(1)}
+              </strong>
+              <button
+                type="button"
+                onClick={() => { setStatsMonth(shiftMonth(statsMonth, 1)); setStatsSelectedWeek(null) }}
+                aria-label="Mois suivant"
+                disabled={statsMonth >= todayIso.slice(0, 7)}
+              >›</button>
+              {statsMonth !== todayIso.slice(0, 7) ? (
+                <button type="button" onClick={() => { setStatsMonth(todayIso.slice(0, 7)); setStatsSelectedWeek(null) }}>
+                  Aujourd&apos;hui
+                </button>
               ) : null}
               <button type="button" className="hero-cta-button stats-export-btn" onClick={() => void exportWeeklyStatsPdf()}>
                 📄 Exporter
               </button>
             </div>
           </div>
+          {statsSelectedWeek && statsWeekDaily ? (
+            <div className="stats-week-detail-bar">
+              <strong>
+                Détail de la semaine du{' '}
+                {statsMonthWeeks.find((w) => w.weekStart === statsSelectedWeek)?.label ?? statsSelectedWeek}
+              </strong>
+              <button type="button" className="ghost-button" onClick={() => setStatsSelectedWeek(null)}>
+                ← Retour aux 12 semaines
+              </button>
+            </div>
+          ) : null}
           <div className="stats-chart-wrap" ref={statsChartRef}>
             <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={statsViewData}>
+              <LineChart data={statsSelectedWeek && statsWeekDaily ? statsWeekDaily : statsViewData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(160, 128, 96, 0.2)" />
                 <XAxis dataKey="label" stroke="#a1a1aa" fontSize={11} interval="preserveStartEnd" />
                 <YAxis stroke="#a1a1aa" fontSize={11} />
@@ -6813,7 +6861,7 @@ Réponse attendue:
                     euroFormatter.format(Number(value)),
                     name === 'income' ? 'Revenus' : 'Dépenses',
                   ]}
-                  labelFormatter={(label) => `Semaine du ${label}`}
+                  labelFormatter={(label) => (statsSelectedWeek ? String(label) : `Semaine du ${label}`)}
                 />
                 <Line
                   type="linear"
@@ -6848,26 +6896,45 @@ Réponse attendue:
           <div className="panel-title">
             <div>
               <h2>Semaine par semaine</h2>
-              <p>Le solde de chaque semaine et sa tendance.</p>
+              <p>
+                Les semaines de {formatMonth(statsMonth)} — appuyez sur une semaine pour voir son
+                détail jour par jour sur le graphique.
+              </p>
             </div>
           </div>
           <ul className="stats-week-list">
-            {[...statsViewData].reverse().map((week) => (
-              <li key={week.weekStart}>
-                <span className="stats-week-label">{week.label}</span>
-                <span className="stats-week-amounts">
-                  <span className="income">+{euroFormatter.format(week.income)}</span>
-                  <span className="expense">−{euroFormatter.format(week.spent)}</span>
-                </span>
-                <strong className={`stats-week-net ${week.net < 0 ? 'expense' : 'income'}`}>
-                  {week.net >= 0 ? '+' : ''}{euroFormatter.format(week.net)}
-                </strong>
-                <span className={`stats-week-type stats-week-type--${week.type}`}>
-                  {week.type === 'danger' ? '⚠️ Danger'
-                    : week.type === 'highest' ? '🏆 Highest ever'
-                    : week.type === 'up' ? '📈 Up'
-                    : 'Normal'}
-                </span>
+            {[...statsMonthWeeks].reverse().map((week) => (
+              <li key={week.weekStart} className={statsSelectedWeek === week.weekStart ? 'stats-week-row--active' : ''}>
+                <button
+                  type="button"
+                  className="stats-week-main"
+                  onClick={() => setStatsSelectedWeek((previous) => (previous === week.weekStart ? null : week.weekStart))}
+                  aria-label={`Voir le détail de la semaine du ${week.label}`}
+                >
+                  <span className="stats-week-label">{week.label}</span>
+                  <span className="stats-week-amounts">
+                    <span className="income">+{euroFormatter.format(week.income)}</span>
+                    <span className="expense">−{euroFormatter.format(week.spent)}</span>
+                  </span>
+                  <strong className={`stats-week-net ${week.net < 0 ? 'expense' : 'income'}`}>
+                    {week.net >= 0 ? '+' : ''}{euroFormatter.format(week.net)}
+                  </strong>
+                  <span className={`stats-week-type stats-week-type--${week.type}`}>
+                    {week.type === 'danger' ? '⚠️ Danger'
+                      : week.type === 'highest' ? '🏆 Highest ever'
+                      : week.type === 'up' ? '📈 Up'
+                      : 'Normal'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="stats-week-export"
+                  onClick={() => void exportWeeklyStatsPdf(week)}
+                  aria-label={`Exporter la semaine du ${week.label} en PDF`}
+                  title="Exporter cette semaine en PDF"
+                >
+                  📄
+                </button>
               </li>
             ))}
           </ul>
