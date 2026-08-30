@@ -847,6 +847,13 @@ function App() {
   const [toast, setToast] = useState<{ message: string; key: number; level: ToastLevel } | null>(null)
   const showToast = (message: string, level: ToastLevel = 'info') =>
     setToast({ message, key: Date.now(), level })
+
+  /** Mode démo : bloque une action réelle et explique pourquoi. */
+  const blockInDemo = (feature: string): boolean => {
+    if (!demoMode) return false
+    showToast(`🎬 Mode démo — ${feature} n'est pas disponible ici. Créez un compte gratuit pour l'activer !`)
+    return true
+  }
   useEffect(() => {
     if (!toast) return
     // Toasts d'alerte tiennent plus longtemps (l'utilisateur doit pouvoir lire)
@@ -1714,7 +1721,7 @@ Règles :
 
   const saveAiProvider = (provider: AIProviderId) => {
     setAiProvider(provider)
-    window.localStorage.setItem(AI_PROVIDER_STORAGE_KEY, provider)
+    if (!demoMode) window.localStorage.setItem(AI_PROVIDER_STORAGE_KEY, provider)
     setClaudeTestState('idle')
     setClaudeTestMessage('')
   }
@@ -1722,7 +1729,7 @@ Règles :
   const saveAiProviderKey = (provider: AIProviderId, key: string) => {
     setAiProviderKeys((previous) => {
       const next = { ...previous, [provider]: key }
-      window.localStorage.setItem(AI_PROVIDER_KEYS_STORAGE_KEY, JSON.stringify(next))
+      if (!demoMode) window.localStorage.setItem(AI_PROVIDER_KEYS_STORAGE_KEY, JSON.stringify(next))
       if (provider === 'anthropic') {
         window.localStorage.setItem(ANTHROPIC_KEY_STORAGE, key)
       }
@@ -2283,6 +2290,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }, [sentInvites, relanceTick])
 
   const handleResendInvite = async (invite: SentInvite) => {
+    if (blockInDemo('les invitations famille')) return
     if (inviteBusy) return
     setInviteBusy(true)
     setInviteFeedback(null)
@@ -2312,6 +2320,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const handleCancelInvite = async (invite: SentInvite) => {
+    if (blockInDemo('les invitations famille')) return
     const ok = await cancelSentInvite(invite.membershipId)
     if (ok) {
       showToast(`Invitation de ${invite.email} annulée`)
@@ -2339,6 +2348,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const handleReportPrefsChange = async (
     patch: Partial<Pick<ReportPrefs, 'frequency' | 'format' | 'attachment' | 'ccEmails'>>,
   ) => {
+    if (blockInDemo('les rapports par email')) return
     const next = {
       frequency: reportPrefs.frequency,
       format: reportPrefs.format,
@@ -2371,6 +2381,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const handleSendTestReport = async () => {
+    if (blockInDemo('l\u2019envoi de rapports par email')) return
     if (reportBusy) return
     setReportBusy(true)
     setReportFeedback(null)
@@ -2389,6 +2400,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const handleSendFamilyInvite = async () => {
+    if (blockInDemo('les invitations famille')) return
     const email = inviteEmail.trim().toLowerCase()
     if (!email || inviteBusy) return
     setInviteBusy(true)
@@ -4428,6 +4440,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const setProfileAvatar = (profileId: string, avatar: string | undefined) => {
+    if (blockInDemo('le changement de photo ou d\u2019avatar')) return
     setProfiles((previous) =>
       previous.map((item) => {
         if (item.id !== profileId) return item
@@ -4442,6 +4455,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const handleAvatarUpload = async (file: File | undefined) => {
+    if (blockInDemo('le changement de photo')) return
     if (!file) return
     setSettingsError('')
     setSettingsSuccess('')
@@ -4455,6 +4469,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const handleUpdateManagedProfile = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (blockInDemo('la modification des profils')) return
     event.preventDefault()
     setSettingsError('')
     setSettingsSuccess('')
@@ -4681,6 +4697,7 @@ Réponse attendue:
   }
 
   const handleExportEncryptedBackup = async () => {
+    if (blockInDemo('l\u2019export de sauvegarde')) return
     setSettingsError('')
     setSettingsSuccess('')
 
@@ -4716,6 +4733,7 @@ Réponse attendue:
   }
 
   const handleRestoreEncryptedBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (blockInDemo('la restauration de sauvegarde')) return
     setSettingsError('')
     setSettingsSuccess('')
 
@@ -4814,6 +4832,8 @@ Réponse attendue:
 
   const handleAddProfile = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (blockInDemo('la cr\u00e9ation de profils')) return
+    event.preventDefault()
     setSettingsError('')
     setSettingsSuccess('')
 
@@ -4871,6 +4891,8 @@ Réponse attendue:
   }
 
   const handlePinUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (blockInDemo('le changement de PIN')) return
     event.preventDefault()
     setSettingsError('')
     setSettingsSuccess('')
@@ -6438,7 +6460,10 @@ Réponse attendue:
                       <button
                         type="button"
                         className="hero-cta-button"
-                        onClick={() => setShowPrivacyPanel(true)}
+                        onClick={() => {
+                          if (blockInDemo('les données RGPD')) return
+                          setShowPrivacyPanel(true)
+                        }}
                       >
                         🔒 Ouvrir mes données RGPD
                       </button>
