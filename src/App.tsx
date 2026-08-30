@@ -187,6 +187,30 @@ const FIRST_TX_TOUR_DONE_KEY = 'plan-financier-first-tx-tour-done-v1'
 const THEME_STORAGE_KEY = 'plan-financier-theme-v1'
 const PALETTE_STORAGE_KEY = 'plan-financier-palette-v1'
 const NOTES_STORAGE_KEY = 'plan-financier-notes-v1'
+const A11Y_STORAGE_KEY = 'plan-financier-a11y-v1'
+
+type A11yPrefs = {
+  textSize: 'normal' | 'large' | 'xl'
+  reduceMotion: boolean
+  highContrast: boolean
+}
+
+const defaultA11yPrefs: A11yPrefs = { textSize: 'normal', reduceMotion: false, highContrast: false }
+
+const loadA11yPrefs = (): A11yPrefs => {
+  if (typeof window === 'undefined') return defaultA11yPrefs
+  try {
+    const raw = window.localStorage.getItem(A11Y_STORAGE_KEY)
+    const parsed = raw ? (JSON.parse(raw) as Partial<A11yPrefs>) : {}
+    return {
+      textSize: parsed.textSize === 'large' || parsed.textSize === 'xl' ? parsed.textSize : 'normal',
+      reduceMotion: parsed.reduceMotion === true,
+      highContrast: parsed.highContrast === true,
+    }
+  } catch {
+    return defaultA11yPrefs
+  }
+}
 
 const loadNotes = (): NoteItem[] => {
   if (typeof window === 'undefined') return []
@@ -790,7 +814,7 @@ const formatChatThreadActivity = (value: number) => {
 }
 
 function App() {
-  type SettingsSection = 'profiles' | 'ai' | 'security' | 'backup' | 'reset' | 'theme' | 'rgpd' | 'account' | 'report'
+  type SettingsSection = 'profiles' | 'ai' | 'security' | 'backup' | 'reset' | 'theme' | 'rgpd' | 'account' | 'report' | 'a11y'
   const currentMonth = new Date().toISOString().slice(0, 7)
   const todayIso = new Date().toISOString().slice(0, 10)
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
@@ -889,6 +913,7 @@ function App() {
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>(
     () => (window.localStorage.getItem(THEME_STORAGE_KEY) as 'dark' | 'light' | 'system') ?? 'system'
   )
+  const [a11yPrefs, setA11yPrefs] = useState<A11yPrefs>(loadA11yPrefs)
   const [palette, setPalette] = useState<PaletteId>(() => {
     const stored = window.localStorage.getItem(PALETTE_STORAGE_KEY)
     return isPaletteId(stored) ? stored : 'cafe'
@@ -2329,6 +2354,16 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     document.documentElement.setAttribute('data-palette', palette)
     window.localStorage.setItem(PALETTE_STORAGE_KEY, palette)
   }, [palette])
+
+  useEffect(() => {
+    const root = document.documentElement
+    root.setAttribute('data-textsize', a11yPrefs.textSize)
+    if (a11yPrefs.reduceMotion) root.setAttribute('data-reduce-motion', '1')
+    else root.removeAttribute('data-reduce-motion')
+    if (a11yPrefs.highContrast) root.setAttribute('data-contrast', 'high')
+    else root.removeAttribute('data-contrast')
+    window.localStorage.setItem(A11Y_STORAGE_KEY, JSON.stringify(a11yPrefs))
+  }, [a11yPrefs])
 
   useEffect(() => {
     window.localStorage.setItem(DASHBOARD_WIDGETS_STORAGE_KEY, JSON.stringify(dashboardWidgetState))
@@ -5116,6 +5151,7 @@ Réponse attendue:
                     group: 'Personnalisation',
                     items: [
                       ['theme', '🎨', 'Thème'],
+                      ['a11y', '♿', 'Accessibilité'],
                       ['profiles', '👥', 'Profils'],
                       ['ai', '✨', 'Assistant IA'],
                     ],
@@ -5455,6 +5491,69 @@ Réponse attendue:
                           {claudeTestMessage}
                         </p>
                       ) : null}
+                    </article>
+                  </div>
+                ) : null}
+
+                {settingsSection === 'a11y' ? (
+                  <div className="settings-section-grid settings-section-grid--single">
+                    <article className="glass-card settings-section-card form-panel">
+                      <div className="panel-title">
+                        <h2>♿ Accessibilité</h2>
+                        <p>Adaptez l'application à vos besoins de lecture et de confort.</p>
+                      </div>
+
+                      <span className="ai-provider-label">Taille du texte</span>
+                      <div className="theme-picker">
+                        {([
+                          ['normal', 'Aa', 'Normale'],
+                          ['large', 'Aa', 'Grande'],
+                          ['xl', 'Aa', 'Très grande'],
+                        ] as const).map(([value, icon, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            className={`theme-option a11y-size-option a11y-size-option--${value}${a11yPrefs.textSize === value ? ' theme-option--active' : ''}`}
+                            onClick={() => setA11yPrefs((previous) => ({ ...previous, textSize: value }))}
+                          >
+                            <span className="theme-option-icon">{icon}</span>
+                            <span>{label}</span>
+                            {a11yPrefs.textSize === value ? <span className="theme-option-state">✓</span> : null}
+                          </button>
+                        ))}
+                      </div>
+
+                      <label className="a11y-toggle">
+                        <input
+                          type="checkbox"
+                          checked={a11yPrefs.reduceMotion}
+                          onChange={(event) =>
+                            setA11yPrefs((previous) => ({ ...previous, reduceMotion: event.target.checked }))
+                          }
+                        />
+                        <span>
+                          <strong>Réduire les animations</strong>
+                          <small>Désactive les mouvements (coucou 👋, jauges animées, transitions).</small>
+                        </span>
+                      </label>
+
+                      <label className="a11y-toggle">
+                        <input
+                          type="checkbox"
+                          checked={a11yPrefs.highContrast}
+                          onChange={(event) =>
+                            setA11yPrefs((previous) => ({ ...previous, highContrast: event.target.checked }))
+                          }
+                        />
+                        <span>
+                          <strong>Contraste renforcé</strong>
+                          <small>Textes secondaires plus foncés et bordures plus marquées.</small>
+                        </span>
+                      </label>
+
+                      <p className="auth-note">
+                        Astuce : la vue Budget propose aussi un « Mode simple » qui agrandit encore ses textes.
+                      </p>
                     </article>
                   </div>
                 ) : null}
