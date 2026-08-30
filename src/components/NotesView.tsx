@@ -77,7 +77,7 @@ export function NotesView({ notes, onChange, aiEnabled, anthropicKey, onImportTr
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022',
+          model: 'claude-haiku-4-5-20251001',
           max_tokens: 1500,
           system: `Tu extrais des opérations financières d'un texte libre en français (relevé bancaire collé, ticket, liste, SMS…). Réponds UNIQUEMENT un JSON de la forme {"transactions":[{"label":"…","amount":12.5,"kind":"depense","date":"2026-08-30","category":"Courses","tags":["…"]}]}.
 Règles : amount toujours positif (le signe est porté par kind: "depense" ou "revenu") ; date au format YYYY-MM-DD ou null si inconnue ; category exactement parmi ${categories.join(', ')} ; tags 0-2 étiquettes courtes en minuscules ; libellés courts et propres. Si aucune opération détectable, {"transactions":[]}.`,

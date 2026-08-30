@@ -1352,7 +1352,7 @@ Règles :
         'anthropic-dangerous-direct-browser-access': 'true',
       },
       body: JSON.stringify({
-        model: 'claude-3-5-haiku-20241022',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
         system: ONBOARDING_SYSTEM,
         messages,
@@ -1636,7 +1636,7 @@ Règles :
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022',
+          model: 'claude-haiku-4-5-20251001',
           max_tokens: 12,
           messages: [{ role: 'user', content: 'Réponds seulement OK.' }],
         }),
@@ -1715,7 +1715,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022',
+          model: 'claude-haiku-4-5-20251001',
           max_tokens: 400,
           messages: [{ role: 'user', content: prompt }],
         }),
@@ -1759,7 +1759,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022',
+          model: 'claude-haiku-4-5-20251001',
           max_tokens: 1024,
           system: buildFinancialContext(),
           messages: newMessages,
@@ -3315,7 +3315,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022',
+          model: 'claude-haiku-4-5-20251001',
           max_tokens: 120,
           system:
             'Tu classes une dépense de budget familial français. Réponds UNIQUEMENT un objet JSON de la forme {"category": "...", "tags": ["..."], "icon": "🛒"} sans autre texte. category doit être exactement une valeur parmi: Courses, Transport, Ecole, Loisirs, Sante, Maison, Autre. tags: 0 à 3 étiquettes courtes en minuscules, utiles et non redondantes avec la catégorie, sinon tableau vide. icon: UN SEUL emoji représentant au mieux le marchand ou la dépense (jamais de texte).',
@@ -4057,9 +4057,14 @@ Réponse attendue:
 - pas de markdown
 - ton bienveillant et direct.`
 
+    // Garde-fou : sans réponse en 20 s, on abandonne proprement (sinon le
+    // squelette de chargement pourrait rester affiché indéfiniment).
+    const abort = new AbortController()
+    const abortTimer = window.setTimeout(() => abort.abort(), 20_000)
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
+        signal: abort.signal,
         headers: {
           'x-api-key': anthropicKey,
           'anthropic-version': '2023-06-01',
@@ -4067,7 +4072,7 @@ Réponse attendue:
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022',
+          model: 'claude-haiku-4-5-20251001',
           max_tokens: 220,
           messages: [{ role: 'user', content: prompt }],
         }),
@@ -4084,10 +4089,18 @@ Réponse attendue:
       const data = (await response.json()) as AnthropicResponse
       const text = data.content.find((c) => c.type === 'text')?.text?.trim() ?? ''
       setBudgetAssistantAdvice(text || 'Conseil IA indisponible pour le moment.')
-      setBudgetAssistantContextLoaded(budgetAssistantContextKey)
-    } catch {
-      setBudgetAssistantError('Impossible de contacter Claude pour le moment.')
+    } catch (error) {
+      setBudgetAssistantError(
+        error instanceof DOMException && error.name === 'AbortError'
+          ? "L'analyse a pris trop de temps — réessayez dans un instant."
+          : 'Impossible de contacter Claude pour le moment.',
+      )
     } finally {
+      window.clearTimeout(abortTimer)
+      // Succès OU échec : le contexte est marqué traité, sinon l'effet
+      // relançait l'analyse en boucle (en effaçant le message d'erreur —
+      // d'où un squelette de chargement affiché en permanence).
+      setBudgetAssistantContextLoaded(budgetAssistantContextKey)
       setBudgetAssistantLoading(false)
     }
   }
@@ -7525,6 +7538,18 @@ Réponse attendue:
                   <Bot size={12} /> Analyse IA
                 </span>
               </div>
+              <button
+                type="button"
+                className="budget-assistant-hide"
+                onClick={() => {
+                  setBudgetAssistantError('')
+                  setBudgetAssistantContextLoaded('')
+                  void requestBudgetAssistantAdvice()
+                }}
+                disabled={budgetAssistantLoading}
+              >
+                Actualiser
+              </button>
             </div>
             <p className="budget-advice-helper">
               Votre assistant analyse le mois en cours et vous conseille.
