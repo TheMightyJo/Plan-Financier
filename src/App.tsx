@@ -4750,7 +4750,7 @@ Réponse attendue:
               : 'Budget dépassé — réduisez une catégorie ou ajustez le budget.'}
           </p>
           <div className="hero-primary-actions">
-            <button type="button" className="hero-cta-button" onClick={() => navigateToSection('operations')}>
+            <button type="button" className="hero-cta-button" onClick={() => openQuickAdd(todayIso)}>
               <Plus size={16} /> Ajouter une dépense
             </button>
             <button type="button" className="ghost-button" onClick={() => void exportMonthlyPdf()}>
@@ -4856,20 +4856,27 @@ Réponse attendue:
           <ul className="recent-tx-list">
             {recentTransactions.map((tx) => (
               <li key={tx.id}>
-                <span className="recent-tx-dot" style={{ background: categoryColors[tx.category] }} aria-hidden="true" />
-                <span className="recent-tx-label">
-                  {tx.label}
-                  {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
-                  {(tx.tags ?? []).map((tag) => (
-                    <span key={tag} className="tx-tag">#{tag}</span>
-                  ))}
-                </span>
-                <span className="recent-tx-meta">
-                  {new Date(`${tx.date}T12:00:00`).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })} · {tx.category}
-                </span>
-                <span className={`recent-tx-amount recent-tx-amount--${tx.kind}`}>
-                  {tx.kind === 'depense' ? '−' : '+'}{euroFormatter.format(tx.amount)}
-                </span>
+                <button
+                  type="button"
+                  className="recent-tx-hit"
+                  onClick={() => openQuickEdit(tx)}
+                  aria-label={`Modifier ${tx.label}`}
+                >
+                  <span className="recent-tx-dot" style={{ background: categoryColors[tx.category] }} aria-hidden="true" />
+                  <span className="recent-tx-label">
+                    {tx.label}
+                    {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
+                    {(tx.tags ?? []).map((tag) => (
+                      <span key={tag} className="tx-tag">#{tag}</span>
+                    ))}
+                  </span>
+                  <span className="recent-tx-meta">
+                    {new Date(`${tx.date}T12:00:00`).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })} · {tx.category}
+                  </span>
+                  <span className={`recent-tx-amount recent-tx-amount--${tx.kind}`}>
+                    {tx.kind === 'depense' ? '−' : '+'}{euroFormatter.format(tx.amount)}
+                  </span>
+                </button>
               </li>
             ))}
           </ul>

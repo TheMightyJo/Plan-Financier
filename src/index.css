@@ -9233,3 +9233,37 @@ h1 {
   width: 100%;
   max-height: none;
 }
+
+/* Ligne cliquable des dernières opérations (ouvre la modale d'édition). */
+.recent-tx-list li:has(.recent-tx-hit) {
+  display: block;
+  padding: 0;
+}
+
+.recent-tx-hit {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.3rem;
+  border-radius: 0.5rem;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.recent-tx-hit:hover {
+  background: var(--surface-soft);
+}
+
+@media (max-width: 560px) {
+  .recent-tx-hit {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+}
