@@ -10304,3 +10304,18 @@ h1 {
   }
   .stats-week-amounts { display: none; }
 }
+
+/* ── Accueil : carte « Semaine en cours » (cliquable → Statistiques) ─ */
+.kpi-card--week {
+  appearance: none;
+  background: var(--surface-soft);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  justify-items: start;
+}
+
+.kpi-card--week:hover {
+  border-color: rgba(var(--accent-rgb), 0.55);
+}

@@ -5222,6 +5222,29 @@ Réponse attendue:
 
         {isActiveView('overview') ? (
         <section className="kpi-summary" style={{ margin: '0 0 1rem 0' }}>
+          {(() => {
+            const week = weeklyStatsData.at(-1)
+            if (!week) return null
+            return (
+              <button
+                type="button"
+                className="kpi-card kpi-card--week"
+                onClick={() => navigateToSection('stats')}
+                title="Voir les statistiques hebdomadaires"
+              >
+                <div className="kpi-card-label">Semaine en cours</div>
+                <div className={`kpi-card-value ${week.net < 0 ? 'expense' : 'income'}`}>
+                  {week.net >= 0 ? '+' : ''}{euroFormatter.format(week.net)}
+                </div>
+                <span className={`stats-week-type stats-week-type--${week.type}`}>
+                  {week.type === 'danger' ? '⚠️ Danger'
+                    : week.type === 'highest' ? '🏆 Highest ever'
+                    : week.type === 'up' ? '📈 Up'
+                    : 'Normal'}
+                </span>
+              </button>
+            )
+          })()}
           <div className="kpi-card kpi-card--secondary">
             <div className="kpi-card-label">Revenus ce mois</div>
             <div className="kpi-card-value">{euroFormatter.format(monthlyIncome)}</div>
@@ -6700,22 +6723,24 @@ Réponse attendue:
                   labelFormatter={(label) => `Semaine du ${label}`}
                 />
                 <Line
-                  type="monotone"
+                  type="linear"
                   dataKey="income"
                   name="income"
                   stroke="#3A7D44"
                   strokeWidth={2.5}
                   dot={{ r: 3, fill: '#3A7D44' }}
                   activeDot={{ r: 5 }}
+                  isAnimationActive={false}
                 />
                 <Line
-                  type="monotone"
+                  type="linear"
                   dataKey="spent"
                   name="spent"
                   stroke="#C05C2A"
                   strokeWidth={2.5}
                   dot={{ r: 3, fill: '#C05C2A' }}
                   activeDot={{ r: 5 }}
+                  isAnimationActive={false}
                 />
               </LineChart>
             </ResponsiveContainer>
