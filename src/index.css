@@ -2242,10 +2242,12 @@ body {
 
 /* ── Échelle typographique ──────────────────────────────── */
 :root {
-  --text-2xs: 0.75rem;    /* 12px — badges, labels */
-  --text-xs:  0.8125rem;  /* 13px — métadonnées, sous-textes */
-  --text-sm:  0.875rem;   /* 14px — corps secondaire */
-  --text-base: 1rem;      /* 16px — corps principal, titres de cartes */
+  /* Échelle relevée d'un cran (l'ancienne écrivait le corps du site en 14px,
+     sous le standard web de 16px — illisible pour la cible familiale). */
+  --text-2xs: 0.8125rem;  /* 13px — badges, labels */
+  --text-xs:  0.875rem;   /* 14px — métadonnées, sous-textes */
+  --text-sm:  0.9375rem;  /* 15px — corps secondaire */
+  --text-base: 1.0625rem; /* 17px — corps principal, titres de cartes */
   --text-lg:  clamp(1.1rem, 1.4vw, 1.25rem);
   --text-xl:  clamp(1.25rem, 1.8vw, 1.7rem);
   --text-2xl: clamp(1.45rem, 2.6vw, 2.35rem);
