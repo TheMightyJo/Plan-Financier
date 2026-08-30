@@ -10582,10 +10582,6 @@ button.stats-month-title {
   pointer-events: none;
 }
 
-.envelope-card:hover .envelope-card__flap {
-  transform: rotateX(150deg);
-}
-
 .envelope-card__body {
   position: relative;
   z-index: 1;
@@ -10943,3 +10939,109 @@ button.envelope-card__top {
 
 .accounts-widget-breakdown .is-positive { color: #3A7D44; font-weight: 800; }
 .accounts-widget-breakdown .is-negative { color: #C05C2A; font-weight: 800; }
+
+/* ── Poches : carte entière cliquable + carte « Nouvelle poche » ──── */
+button.envelope-card {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+}
+
+button.envelope-card:hover .envelope-card__body {
+  border-color: rgba(var(--accent-rgb), 0.55);
+}
+
+.envelope-card__fund-line,
+.envelope-card__target-line {
+  color: var(--text-2);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+
+.envelope-card__fund-line strong {
+  font-size: var(--text-xs);
+}
+
+.envelope-card--new .envelope-card__body--new {
+  display: grid;
+  place-items: center;
+  gap: 0.3rem;
+  min-height: 9rem;
+  border-style: dashed;
+  color: var(--text-2);
+}
+
+.envelope-card__new-plus {
+  font-size: 2rem;
+  line-height: 1;
+  color: var(--text-2);
+}
+
+.envelope-card--new:hover .envelope-card__body--new {
+  color: var(--text-1);
+}
+
+/* Modale de poche : formulaire empilé propre. */
+.envelope-modal {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.envelope-modal h3 {
+  margin: 0;
+}
+
+.envelope-modal label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.envelope-modal input {
+  width: 100%;
+  border-radius: 0.7rem;
+  border: 1px solid var(--border);
+  background: var(--field-bg);
+  color: var(--text-1);
+  padding: 0.55rem 0.65rem;
+  font-size: var(--text-sm);
+  outline: none;
+}
+
+.envelope-modal input:focus {
+  border-color: rgba(var(--accent-rgb), 0.8);
+}
+
+/* « Budget prévu » : crayon discret à côté du montant. */
+.budget-simple-value-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.budget-edit-icon {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text-2);
+  border-radius: 0.5rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.budget-edit-icon:hover {
+  color: var(--text-1);
+  border-color: rgba(var(--accent-rgb), 0.6);
+}

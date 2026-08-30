@@ -194,6 +194,7 @@ const MANUAL_ONBOARDING_PHASES = [
 const FIRST_TX_TOUR_DONE_KEY = 'plan-financier-first-tx-tour-done-v1'
 const ENVELOPE_BUDGETS_STORAGE_KEY = 'plan-financier-envelope-budgets-v1'
 const ENVELOPE_FUNDS_STORAGE_KEY = 'plan-financier-envelope-funds-v1'
+const CUSTOM_ENVELOPES_STORAGE_KEY = 'plan-financier-custom-envelopes-v1'
 const THEME_STORAGE_KEY = 'plan-financier-theme-v1'
 const PALETTE_STORAGE_KEY = 'plan-financier-palette-v1'
 const NOTES_STORAGE_KEY = 'plan-financier-notes-v1'
@@ -1104,8 +1105,6 @@ function App() {
       return {}
     }
   })
-  const [envelopeEditing, setEnvelopeEditing] = useState<string | null>(null)
-  const [envelopeDraft, setEnvelopeDraft] = useState('')
   // Argent « mis dans » chaque poche (provision) : Record<profileId, Record<poche, montant>>.
   const [envelopeFunds, setEnvelopeFunds] = useState<Record<string, Record<string, number>>>(() => {
     try {
@@ -1116,9 +1115,23 @@ function App() {
     }
   })
   const [envelopeOpenName, setEnvelopeOpenName] = useState<string | null>(null)
+  // Poches créées par l'utilisateur : Record<profileId, string[]>.
+  const [customEnvelopes, setCustomEnvelopes] = useState<Record<string, string[]>>(() => {
+    try {
+      const raw = window.localStorage.getItem(CUSTOM_ENVELOPES_STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as Record<string, string[]>) : {}
+    } catch {
+      return {}
+    }
+  })
+  // Modale de gestion d'une poche (édition ou création).
+  const [envelopeModal, setEnvelopeModal] = useState<{ mode: 'edit' | 'create'; name: string } | null>(null)
+  const [envModalName, setEnvModalName] = useState('')
+  const [envModalTarget, setEnvModalTarget] = useState('')
+  const [envModalAdd, setEnvModalAdd] = useState('')
+  const [envModalDeleteAsk, setEnvModalDeleteAsk] = useState(false)
   const [goalRowEditing, setGoalRowEditing] = useState<string | null>(null)
   const [goalRowDraft, setGoalRowDraft] = useState('')
-  const [envelopeAddDraft, setEnvelopeAddDraft] = useState('')
   const [budgetQuickEditOpen, setBudgetQuickEditOpen] = useState(false)
   const [budgetQuickEditValue, setBudgetQuickEditValue] = useState('')
   const [budgetAssistantVisible, setBudgetAssistantVisible] = useState(true)
@@ -3077,6 +3090,121 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const profileEnvelopeBudgets = envelopeBudgets[selectedProfileId] ?? {}
   const profileEnvelopeFunds = envelopeFunds[selectedProfileId] ?? {}
 
+  useEffect(() => {
+    if (demoMode) return
+    try {
+      window.localStorage.setItem(CUSTOM_ENVELOPES_STORAGE_KEY, JSON.stringify(customEnvelopes))
+    } catch {
+      /* stockage indisponible : silencieux */
+    }
+  }, [customEnvelopes, demoMode])
+
+  const profileCustomEnvelopes = customEnvelopes[selectedProfileId] ?? []
+
+  /** Clic sur une poche : rabat qui s'ouvre, puis modale de gestion. */
+  const openEnvelopeModal = (name: string) => {
+    setEnvelopeOpenName(name)
+    setEnvModalName(name)
+    setEnvModalTarget(profileEnvelopeBudgets[name] ? String(profileEnvelopeBudgets[name]) : '')
+    setEnvModalAdd('')
+    setEnvModalDeleteAsk(false)
+    window.setTimeout(() => setEnvelopeModal({ mode: 'edit', name }), 340)
+  }
+
+  const closeEnvelopeModal = () => {
+    setEnvelopeModal(null)
+    setEnvelopeOpenName(null)
+    setEnvModalDeleteAsk(false)
+  }
+
+  const createEnvelope = (rawName: string) => {
+    const name = rawName.trim().slice(0, 40)
+    if (!name) return
+    const exists = [...envelopes, ...profileCustomEnvelopes].some(
+      (existing) => existing.toLowerCase() === name.toLowerCase(),
+    )
+    if (exists) {
+      showToast('Cette poche existe déjà', 'danger')
+      return
+    }
+    setCustomEnvelopes((previous) => ({
+      ...previous,
+      [selectedProfileId]: [...(previous[selectedProfileId] ?? []), name],
+    }))
+    showToast(`✉️ Poche « ${name} » créée`)
+    closeEnvelopeModal()
+  }
+
+  const renameEnvelope = (oldName: string, rawNext: string) => {
+    const next = rawNext.trim().slice(0, 40)
+    if (!next || next === oldName) return
+    // Remap partout : poches perso, objectifs, fonds, transactions, règles.
+    setCustomEnvelopes((previous) => ({
+      ...previous,
+      [selectedProfileId]: [
+        ...(previous[selectedProfileId] ?? []).filter((n) => n !== oldName && n !== next),
+        next,
+      ],
+    }))
+    setEnvelopeBudgets((previous) => {
+      const forProfile = { ...(previous[selectedProfileId] ?? {}) }
+      if (forProfile[oldName] !== undefined) {
+        forProfile[next] = forProfile[oldName]
+        delete forProfile[oldName]
+      }
+      return { ...previous, [selectedProfileId]: forProfile }
+    })
+    setEnvelopeFunds((previous) => {
+      const forProfile = { ...(previous[selectedProfileId] ?? {}) }
+      if (forProfile[oldName] !== undefined) {
+        forProfile[next] = (forProfile[next] ?? 0) + forProfile[oldName]
+        delete forProfile[oldName]
+      }
+      return { ...previous, [selectedProfileId]: forProfile }
+    })
+    setTransactions((previous) =>
+      previous.map((tx) => (tx.member === selectedProfileId && tx.envelope === oldName ? { ...tx, envelope: next } : tx)),
+    )
+    setRecurringRules((previous) =>
+      previous.map((rule) =>
+        rule.member === selectedProfileId && rule.envelope === oldName ? { ...rule, envelope: next, updatedAt: Date.now() } : rule,
+      ),
+    )
+    showToast(`✉️ Poche renommée en « ${next} »`)
+    closeEnvelopeModal()
+  }
+
+  const deleteEnvelope = (name: string) => {
+    if (name === 'Perso') {
+      showToast('La poche Perso sert de repli — elle ne peut pas être supprimée.', 'danger')
+      return
+    }
+    setCustomEnvelopes((previous) => ({
+      ...previous,
+      [selectedProfileId]: (previous[selectedProfileId] ?? []).filter((n) => n !== name),
+    }))
+    setEnvelopeBudgets((previous) => {
+      const forProfile = { ...(previous[selectedProfileId] ?? {}) }
+      delete forProfile[name]
+      return { ...previous, [selectedProfileId]: forProfile }
+    })
+    setEnvelopeFunds((previous) => {
+      const forProfile = { ...(previous[selectedProfileId] ?? {}) }
+      delete forProfile[name]
+      return { ...previous, [selectedProfileId]: forProfile }
+    })
+    setTransactions((previous) =>
+      previous.map((tx) => (tx.member === selectedProfileId && tx.envelope === name ? { ...tx, envelope: 'Perso' } : tx)),
+    )
+    setRecurringRules((previous) =>
+      previous.map((rule) =>
+        rule.member === selectedProfileId && rule.envelope === name ? { ...rule, envelope: 'Perso', updatedAt: Date.now() } : rule,
+      ),
+    )
+    showToast(`Poche « ${name} » supprimée — ses opérations passent dans Perso`)
+    closeEnvelopeModal()
+  }
+
   const addToEnvelopeFund = (name: string, delta: number) => {
     setEnvelopeFunds((previous) => {
       const forProfile = { ...(previous[selectedProfileId] ?? {}) }
@@ -3103,7 +3231,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       if (tx.kind !== 'depense') continue
       spentBy.set(tx.envelope, (spentBy.get(tx.envelope) ?? 0) + tx.amount)
     }
-    const names = new Set<string>([...envelopes, ...Object.keys(profileEnvelopeBudgets), ...spentBy.keys()])
+    const names = new Set<string>([...envelopes, ...profileCustomEnvelopes, ...Object.keys(profileEnvelopeBudgets), ...spentBy.keys()])
     return [...names]
       .map((name) => {
         const spent = spentBy.get(name) ?? 0
@@ -3123,7 +3251,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
         return { name, spent, target, fund, inside: fund - spent, ratio, weather }
       })
       .sort((a, b) => b.spent - a.spent)
-  }, [activeMonthTransactions, profileEnvelopeBudgets, profileEnvelopeFunds])
+  }, [activeMonthTransactions, profileEnvelopeBudgets, profileEnvelopeFunds, profileCustomEnvelopes])
 
   const envelopeBreakdown = useMemo(
     () =>
@@ -6936,164 +7064,12 @@ Réponse attendue:
       {isActiveView('operations') || isActiveView('budget') ? (
       <section id="pilotage" className="panel-grid">
         {isActiveView('budget') ? (
-        <article className="glass-card chart-card wide-card envelope-board">
-          <div className="panel-title">
-            <div>
-              <h2>✉️ Mes poches · {formatMonth(selectedMonth)}</h2>
-              <p>La météo de chaque poche — appuyez sur l'objectif pour l'ajuster.</p>
-            </div>
-          </div>
-          <div className="envelope-grid">
-            {envelopeCards.map((card, index) => (
-              <div
-                key={card.name}
-                className={`envelope-card envelope-card--${card.weather.tone}${envelopeOpenName === card.name ? ' envelope-card--open' : ''}`}
-                style={{ animationDelay: `${index * 70}ms` }}
-              >
-                <div className="envelope-card__flap" aria-hidden="true" />
-                <div className="envelope-card__body">
-                  <button
-                    type="button"
-                    className="envelope-card__top"
-                    onClick={() => {
-                      setEnvelopeAddDraft('')
-                      setEnvelopeOpenName((previous) => (previous === card.name ? null : card.name))
-                    }}
-                    aria-expanded={envelopeOpenName === card.name}
-                    title={envelopeOpenName === card.name ? 'Fermer la poche' : 'Ouvrir la poche'}
-                  >
-                    <strong className="envelope-card__name">{card.name}</strong>
-                    <span
-                      className={`envelope-card__weather envelope-card__weather--${card.weather.tone}`}
-                      title={card.weather.label}
-                      aria-label={card.weather.label}
-                    >
-                      {card.weather.icon}
-                    </span>
-                  </button>
-                  {envelopeOpenName === card.name ? (
-                    <div className="envelope-card__inside">
-                      <p className="envelope-card__inside-balance">
-                        💰 Dans la poche :{' '}
-                        <strong className={card.inside >= 0 ? 'income' : 'expense'}>
-                          {euroFormatter.format(card.inside)}
-                        </strong>
-                      </p>
-                      <small>
-                        {euroFormatter.format(card.fund)} mis · {euroFormatter.format(card.spent)} dépensés
-                      </small>
-                      <div className="envelope-card__add">
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          min="0"
-                          step="10"
-                          value={envelopeAddDraft}
-                          onChange={(event) => setEnvelopeAddDraft(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault()
-                              const amount = Number(envelopeAddDraft.replace(',', '.'))
-                              if (amount > 0) {
-                                addToEnvelopeFund(card.name, amount)
-                                showToast(`💰 ${euroFormatter.format(amount)} mis dans la poche ${card.name}`)
-                                setEnvelopeAddDraft('')
-                              }
-                            }
-                          }}
-                          placeholder="Montant"
-                          aria-label={`Montant à mettre dans la poche ${card.name}`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const amount = Number(envelopeAddDraft.replace(',', '.'))
-                            if (amount > 0) {
-                              addToEnvelopeFund(card.name, amount)
-                              showToast(`💰 ${euroFormatter.format(amount)} mis dans la poche ${card.name}`)
-                              setEnvelopeAddDraft('')
-                            }
-                          }}
-                          disabled={!(Number(envelopeAddDraft.replace(',', '.')) > 0)}
-                        >
-                          + Mettre
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-                  <p className="envelope-card__spent">
-                    −{euroFormatter.format(card.spent)}
-                    <small> dépensés</small>
-                  </p>
-                  {card.target > 0 ? (
-                    <div className="envelope-card__bar" aria-hidden="true">
-                      <div
-                        className={`envelope-card__bar-fill envelope-card__bar-fill--${card.weather.tone}`}
-                        style={{ width: `${Math.min(100, ((card.ratio ?? 0) * 100))}%` }}
-                      />
-                    </div>
-                  ) : null}
-                  {envelopeEditing === card.name ? (
-                    <div className="envelope-card__edit">
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        min="0"
-                        step="10"
-                        value={envelopeDraft}
-                        onChange={(event) => setEnvelopeDraft(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault()
-                            saveEnvelopeBudget(card.name, Number(envelopeDraft) || 0)
-                            setEnvelopeEditing(null)
-                          }
-                          if (event.key === 'Escape') setEnvelopeEditing(null)
-                        }}
-                        onBlur={() => {
-                          saveEnvelopeBudget(card.name, Number(envelopeDraft) || 0)
-                          setEnvelopeEditing(null)
-                        }}
-                        aria-label={`Objectif de la poche ${card.name} (euros)`}
-                        autoFocus
-                      />
-                      <span>€ / mois</span>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className="envelope-card__target"
-                      onClick={() => {
-                        setEnvelopeDraft(card.target > 0 ? String(card.target) : '')
-                        setEnvelopeEditing(card.name)
-                      }}
-                    >
-                      🎯 {card.target > 0 ? `Objectif : ${euroFormatter.format(card.target)}` : 'Définir un objectif'}
-                    </button>
-                  )}
-                  <small className="envelope-card__forecast">{card.weather.label}</small>
-                </div>
-              </div>
-            ))}
-          </div>
-        </article>
-        ) : null}
-        {isActiveView('budget') ? (
         <article id="budget" className={`glass-card chart-card wide-card${budgetSimpleMode ? ' budget-senior-mode' : ''}`} ref={budgetInfoScopeRef}>
           <div className="panel-title">
             <div className="budget-title-row">
               <h2>
                 <span className="budget-title-main">Mon budget · {formatMonth(selectedMonth)}</span>
               </h2>
-            </div>
-            <div className="budget-quick-actions-row">
-              <button
-                type="button"
-                className="budget-mini-btn budget-mini-btn-primary"
-                onClick={openQuickBudgetEditor}
-              >
-                Ajuster mon budget
-              </button>
             </div>
           </div>
           <div className="budget-shell-layout">
@@ -7118,7 +7094,18 @@ Réponse attendue:
                   ) : null}
                 </span>
               </p>
-              <strong>{euroFormatter.format(budget)}</strong>
+              <strong className="budget-simple-value-row">
+                {euroFormatter.format(budget)}
+                <button
+                  type="button"
+                  className="budget-edit-icon"
+                  onClick={openQuickBudgetEditor}
+                  aria-label="Ajuster mon budget"
+                  title="Ajuster mon budget"
+                >
+                  <Pencil size={14} />
+                </button>
+              </strong>
             </div>
             <div className="budget-simple-card">
               <p>
@@ -7504,6 +7491,78 @@ Réponse attendue:
         </article>
         ) : null}
 
+        {isActiveView('budget') ? (
+        <article className="glass-card chart-card wide-card envelope-board">
+          <div className="panel-title">
+            <div>
+              <h2>✉️ Mes poches · {formatMonth(selectedMonth)}</h2>
+              <p>La météo de chaque poche — appuyez sur l'objectif pour l'ajuster.</p>
+            </div>
+          </div>
+          <div className="envelope-grid">
+            {envelopeCards.map((card, index) => (
+              <button
+                type="button"
+                key={card.name}
+                className={`envelope-card envelope-card--${card.weather.tone}${envelopeOpenName === card.name ? ' envelope-card--open' : ''}`}
+                style={{ animationDelay: `${index * 70}ms` }}
+                onClick={() => openEnvelopeModal(card.name)}
+                aria-label={`Gérer la poche ${card.name}`}
+              >
+                <div className="envelope-card__flap" aria-hidden="true" />
+                <div className="envelope-card__body">
+                  <div className="envelope-card__top">
+                    <strong className="envelope-card__name">{card.name}</strong>
+                    <span
+                      className={`envelope-card__weather envelope-card__weather--${card.weather.tone}`}
+                      title={card.weather.label}
+                      aria-label={card.weather.label}
+                    >
+                      {card.weather.icon}
+                    </span>
+                  </div>
+                  <p className="envelope-card__spent">
+                    −{euroFormatter.format(card.spent)}
+                    <small> dépensés</small>
+                  </p>
+                  <small className="envelope-card__fund-line">
+                    💰 Dans la poche :{' '}
+                    <strong className={card.inside >= 0 ? 'income' : 'expense'}>{euroFormatter.format(card.inside)}</strong>
+                  </small>
+                  {card.target > 0 ? (
+                    <div className="envelope-card__bar" aria-hidden="true">
+                      <div
+                        className={`envelope-card__bar-fill envelope-card__bar-fill--${card.weather.tone}`}
+                        style={{ width: `${Math.min(100, ((card.ratio ?? 0) * 100))}%` }}
+                      />
+                    </div>
+                  ) : null}
+                  <small className="envelope-card__target-line">
+                    🎯 {card.target > 0 ? `Objectif : ${euroFormatter.format(card.target)}` : 'Pas encore d\u2019objectif'}
+                  </small>
+                  <small className="envelope-card__forecast">{card.weather.label}</small>
+                </div>
+              </button>
+            ))}
+            <button
+              type="button"
+              className="envelope-card envelope-card--new"
+              onClick={() => {
+                setEnvModalName('')
+                setEnvModalTarget('')
+                setEnvModalAdd('')
+                setEnvModalDeleteAsk(false)
+                setEnvelopeModal({ mode: 'create', name: '' })
+              }}
+            >
+              <div className="envelope-card__body envelope-card__body--new">
+                <span className="envelope-card__new-plus" aria-hidden="true">＋</span>
+                <strong>Nouvelle poche</strong>
+              </div>
+            </button>
+          </div>
+        </article>
+        ) : null}
         {isPilotageWidgetVisible('alerts') && isActiveView('budget') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
@@ -8475,6 +8534,121 @@ Réponse attendue:
           </div>
         ) : null}
       </>
+    ) : null}
+
+    {/* ── Modale de gestion d'une poche ──────────────────────────── */}
+    {envelopeModal ? (
+      <div className="budget-actions-modal-overlay" onClick={closeEnvelopeModal}>
+        <div className="budget-actions-modal envelope-modal" onClick={(event) => event.stopPropagation()}>
+          <button type="button" className="budget-actions-modal-close" onClick={closeEnvelopeModal} aria-label="Fermer">
+            ✕
+          </button>
+          {envelopeModal.mode === 'create' ? (
+            <>
+              <h3>✉️ Nouvelle poche</h3>
+              <label>
+                Nom de la poche
+                <input
+                  value={envModalName}
+                  onChange={(event) => setEnvModalName(event.target.value)}
+                  placeholder="Ex : Cadeaux, Voiture, Études…"
+                  maxLength={40}
+                  autoFocus
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      createEnvelope(envModalName)
+                    }
+                  }}
+                />
+              </label>
+              <div className="quick-add-actions">
+                <button type="button" className="ghost-button" onClick={closeEnvelopeModal}>Annuler</button>
+                <button type="button" className="hero-cta-button" onClick={() => createEnvelope(envModalName)} disabled={!envModalName.trim()}>
+                  Créer la poche
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h3>✉️ Poche {envelopeModal.name}</h3>
+              <label>
+                🎯 Objectif mensuel (€)
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  step="10"
+                  value={envModalTarget}
+                  onChange={(event) => setEnvModalTarget(event.target.value)}
+                  placeholder="0 = pas d'objectif"
+                />
+              </label>
+              <label>
+                💰 Mettre de l'argent dans la poche (€)
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="10"
+                  value={envModalAdd}
+                  onChange={(event) => setEnvModalAdd(event.target.value)}
+                  placeholder="Ex : 100"
+                />
+              </label>
+              <label>
+                ✏️ Renommer la poche
+                <input
+                  value={envModalName}
+                  onChange={(event) => setEnvModalName(event.target.value)}
+                  maxLength={40}
+                />
+              </label>
+              {envModalDeleteAsk ? (
+                <div className="quick-add-delete-confirm" role="alertdialog" aria-label="Confirmer la suppression">
+                  <span>Supprimer la poche « {envelopeModal.name} » ? Ses opérations passeront dans Perso.</span>
+                  <div>
+                    <button type="button" className="quick-add-delete-yes" onClick={() => deleteEnvelope(envelopeModal.name)}>
+                      Oui, supprimer
+                    </button>
+                    <button type="button" className="ghost-button" onClick={() => setEnvModalDeleteAsk(false)}>
+                      Non, garder
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              <div className="quick-add-actions">
+                {envelopeModal.name !== 'Perso' && !envModalDeleteAsk ? (
+                  <button type="button" className="quick-add-delete-btn" onClick={() => setEnvModalDeleteAsk(true)}>
+                    🗑️ Supprimer
+                  </button>
+                ) : null}
+                <button type="button" className="ghost-button" onClick={closeEnvelopeModal}>Annuler</button>
+                <button
+                  type="button"
+                  className="hero-cta-button"
+                  onClick={() => {
+                    const target = Number(envModalTarget)
+                    saveEnvelopeBudget(envelopeModal.name, Number.isNaN(target) ? 0 : target)
+                    const add = Number(envModalAdd.replace(',', '.'))
+                    if (add > 0) {
+                      addToEnvelopeFund(envelopeModal.name, add)
+                      showToast(`💰 ${euroFormatter.format(add)} mis dans la poche ${envelopeModal.name}`)
+                    }
+                    if (envModalName.trim() && envModalName.trim() !== envelopeModal.name) {
+                      renameEnvelope(envelopeModal.name, envModalName)
+                    } else {
+                      closeEnvelopeModal()
+                    }
+                  }}
+                >
+                  Enregistrer
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     ) : null}
 
     {/* ── Toast notifications ───────────────────────────────────── */}
