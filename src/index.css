@@ -9684,3 +9684,42 @@ h1 {
 .ai-key-links {
   margin-top: -0.3rem;
 }
+
+/* ── Paramètres → Rapport par email : encart « rapport programmé » ────── */
+.report-current {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.8rem;
+  border: 1.5px solid rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+.report-current strong {
+  font-size: var(--text-sm);
+  color: var(--text-1);
+}
+
+.report-current p {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-1);
+}
+
+.report-current small {
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+
+.report-current--off {
+  border-color: var(--border-soft);
+  background: var(--surface-soft);
+}
+
+.field-hint {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}

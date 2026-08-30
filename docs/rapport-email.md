@@ -61,3 +61,16 @@ précédent complet).
 - Les rapports sont construits à partir des transactions **synchronisées**
   (Postgres). Un utilisateur jamais synchronisé recevrait un rapport vide.
 - Supprimer la tâche : `select cron.unschedule('plan-financier-rapports');`
+
+## Mise à jour (options de rapport — migration 0006)
+
+Nouveautés : pièce jointe (PDF, CSV ou Excel générée par la fonction) et
+adresses en copie des rapports automatiques (max 5 — le rapport test, lui,
+n'est envoyé qu'à vous).
+
+À faire une fois :
+
+1. **SQL Editor** → exécuter `supabase/migrations/0006_report_options.sql`
+   (ajoute les colonnes `attachment` et `cc_emails`).
+2. **Redéployer** la fonction `send-report` (le code gère les deux options ;
+   sans la migration, il retombe proprement sur l'email seul).

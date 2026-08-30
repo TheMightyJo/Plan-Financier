@@ -112,6 +112,7 @@ import { NotesView, type ExtractedTx, type NoteItem } from './components/NotesVi
 import {
   defaultReportPrefs,
   getReportPrefs,
+  parseCcEmails,
   saveReportPrefs,
   sendTestReport,
   type ReportPrefs,
@@ -894,6 +895,7 @@ function App() {
   const [reportPrefs, setReportPrefs] = useState<ReportPrefs>(defaultReportPrefs)
   const [reportBusy, setReportBusy] = useState(false)
   const [reportFeedback, setReportFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  const [reportCcDraft, setReportCcDraft] = useState('')
   const [sentInvites, setSentInvites] = useState<SentInvite[]>([])
   // Cadre de relance : 1× par 24 h et par invitation (horodatage local).
   const [relanceTick, setRelanceTick] = useState(0)
@@ -2262,18 +2264,44 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return
     }
     void refreshFamily()
-    void getReportPrefs().then(setReportPrefs)
+    void getReportPrefs().then((prefs) => {
+      setReportPrefs(prefs)
+      setReportCcDraft(prefs.ccEmails.join(', '))
+    })
   }, [isAuthenticated])
 
-  const handleReportPrefsChange = async (next: Pick<ReportPrefs, 'frequency' | 'format'>) => {
-    setReportPrefs((previous) => ({ ...previous, ...next }))
+  const handleReportPrefsChange = async (
+    patch: Partial<Pick<ReportPrefs, 'frequency' | 'format' | 'attachment' | 'ccEmails'>>,
+  ) => {
+    const next = {
+      frequency: reportPrefs.frequency,
+      format: reportPrefs.format,
+      attachment: reportPrefs.attachment,
+      ccEmails: reportPrefs.ccEmails,
+      ...patch,
+    }
+    setReportPrefs((previous) => ({ ...previous, ...patch }))
     setReportFeedback(null)
     const ok = await saveReportPrefs(next)
     if (ok) {
       showToast(next.frequency === 'none' ? 'Rapport automatique désactivé' : '📧 Préférences de rapport enregistrées')
     } else {
-      setReportFeedback({ kind: 'error', text: "Impossible d'enregistrer (la migration 0005 est-elle appliquée ?)." })
+      setReportFeedback({ kind: 'error', text: "Impossible d'enregistrer (les migrations 0005 et 0006 sont-elles appliquées ?)." })
     }
+  }
+
+  const handleReportCcCommit = (raw: string) => {
+    const { valid, invalid } = parseCcEmails(raw)
+    setReportCcDraft(valid.join(', '))
+    if (invalid.length > 0) {
+      setReportFeedback({
+        kind: 'error',
+        text: `Adresse${invalid.length > 1 ? 's' : ''} ignorée${invalid.length > 1 ? 's' : ''} : ${invalid.join(', ')}`,
+      })
+    }
+    const unchanged =
+      valid.length === reportPrefs.ccEmails.length && valid.every((e, i) => reportPrefs.ccEmails[i] === e)
+    if (!unchanged) void handleReportPrefsChange({ ccEmails: valid })
   }
 
   const handleSendTestReport = async () => {
@@ -5595,6 +5623,35 @@ Réponse attendue:
                           construit à partir de vos données synchronisées.
                         </p>
                       </div>
+                      {reportPrefs.frequency !== 'none' ? (
+                        <div className="report-current" role="status">
+                          <strong>📬 Rapport programmé</strong>
+                          <p>
+                            {reportPrefs.frequency === 'weekly' ? 'Chaque semaine' : 'Chaque mois'}
+                            {' · '}
+                            {reportPrefs.format === 'detailed' ? 'détaillé' : "l'essentiel"}
+                            {reportPrefs.attachment === 'none'
+                              ? ''
+                              : ` · ${reportPrefs.attachment === 'csv' ? 'CSV' : reportPrefs.attachment === 'excel' ? 'Excel' : 'PDF'} joint`}
+                            {' — envoyé à '}
+                            {userEmail || 'votre adresse'}
+                            {reportPrefs.ccEmails.length > 0
+                              ? ` + ${reportPrefs.ccEmails.length} adresse${reportPrefs.ccEmails.length > 1 ? 's' : ''} en copie`
+                              : ''}
+                          </p>
+                          <small>
+                            {reportPrefs.lastSentAt
+                              ? `Dernier envoi : ${new Date(reportPrefs.lastSentAt).toLocaleDateString('fr-FR')}. `
+                              : 'Aucun envoi automatique pour le moment. '}
+                            Modifiez les réglages ci-dessous : ils sont enregistrés aussitôt.
+                          </small>
+                        </div>
+                      ) : (
+                        <div className="report-current report-current--off" role="status">
+                          <strong>Aucun rapport programmé</strong>
+                          <small>Choisissez une fréquence ci-dessous pour l'activer.</small>
+                        </div>
+                      )}
                       <label>
                         Fréquence
                         <select
@@ -5626,6 +5683,36 @@ Réponse attendue:
                           <option value="detailed">Détaillé (avec la liste des opérations)</option>
                         </select>
                       </label>
+                      <label>
+                        Pièce jointe
+                        <select
+                          value={reportPrefs.attachment}
+                          onChange={(event) =>
+                            void handleReportPrefsChange({
+                              attachment: event.target.value as ReportPrefs['attachment'],
+                            })
+                          }
+                        >
+                          <option value="none">Aucune — tout est dans l'email</option>
+                          <option value="pdf">PDF (à imprimer ou archiver)</option>
+                          <option value="csv">CSV (à ouvrir dans un tableur)</option>
+                          <option value="excel">Excel</option>
+                        </select>
+                      </label>
+                      <label>
+                        Envoyer une copie à (5 adresses max)
+                        <input
+                          type="text"
+                          value={reportCcDraft}
+                          onChange={(event) => setReportCcDraft(event.target.value)}
+                          onBlur={(event) => handleReportCcCommit(event.target.value)}
+                          placeholder="conjoint@exemple.fr, comptable@exemple.fr"
+                          autoComplete="off"
+                        />
+                        <small className="field-hint">
+                          Ces adresses reçoivent les rapports automatiques (pas le rapport test).
+                        </small>
+                      </label>
                       <div className="settings-inline-actions">
                         <button type="button" onClick={() => void handleSendTestReport()} disabled={reportBusy}>
                           {reportBusy ? 'Envoi…' : 'Recevoir un rapport test maintenant'}
@@ -5634,11 +5721,6 @@ Réponse attendue:
                       {reportFeedback ? (
                         <p className={reportFeedback.kind === 'ok' ? 'auth-success' : 'auth-error'}>
                           {reportFeedback.text}
-                        </p>
-                      ) : null}
-                      {reportPrefs.lastSentAt ? (
-                        <p className="auth-note">
-                          Dernier rapport automatique : {new Date(reportPrefs.lastSentAt).toLocaleDateString('fr-FR')}
                         </p>
                       ) : null}
                     </article>
