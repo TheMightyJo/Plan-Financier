@@ -3143,23 +3143,23 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     const hottestGoal = [...goalProgress].sort((left, right) => right.rate - left.rate)[0]
 
     if (monthlyNet < 0) {
-      tips.push('Le solde du mois est negatif. Coupez une enveloppe variable avant la fin du cycle.')
+      tips.push('Ce mois-ci, vous dépensez plus que vous ne gagnez. Réduisez une dépense souple (loisirs, sorties) avant la fin du mois.')
     }
 
     if (maisonTotal > budget * 0.35) {
-      tips.push('L’enveloppe Maison prend une part elevee du budget. Verifiez les charges fixes et les courses.')
+      tips.push('La maison représente une grosse part de votre budget. Jetez un œil aux factures et aux courses.')
     }
 
     if (vacancesTotal > 120) {
-      tips.push('L’enveloppe Vacances/Loisirs est dynamique. Fixez un plafond hebdomadaire pour lisser les depenses.')
+      tips.push('Les dépenses loisirs et vacances grimpent vite. Fixez-vous un petit plafond par semaine pour les lisser.')
     }
 
     if (hottestGoal && hottestGoal.rate > 90) {
-      tips.push(`L’objectif ${hottestGoal.category} approche du plafond. Reallouez du reste disponible si prioritaire.`)
+      tips.push(`Vous approchez du plafond prévu pour ${hottestGoal.category}. Si c'est une priorité, augmentez-le ou réduisez ailleurs.`)
     }
 
     if (tips.length === 0) {
-      tips.push('Trajectoire saine ce mois-ci. Vous pouvez diriger le surplus vers une enveloppe projet ou epargne.')
+      tips.push('Tout va bien ce mois-ci 👍 Vous pouvez mettre le surplus de côté ou le diriger vers un projet.')
     }
 
     return tips.slice(0, 3)
@@ -4094,7 +4094,9 @@ Réponse attendue:
 
 
   useEffect(() => {
-    if (activeSectionId !== 'budget') {
+    // L'analyse IA alimente le rail Conseils du Budget, de l'Accueil,
+    // des Opérations et de la Famille.
+    if (!['budget', 'overview', 'operations', 'family'].includes(activeSectionId)) {
       return
     }
 
@@ -7497,21 +7499,34 @@ Réponse attendue:
               <div className="budget-assistant-title-main">
                 <p className="eyebrow">Conseils</p>
                 <span className="budget-assistant-ai-tag">
-                  <Brain size={12} /> Coaching financier
+                  <Bot size={12} /> Analyse IA
                 </span>
               </div>
             </div>
             <p className="budget-advice-helper">
-              Conseils rapides pour garder le cap ce mois-ci.
+              Votre assistant analyse le mois en cours et vous conseille.
             </p>
-            <ul className="alert-list coaching-list overview-coaching-list">
-              {(coachingTips.length > 0 ? coachingTips.slice(0, 4) : ['Ajoutez vos premières transactions pour obtenir des conseils personnalisés.']).map((tip) => (
-                <li key={tip}>
-                  <Brain size={15} />
-                  <span>{tip}</span>
-                </li>
-              ))}
-            </ul>
+            {budgetAssistantError ? (
+              <>
+                <p className="budget-assistant-error">{budgetAssistantError}</p>
+                <ul className="alert-list coaching-list overview-coaching-list">
+                  {coachingTips.slice(0, 3).map((tip) => (
+                    <li key={tip}>
+                      <Brain size={15} />
+                      <span>{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : budgetAssistantLoading || !budgetAssistantAdvice ? (
+              <div className="budget-assistant-skeleton" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : (
+              <p className="budget-assistant-answer">{budgetAssistantAdvice}</p>
+            )}
           </>
         )}
       </aside>
