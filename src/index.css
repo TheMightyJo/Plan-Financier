@@ -6683,6 +6683,11 @@ h1 {
 
 .settings-section-card {
   padding: 1.35rem 1.5rem;
+  /* Grille : les enfants directs (bandeaux, labels, liens, boutons) respirent
+     uniformément — sans ça, seuls les <form> internes avaient un gap. */
+  display: grid;
+  gap: 0.9rem;
+  align-content: start;
 }
 
 /* Respiration des formulaires et rangées d'actions dans les Paramètres. */
@@ -9667,22 +9672,10 @@ h1 {
   color: var(--text-2);
 }
 
-/* Respiration de la section Assistant IA. */
-.ai-provider-label {
-  margin-top: 0.4rem;
-}
-
+/* Respiration de la section Assistant IA (le gap de la grille
+   .settings-section-card fait le reste). */
 .ai-provider-grid {
   gap: 0.55rem;
-  margin-bottom: 0.3rem;
-}
-
-.ai-settings-card .settings-inline-actions {
-  margin-top: 0.4rem;
-}
-
-.ai-key-links {
-  margin-top: -0.3rem;
 }
 
 /* ── Paramètres → Rapport par email : encart « rapport programmé » ────── */
