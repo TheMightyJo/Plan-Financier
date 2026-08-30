@@ -4928,6 +4928,15 @@ h1 {
   display: grid;
   gap: 0.9rem;
   grid-template-rows: auto auto 1fr auto;
+  /* Colonne explicite bornée : sans elle, Safari dimensionne la colonne
+     implicite sur la plus longue ligne du texte pre-wrap et le contenu
+     déborde de la carte (texte coupé à droite sur iPad/iPhone). */
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.budget-advice-rail > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .overview-coaching-rail {
