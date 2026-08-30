@@ -3550,22 +3550,42 @@ h1 {
   font-size: var(--text-sm);
 }
 
-/* Indicateur de synchronisation cloud (pied du menu). */
-.cloud-sync-badge {
-  margin: 0 0 0.4rem;
-  font-size: var(--text-xs);
-  font-weight: 700;
-  color: var(--text-2);
-  padding: 0.3rem 0.5rem;
-  border-radius: 0.5rem;
-  cursor: default;
+/* État de l'enregistrement en ligne (Paramètres → Sauvegarde). */
+.sync-status-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.8rem;
+  border: 1.5px solid var(--border-soft);
+  background: var(--surface-soft);
 }
 
-.cloud-sync-badge--ok { color: var(--kpi-positive); }
-.cloud-sync-badge--error { color: var(--kpi-warn); }
-.cloud-sync-badge--syncing { animation: cloud-pulse 1.2s ease-in-out infinite; }
+.sync-status-card strong {
+  font-size: var(--text-sm);
+  color: var(--text-1);
+}
 
-@keyframes cloud-pulse {
+.sync-status-card small {
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.sync-status-card--ok {
+  border-color: rgba(58, 125, 68, 0.4);
+  background: rgba(58, 125, 68, 0.08);
+}
+
+.sync-status-card--error {
+  border-color: rgba(192, 92, 42, 0.45);
+  background: rgba(192, 92, 42, 0.08);
+}
+
+.sync-status-card--syncing strong {
+  animation: sync-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes sync-pulse {
   50% { opacity: 0.45; }
 }
 

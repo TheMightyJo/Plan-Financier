@@ -4898,23 +4898,6 @@ Réponse attendue:
           ))}
         </nav>
         <div className="side-menu-footer">
-          <p
-            className={`cloud-sync-badge cloud-sync-badge--${cloudSyncStatus}`}
-            title={
-              cloudSyncStatus === 'ok'
-                ? 'Vos données sont synchronisées dans le cloud.'
-                : cloudSyncStatus === 'syncing'
-                ? 'Synchronisation en cours…'
-                : cloudSyncStatus === 'error'
-                ? 'Synchronisation impossible — vos données restent enregistrées sur cet appareil.'
-                : 'Synchronisation en attente de connexion.'
-            }
-          >
-            {cloudSyncStatus === 'ok' && '☁️ Synchronisé'}
-            {cloudSyncStatus === 'syncing' && '☁️ Synchronisation…'}
-            {cloudSyncStatus === 'error' && '☁️ Hors ligne'}
-            {cloudSyncStatus === 'idle' && '☁️ En attente'}
-          </p>
           <button
             type="button"
             className="side-menu-settings-btn"
@@ -5799,6 +5782,44 @@ Réponse attendue:
 
                 {settingsSection === 'backup' ? (
                   <div className="settings-section-grid">
+                    <article className="glass-card settings-section-card form-panel">
+                      <div className="panel-title">
+                        <h2>Enregistrement en ligne</h2>
+                        <p>Vos données suivent votre compte, sur tous vos appareils.</p>
+                      </div>
+                      <div className={`sync-status-card sync-status-card--${cloudSyncStatus}`} role="status">
+                        {cloudSyncStatus === 'ok' ? (
+                          <>
+                            <strong>✅ Vos données sont enregistrées en ligne</strong>
+                            <small>
+                              Tout ce que vous ajoutez est copié automatiquement sur votre compte.
+                              Connectez-vous depuis n'importe quel appareil pour les retrouver.
+                            </small>
+                          </>
+                        ) : cloudSyncStatus === 'syncing' ? (
+                          <>
+                            <strong>☁️ Enregistrement en cours…</strong>
+                            <small>Vos dernières modifications sont en train d'être copiées en ligne.</small>
+                          </>
+                        ) : cloudSyncStatus === 'error' ? (
+                          <>
+                            <strong>⚠️ Enregistrement en ligne impossible pour le moment</strong>
+                            <small>
+                              Pas d'inquiétude : tout reste enregistré sur cet appareil. La copie en
+                              ligne reprendra automatiquement dès que la connexion reviendra.
+                            </small>
+                          </>
+                        ) : (
+                          <>
+                            <strong>☁️ En attente de connexion</strong>
+                            <small>
+                              Vos données sont enregistrées sur cet appareil. La copie en ligne
+                              démarre dès que vous êtes connecté.
+                            </small>
+                          </>
+                        )}
+                      </div>
+                    </article>
                     <article className="glass-card settings-section-card form-panel">
                       <div className="panel-title">
                         <h2>
