@@ -3433,6 +3433,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
   // Null = création ; sinon id de la transaction en cours de modification.
   const [quickAddEditingId, setQuickAddEditingId] = useState<number | null>(null)
+  // Confirmation de suppression dans la modale (évite les fausses manips).
+  const [quickAddDeleteAsk, setQuickAddDeleteAsk] = useState(false)
   // Classification IA (catégorie + tags) : proposée automatiquement quand
   // l'assistant est configuré, sans jamais écraser un choix manuel.
   const quickAddAiTimerRef = useRef<number | null>(null)
@@ -3508,6 +3510,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const openQuickAdd = (date: string) => {
     setQuickAddForm({ label: '', amount: '', kind: 'depense', category: 'Courses', envelope: 'Maison', tags: '', recurrence: 'none', budgetMonth: '' })
     setQuickAddEditingId(null)
+    setQuickAddDeleteAsk(false)
     quickAddTouchedRef.current = { category: false, tags: false }
     quickAddAiIconRef.current = null
     setQuickAddAiApplied(false)
@@ -3536,6 +3539,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       budgetMonth: tx.budgetMonth ?? '',
     })
     setQuickAddEditingId(tx.id)
+    setQuickAddDeleteAsk(false)
     setQuickAddDate(tx.date)
   }
 
@@ -3546,6 +3550,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
     setQuickAddDate(null)
     setQuickAddEditingId(null)
+    setQuickAddDeleteAsk(false)
   }
 
   const handleQuickAddSubmit = (event: React.FormEvent<HTMLFormElement>) => {
@@ -8425,7 +8430,36 @@ Réponse attendue:
             <p className="quick-add-required-note">
               <span className="required-star" aria-hidden="true">*</span> Champs obligatoires pour enregistrer.
             </p>
+            {quickAddEditingId !== null && quickAddDeleteAsk ? (
+              <div className="quick-add-delete-confirm" role="alertdialog" aria-label="Confirmer la suppression">
+                <span>Supprimer définitivement cette opération ?</span>
+                <div>
+                  <button
+                    type="button"
+                    className="quick-add-delete-yes"
+                    onClick={() => {
+                      deleteTransaction(quickAddEditingId)
+                      closeQuickAdd()
+                    }}
+                  >
+                    Oui, supprimer
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => setQuickAddDeleteAsk(false)}>
+                    Non, garder
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className="quick-add-actions">
+              {quickAddEditingId !== null && !quickAddDeleteAsk ? (
+                <button
+                  type="button"
+                  className="quick-add-delete-btn"
+                  onClick={() => setQuickAddDeleteAsk(true)}
+                >
+                  🗑️ Supprimer
+                </button>
+              ) : null}
               <button type="button" className="ghost-button" onClick={closeQuickAdd}>
                 Annuler
               </button>

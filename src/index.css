@@ -2815,14 +2815,35 @@ h1 {
 
 /* Chaque opération = une carte-ligne : colonnes nettes, lecture immédiate. */
 .expense-calendar__day-list li {
+  display: block;
+}
+
+/* Toute la ligne est un bouton : un appui ouvre la modale de modification. */
+.expense-calendar__day-row {
+  appearance: none;
+  width: 100%;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
+  text-align: left;
   gap: 0.65rem;
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: 0.7rem;
   background: var(--surface-soft);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.expense-calendar__day-row:hover:not(:disabled) {
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: var(--ui-btn-bg-hover, var(--surface-soft));
+}
+
+.expense-calendar__day-row:disabled {
+  cursor: default;
 }
 
 .expense-calendar__edit-btn {
@@ -10124,4 +10145,58 @@ h1 {
   margin: 0;
   color: var(--text-2);
   font-size: var(--text-2xs);
+}
+
+/* ── Modale : suppression avec confirmation ───────────────────────── */
+.quick-add-delete-btn {
+  margin-right: auto;
+  border: 1.5px solid rgba(192, 92, 42, 0.5);
+  background: transparent;
+  color: var(--danger, #C05C2A);
+  border-radius: 0.7rem;
+  padding: 0.5rem 0.8rem;
+  font-weight: 700;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.quick-add-delete-btn:hover {
+  background: rgba(192, 92, 42, 0.1);
+}
+
+.quick-add-delete-confirm {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.75rem;
+  border: 1.5px solid rgba(192, 92, 42, 0.55);
+  background: rgba(192, 92, 42, 0.1);
+  font-weight: 700;
+  color: var(--text-1);
+  font-size: var(--text-sm);
+}
+
+.quick-add-delete-confirm div {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.quick-add-delete-yes {
+  border: 0;
+  border-radius: 0.65rem;
+  padding: 0.45rem 0.8rem;
+  background: linear-gradient(130deg, #b3562a, #cf7a3f);
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* ── Modale : fond teinté selon le type (pas seulement le contour) ── */
+.quick-add-modal--depense {
+  background: color-mix(in srgb, var(--bg-2) 88%, #C05C2A) !important;
+}
+
+.quick-add-modal--revenu {
+  background: color-mix(in srgb, var(--bg-2) 80%, #3A7D44) !important;
 }

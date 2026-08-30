@@ -264,29 +264,28 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
             <ul className="expense-calendar__day-list">
               {dayTransactions.map((tx) => (
                 <li key={tx.id}>
-                  <span className="recent-tx-dot" style={{ background: colorForCategory(tx.category) }} aria-hidden="true" />
-                  <span className="expense-calendar__day-label">
-                    {tx.label}
-                    {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement">🔁</span> : null}
-                    {(tx.tags ?? []).map((tag) => (
-                      <span key={tag} className="tx-tag">#{tag}</span>
-                    ))}
-                  </span>
-                  <span className="expense-calendar__day-cat">{tx.category}</span>
-                  <span className={tx.kind === 'depense' ? 'expense-calendar__spent' : 'expense-calendar__income'}>
-                    {tx.kind === 'depense' ? '−' : '+'}{euroFormatter.format(tx.amount)}
-                  </span>
-                  {onEditExpense ? (
-                    <button
-                      type="button"
-                      className="expense-calendar__edit-btn"
-                      onClick={() => onEditExpense(tx)}
-                      aria-label={`Modifier ${tx.label}`}
-                      title="Modifier"
-                    >
-                      ✏️
-                    </button>
-                  ) : null}
+                  {/* Toute la ligne ouvre la modale de modification. */}
+                  <button
+                    type="button"
+                    className="expense-calendar__day-row"
+                    onClick={onEditExpense ? () => onEditExpense(tx) : undefined}
+                    disabled={!onEditExpense}
+                    aria-label={`Modifier ${tx.label}`}
+                    title={onEditExpense ? 'Appuyer pour modifier' : undefined}
+                  >
+                    <span className="recent-tx-dot" style={{ background: colorForCategory(tx.category) }} aria-hidden="true" />
+                    <span className="expense-calendar__day-label">
+                      {tx.label}
+                      {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement">🔁</span> : null}
+                      {(tx.tags ?? []).map((tag) => (
+                        <span key={tag} className="tx-tag">#{tag}</span>
+                      ))}
+                    </span>
+                    <span className="expense-calendar__day-cat">{tx.category}</span>
+                    <span className={tx.kind === 'depense' ? 'expense-calendar__spent' : 'expense-calendar__income'}>
+                      {tx.kind === 'depense' ? '−' : '+'}{euroFormatter.format(tx.amount)}
+                    </span>
+                  </button>
                 </li>
               ))}
             </ul>
