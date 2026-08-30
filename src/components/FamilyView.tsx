@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { listFamilyTransactions, type FamilyPeer, type FamilyTransaction } from '../repos/familyRepo'
 import { euroFormatter } from '../lib/format'
-import { categoryColors } from '../lib/categories'
+import { colorForCategory } from '../lib/categories'
 import { avatarColor, avatarInitials } from '../lib/avatar'
 
 type Props = {
@@ -125,7 +125,7 @@ export function FamilyView({ month, peers, myUserId }: Props) {
               >
                 {avatarInitials(peerName(tx.ownerUserId))}
               </span>
-              <span className="recent-tx-dot" style={{ background: categoryColors[tx.category] }} aria-hidden="true" />
+              <span className="recent-tx-dot" style={{ background: colorForCategory(tx.category) }} aria-hidden="true" />
               <span className="recent-tx-label">{tx.label}</span>
               <span className="recent-tx-meta">
                 {new Date(`${tx.date}T12:00:00`).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })} · {tx.category}

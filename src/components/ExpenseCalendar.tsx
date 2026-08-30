@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { buildMonthGrid, shiftDay, shiftMonth } from '../lib/calendar'
 import { getOccurrencesBetween } from '../lib/recurring'
 import { euroFormatter } from '../lib/format'
-import { categoryColors } from '../lib/categories'
+import { colorForCategory } from '../lib/categories'
 import type { RecurringRule, Transaction } from '../types'
 
 type CalendarView = 'day' | 'month' | 'year'
@@ -26,14 +26,8 @@ type Props = {
 const WEEKDAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
 const MONTH_LABELS = ['Janv', 'Févr', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc']
 
-/** Format compact pour les cases (« 42 € », « 1,2k € »). */
-const compactEuro = (value: number): string => {
-  if (value >= 1000) {
-    const k = value / 1000
-    return `${k.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}k €`
-  }
-  return `${Math.round(value)} €`
-}
+/** Montants des cases en entiers pleins (« 42 € », « 2 900 € ») — jamais de « k ». */
+const compactEuro = (value: number): string => `${Math.round(value).toLocaleString('fr-FR')} €`
 
 const formatMonthTitle = (month: string): string => {
   const [year, monthIndex] = month.split('-').map(Number)
@@ -90,9 +84,17 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
     if (!gridStart || !gridEnd) return map
     const from = shiftDay(today, 1) > gridStart ? shiftDay(today, 1) : gridStart
     if (from > gridEnd) return map
+    // Échéances déjà transformées en vraie transaction (même règle, même
+    // jour) : ne pas les réafficher en « prévu » — sinon doublon à l'écran.
+    const materialized = new Set(
+      transactions
+        .filter((tx) => tx.recurringRuleId)
+        .map((tx) => `${tx.recurringRuleId}|${tx.date}`),
+    )
     for (const rule of recurringRules) {
       if (rule.pausedAt !== null) continue
       for (const date of getOccurrencesBetween(rule, from, gridEnd)) {
+        if (materialized.has(`${rule.id}|${date}`)) continue
         const entry = map.get(date) ?? { total: 0, items: [] }
         entry.total += rule.kind === 'depense' ? rule.amount : 0
         entry.items.push({ label: rule.label, amount: rule.amount, kind: rule.kind })
@@ -100,7 +102,7 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
       }
     }
     return map
-  }, [recurringRules, weeks, today])
+  }, [recurringRules, transactions, weeks, today])
   const monthMaxSpent = useMemo(
     () =>
       Math.max(
@@ -262,29 +264,28 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
             <ul className="expense-calendar__day-list">
               {dayTransactions.map((tx) => (
                 <li key={tx.id}>
-                  <span className="recent-tx-dot" style={{ background: categoryColors[tx.category] }} aria-hidden="true" />
-                  <span className="expense-calendar__day-label">
-                    {tx.label}
-                    {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement">🔁</span> : null}
-                    {(tx.tags ?? []).map((tag) => (
-                      <span key={tag} className="tx-tag">#{tag}</span>
-                    ))}
-                  </span>
-                  <span className="expense-calendar__day-cat">{tx.category}</span>
-                  <span className={tx.kind === 'depense' ? 'expense-calendar__spent' : 'expense-calendar__income'}>
-                    {tx.kind === 'depense' ? '−' : '+'}{euroFormatter.format(tx.amount)}
-                  </span>
-                  {onEditExpense ? (
-                    <button
-                      type="button"
-                      className="expense-calendar__edit-btn"
-                      onClick={() => onEditExpense(tx)}
-                      aria-label={`Modifier ${tx.label}`}
-                      title="Modifier"
-                    >
-                      ✏️
-                    </button>
-                  ) : null}
+                  {/* Toute la ligne ouvre la modale de modification. */}
+                  <button
+                    type="button"
+                    className="expense-calendar__day-row"
+                    onClick={onEditExpense ? () => onEditExpense(tx) : undefined}
+                    disabled={!onEditExpense}
+                    aria-label={`Modifier ${tx.label}`}
+                    title={onEditExpense ? 'Appuyer pour modifier' : undefined}
+                  >
+                    <span className="recent-tx-dot" style={{ background: colorForCategory(tx.category) }} aria-hidden="true" />
+                    <span className="expense-calendar__day-label">
+                      {tx.label}
+                      {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement">🔁</span> : null}
+                      {(tx.tags ?? []).map((tag) => (
+                        <span key={tag} className="tx-tag">#{tag}</span>
+                      ))}
+                    </span>
+                    <span className="expense-calendar__day-cat">{tx.category}</span>
+                    <span className={tx.kind === 'depense' ? 'expense-calendar__spent' : 'expense-calendar__income'}>
+                      {tx.kind === 'depense' ? '−' : '+'}{euroFormatter.format(tx.amount)}
+                    </span>
+                  </button>
                 </li>
               ))}
             </ul>

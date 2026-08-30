@@ -8,7 +8,7 @@ import type {
   Transaction,
   TransactionKind,
 } from '../types'
-import { categories, categoryColors, envelopes, inferEnvelope } from '../lib/categories'
+import { categories, colorForCategory, envelopes, inferEnvelope } from '../lib/categories'
 import {
   aggregateFilteredStats,
   defaultCriteria,
@@ -433,7 +433,7 @@ export function TransactionHistoryPanel({
                   >
                     <span
                       className="tx-history-color-dot"
-                      style={{ background: categoryColors[item.category] }}
+                      style={{ background: colorForCategory(item.category) }}
                       aria-hidden="true"
                     />
                     <div className="tx-history-main">

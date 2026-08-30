@@ -14,16 +14,16 @@ export type UserProfile = {
 
 export type TransactionKind = 'depense' | 'revenu'
 
-export type Category =
-  | 'Courses'
-  | 'Transport'
-  | 'Ecole'
-  | 'Loisirs'
-  | 'Sante'
-  | 'Maison'
-  | 'Autre'
+/**
+ * Catégorie d'une opération. Chaîne libre depuis l'introduction du grand
+ * catalogue (cf. src/lib/categories.ts) — les 7 catégories historiques
+ * (Courses, Transport, Ecole, Loisirs, Sante, Maison, Autre) restent les
+ * « principales » utilisées par les objectifs et les graphiques.
+ */
+export type Category = string
 
-export type Envelope = 'Perso' | 'Maison' | 'Vacances'
+/** Poche budgétaire — chaîne libre (catalogue dans src/lib/categories.ts). */
+export type Envelope = string
 
 export type Transaction = {
   id: number
@@ -40,6 +40,12 @@ export type Transaction = {
   tags?: string[]
   /** Emoji du marchand (jamais un logo de marque — libre de droit par nature). */
   icon?: string
+  /**
+   * Mois de budget (YYYY-MM) si la dépense doit compter sur un AUTRE mois
+   * que celui de sa date (ex. payée fin août pour les vacances de septembre).
+   * Absent = le mois de la date.
+   */
+  budgetMonth?: string
   /**
    * Compte sur lequel l'opération est imputée. Optionnel pour rétro-compat
    * avec les anciennes transactions stockées avant l'introduction des

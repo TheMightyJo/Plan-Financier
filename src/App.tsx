@@ -26,16 +26,17 @@ import {
   BellRing,
   Upload,
   FileSpreadsheet,
-  Download,
   ChevronDown,
   ChevronUp,
+  Download,
   Layers3,
   Brain,
   Landmark,
   Pencil,
   Trash2,
   X,
-  MessageCircle,
+  Mic,
+  Paperclip,
   Send,
   Bot,
   Repeat2,
@@ -84,10 +85,10 @@ import {
   readAndResizeImage,
 } from './lib/avatar'
 import { isValidTxIcon, suggestMerchantIcon } from './lib/merchantIcons'
-import { generateDueTransactions } from './lib/recurring'
+import { generateDueTransactions, getOccurrencesBetween } from './lib/recurring'
 import { loadRecurringRules, saveRecurringRules } from './repos/recurringRulesRepo'
 import { RecurringRulesPanel } from './components/RecurringRulesPanel'
-import { FirstTransactionTour } from './components/FirstTransactionTour'
+import { FirstBudgetTour } from './components/FirstBudgetTour'
 import { AccountsPanel } from './components/AccountsPanel'
 import { TransactionHistoryPanel } from './components/TransactionHistoryPanel'
 import { ExpenseCalendar } from './components/ExpenseCalendar'
@@ -108,6 +109,8 @@ import {
   type SentInvite,
 } from './repos/familyRepo'
 import { FamilyView } from './components/FamilyView'
+import { GroupedSearchSelect } from './components/GroupedSearchSelect'
+import { MerchantLogo } from './components/MerchantLogo'
 import { NotesView, type ExtractedTx, type NoteItem } from './components/NotesView'
 import {
   defaultReportPrefs,
@@ -117,7 +120,8 @@ import {
   sendTestReport,
   type ReportPrefs,
 } from './repos/reportPrefsRepo'
-import { shiftMonth } from './lib/calendar'
+import { shiftDay, shiftMonth } from './lib/calendar'
+import { mondayOf, weeklyStats } from './lib/weeklyStats'
 import {
   computeConsolidatedBalance,
   balanceByAccountType,
@@ -131,8 +135,12 @@ import {
 import { ACCOUNT_TYPE_LABELS } from './types'
 import type { Account, RecurringFrequency, RecurringRule } from './types'
 import {
+  EXPENSE_CATEGORY_GROUPS,
+  INCOME_CATEGORY_GROUPS,
+  allExpenseCategories,
   categories,
-  categoryColors,
+  categoryEmoji,
+  colorForCategory,
   envelopes,
   envelopeColors,
   inferEnvelope,
@@ -168,7 +176,6 @@ const TRANSACTIONS_STORAGE_KEY = 'plan-financier-transactions-v1'
 const ANTHROPIC_KEY_STORAGE = 'plan-financier-anthropic-key-v1'
 const CHAT_HISTORY_STORAGE_PREFIX = 'plan-financier-chat-history-v1'
 const CHAT_THREADS_STORAGE_PREFIX = 'plan-financier-chat-threads-v1'
-const MAX_CHAT_THREADS_PER_SCOPE = 8
 const ROLLOVER_STORAGE_KEY = 'plan-financier-rollover-v1'
 const GOALS_STORAGE_KEY = 'plan-financier-goals-v1'
 const CSV_MAPPINGS_STORAGE_KEY = 'plan-financier-csv-mappings-v1'
@@ -186,6 +193,9 @@ const MANUAL_ONBOARDING_PHASES = [
   'Finalisation de votre plan…',
 ]
 const FIRST_TX_TOUR_DONE_KEY = 'plan-financier-first-tx-tour-done-v1'
+const ENVELOPE_BUDGETS_STORAGE_KEY = 'plan-financier-envelope-budgets-v1'
+const ENVELOPE_FUNDS_STORAGE_KEY = 'plan-financier-envelope-funds-v1'
+const CUSTOM_ENVELOPES_STORAGE_KEY = 'plan-financier-custom-envelopes-v1'
 const THEME_STORAGE_KEY = 'plan-financier-theme-v1'
 const PALETTE_STORAGE_KEY = 'plan-financier-palette-v1'
 const NOTES_STORAGE_KEY = 'plan-financier-notes-v1'
@@ -612,20 +622,22 @@ const normalizeTransaction = (value: unknown, knownProfileIds?: Set<string>): Tr
     legacyMember === 'moi' && !knownProfileIds?.has('moi')
       ? defaultProfile.id
       : sanitizeProfileId(candidate.member)
-  const category = categories.includes(candidate.category as Category)
-    ? (candidate.category as Category)
-    : 'Autre'
+  // Catégorie/poche : chaînes libres depuis le grand catalogue — on borne
+  // juste la longueur et on retombe sur un défaut si vide.
+  const category = candidate.category.trim() ? candidate.category.trim().slice(0, 60) : 'Autre'
   const rawEnvelopeValue = (value as { envelope?: unknown }).envelope
-  const rawEnvelope = typeof rawEnvelopeValue === 'string' ? rawEnvelopeValue : undefined
-  const normalizedEnvelope = rawEnvelope === 'Fille' ? undefined : rawEnvelope
-  const envelope = envelopes.includes(normalizedEnvelope as Envelope)
-    ? (normalizedEnvelope as Envelope)
-    : inferEnvelope(category)
+  const rawEnvelope = typeof rawEnvelopeValue === 'string' ? rawEnvelopeValue.trim() : ''
+  const normalizedEnvelope = rawEnvelope === 'Fille' ? '' : rawEnvelope
+  const envelope = normalizedEnvelope ? normalizedEnvelope.slice(0, 60) : inferEnvelope(category)
+  const rawBudgetMonth = (value as { budgetMonth?: unknown }).budgetMonth
+  const budgetMonth =
+    typeof rawBudgetMonth === 'string' && /^\d{4}-\d{2}$/.test(rawBudgetMonth) ? rawBudgetMonth : undefined
 
   return {
     id: candidate.id,
     label: candidate.label,
     amount: candidate.amount,
+    ...(budgetMonth ? { budgetMonth } : {}),
     category,
     member: member || defaultProfile.id,
     date: candidate.date,
@@ -797,26 +809,11 @@ const loadSavingsTargets = (): SavingsTarget[] => {
   }
 }
 
-const normalizeChatThreadLabel = (value: string) => value.trim().replace(/\s+/g, ' ')
-
-const createChatThreadId = (label: string) => normalizeText(label).replace(/\s+/g, '-').slice(0, 32)
-
 const getChatThreadScopeKey = (profileId: string, month: string) =>
   `${CHAT_THREADS_STORAGE_PREFIX}:${profileId}:${month}`
 
 const getChatHistoryStorageKey = (profileId: string, month: string, threadId: string) =>
   `${CHAT_HISTORY_STORAGE_PREFIX}:${profileId}:${month}:${threadId}`
-
-const formatChatThreadActivity = (value: number) => {
-  if (!value) {
-    return 'jamais'
-  }
-
-  return new Date(value).toLocaleDateString('fr-FR', {
-    day: '2-digit',
-    month: 'short',
-  })
-}
 
 /** ℹ️ cliquable : l'explication ne s'affiche qu'à la demande. */
 function InfoHint({ text }: { text: string }) {
@@ -850,6 +847,13 @@ function App() {
   const [toast, setToast] = useState<{ message: string; key: number; level: ToastLevel } | null>(null)
   const showToast = (message: string, level: ToastLevel = 'info') =>
     setToast({ message, key: Date.now(), level })
+
+  /** Mode démo : bloque une action réelle et explique pourquoi. */
+  const blockInDemo = (feature: string): boolean => {
+    if (!demoMode) return false
+    showToast(`🎬 Mode démo — ${feature} n'est pas disponible ici. Créez un compte gratuit pour l'activer !`)
+    return true
+  }
   useEffect(() => {
     if (!toast) return
     // Toasts d'alerte tiennent plus longtemps (l'utilisateur doit pouvoir lire)
@@ -896,6 +900,87 @@ function App() {
   const [reportBusy, setReportBusy] = useState(false)
   const [reportFeedback, setReportFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [reportCcDraft, setReportCcDraft] = useState('')
+  const [chatAttachment, setChatAttachment] = useState<{ name: string; mediaType: string; data: string } | null>(null)
+  const [chatListening, setChatListening] = useState(false)
+  const chatFileInputRef = useRef<HTMLInputElement | null>(null)
+  const chatRecognitionRef = useRef<{ stop: () => void } | null>(null)
+  // Bulle d'invitation près de la bulle de chat (1× par jour, discrète).
+  const [chatNudgeVisible, setChatNudgeVisible] = useState(false)
+  // Indicateurs de défilement du chat (du contenu caché en haut / en bas ?).
+  const chatScrollRef = useRef<HTMLDivElement | null>(null)
+  const [chatScrollHints, setChatScrollHints] = useState({ up: false, down: false })
+
+  const updateChatScrollHints = () => {
+    const el = chatScrollRef.current
+    if (!el) return
+    const up = el.scrollTop > 48
+    const down = el.scrollTop + el.clientHeight < el.scrollHeight - 48
+    setChatScrollHints((previous) => (previous.up === up && previous.down === down ? previous : { up, down }))
+  }
+
+  type SpeechRecognitionLike = {
+    lang: string
+    interimResults: boolean
+    continuous: boolean
+    onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null
+    onend: (() => void) | null
+    onerror: (() => void) | null
+    start: () => void
+    stop: () => void
+  }
+
+  const speechRecognitionCtor = (() => {
+    if (typeof window === 'undefined') return null
+    const w = window as unknown as {
+      SpeechRecognition?: new () => SpeechRecognitionLike
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike
+    }
+    return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null
+  })()
+
+  const handleChatFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Fichier trop lourd — 5 Mo maximum', 'danger')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result ?? '')
+      const comma = result.indexOf(',')
+      if (comma < 0) return
+      setChatAttachment({
+        name: file.name,
+        mediaType: file.type || 'application/octet-stream',
+        data: result.slice(comma + 1),
+      })
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const toggleChatDictation = () => {
+    if (chatListening) {
+      chatRecognitionRef.current?.stop()
+      return
+    }
+    if (!speechRecognitionCtor) return
+    const recognition = new speechRecognitionCtor()
+    recognition.lang = 'fr-FR'
+    recognition.interimResults = true
+    recognition.continuous = false
+    recognition.onresult = (event) => {
+      const text = Array.from({ length: event.results.length }, (_, i) => event.results[i][0].transcript).join(' ')
+      setChatInput(text)
+    }
+    recognition.onend = () => setChatListening(false)
+    recognition.onerror = () => setChatListening(false)
+    chatRecognitionRef.current = recognition
+    setChatListening(true)
+    recognition.start()
+  }
+
   const [sentInvites, setSentInvites] = useState<SentInvite[]>([])
   // Cadre de relance : 1× par 24 h et par invitation (horodatage local).
   const [relanceTick, setRelanceTick] = useState(0)
@@ -904,6 +989,7 @@ function App() {
       { id: 'overview',    label: '🏠 Accueil' },
       { id: 'operations',  label: '💳 Dépenses' },
       { id: 'budget',      label: '📅 Budget' },
+      { id: 'stats',       label: '📊 Statistiques' },
       { id: 'notes',       label: '🗒️ Notes' },
       ...(familyPeers.length >= 2 ? [{ id: 'family', label: '👨‍👩‍👧 Famille' }] : []),
     ],
@@ -990,10 +1076,6 @@ function App() {
   const [rolloverState, setRolloverState] = useState<RolloverState>(() =>
     loadRolloverState(currentMonth, loadProfiles()),
   )
-  const [goalEditor, setGoalEditor] = useState<{ category: Category; amount: string }>({
-    category: 'Courses',
-    amount: '',
-  })
   const [smartCategory, setSmartCategory] = useState<Category | null>(null)
   const [selectedEnvelope, setSelectedEnvelope] = useState<'Tous' | Envelope>('Tous')
   const [csvBankKey, setCsvBankKey] = useState('')
@@ -1027,16 +1109,50 @@ function App() {
   const [budgetCompareMonths, setBudgetCompareMonths] = useState(false)
   const [budgetInfoOpen, setBudgetInfoOpen] = useState<'type' | 'filter' | 'period' | 'compare' | null>(null)
   const [budgetInfoDotOpen, setBudgetInfoDotOpen] = useState<'summary' | 'budget' | 'spent' | 'remaining' | 'trend' | null>(null)
-  const [budgetExportFormat, setBudgetExportFormat] = useState<'txt' | 'csv' | 'json' | 'pdf'>('pdf')
-  const [budgetExportOpen, setBudgetExportOpen] = useState(false)
   const [budgetAssistantAdvice, setBudgetAssistantAdvice] = useState('')
   const [budgetAssistantError, setBudgetAssistantError] = useState('')
   const [budgetAssistantLoading, setBudgetAssistantLoading] = useState(false)
   const [budgetAssistantContextLoaded, setBudgetAssistantContextLoaded] = useState('')
-  const [budgetSimpleMode, setBudgetSimpleMode] = useState(true)
+  // Mode simple permanent (le bascule a été retiré de l'interface).
+  const budgetSimpleMode = true
+  // Objectifs par poche (enveloppes) : Record<profileId, Record<poche, montant>>.
+  const [envelopeBudgets, setEnvelopeBudgets] = useState<Record<string, Record<string, number>>>(() => {
+    try {
+      const raw = window.localStorage.getItem(ENVELOPE_BUDGETS_STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as Record<string, Record<string, number>>) : {}
+    } catch {
+      return {}
+    }
+  })
+  // Argent « mis dans » chaque poche (provision) : Record<profileId, Record<poche, montant>>.
+  const [envelopeFunds, setEnvelopeFunds] = useState<Record<string, Record<string, number>>>(() => {
+    try {
+      const raw = window.localStorage.getItem(ENVELOPE_FUNDS_STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as Record<string, Record<string, number>>) : {}
+    } catch {
+      return {}
+    }
+  })
+  const [envelopeOpenName, setEnvelopeOpenName] = useState<string | null>(null)
+  // Poches créées par l'utilisateur : Record<profileId, string[]>.
+  const [customEnvelopes, setCustomEnvelopes] = useState<Record<string, string[]>>(() => {
+    try {
+      const raw = window.localStorage.getItem(CUSTOM_ENVELOPES_STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as Record<string, string[]>) : {}
+    } catch {
+      return {}
+    }
+  })
+  // Modale de gestion d'une poche (édition ou création).
+  const [envelopeModal, setEnvelopeModal] = useState<{ mode: 'edit' | 'create'; name: string } | null>(null)
+  const [envModalName, setEnvModalName] = useState('')
+  const [envModalTarget, setEnvModalTarget] = useState('')
+  const [envModalAdd, setEnvModalAdd] = useState('')
+  const [envModalDeleteAsk, setEnvModalDeleteAsk] = useState(false)
+  const [goalRowEditing, setGoalRowEditing] = useState<string | null>(null)
+  const [goalRowDraft, setGoalRowDraft] = useState('')
   const [budgetQuickEditOpen, setBudgetQuickEditOpen] = useState(false)
   const [budgetQuickEditValue, setBudgetQuickEditValue] = useState('')
-  const [budgetAssistantVisible, setBudgetAssistantVisible] = useState(true)
   const budgetInfoScopeRef = useRef<HTMLElement | null>(null)
 
   // ── Claude AI ──────────────────────────────────────────────────────────
@@ -1072,10 +1188,25 @@ function App() {
   })
   const anthropicKey = aiProviderKeys.anthropic
   const [chatOpen, setChatOpen] = useState(false)
+
+  // Invitation discrète : 3 s après l'arrivée, 1× par 24 h, disparaît en 9 s.
+  useEffect(() => {
+    if (!isAuthenticated || !anthropicKey || chatOpen) return
+    const KEY = 'plan-financier-cash-nudge-at'
+    const last = Number(window.localStorage.getItem(KEY) ?? 0)
+    if (Date.now() - last < 24 * 3600 * 1000) return
+    const showTimer = window.setTimeout(() => {
+      setChatNudgeVisible(true)
+      window.localStorage.setItem(KEY, String(Date.now()))
+    }, 3000)
+    const hideTimer = window.setTimeout(() => setChatNudgeVisible(false), 12_000)
+    return () => {
+      window.clearTimeout(showTimer)
+      window.clearTimeout(hideTimer)
+    }
+  }, [isAuthenticated, anthropicKey, chatOpen])
   const [chatThreads, setChatThreads] = useState<ChatThread[]>([DEFAULT_CHAT_THREAD])
   const [chatThreadId, setChatThreadId] = useState(DEFAULT_CHAT_THREAD.id)
-  const [chatTopicDraft, setChatTopicDraft] = useState('')
-  const [chatRenameDraft, setChatRenameDraft] = useState('')
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
 
   const visibleDashboardWidgets = useMemo(
@@ -1352,7 +1483,7 @@ Règles :
         'anthropic-dangerous-direct-browser-access': 'true',
       },
       body: JSON.stringify({
-        model: 'claude-3-5-haiku-20241022',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
         system: ONBOARDING_SYSTEM,
         messages,
@@ -1575,9 +1706,14 @@ Règles :
     }
   }, [isAuthenticated])
 
-  const completeFirstTxTour = (transaction?: Transaction) => {
-    if (transaction) {
-      setTransactions((previous) => [...previous, transaction])
+  const completeFirstTxTour = (budgetValue?: number) => {
+    if (budgetValue) {
+      setProfiles((previous) =>
+        previous.map((profile) =>
+          profile.id === selectedProfileId ? { ...profile, monthlyBudget: budgetValue } : profile,
+        ),
+      )
+      showToast(`🎯 Budget mensuel défini : ${budgetValue.toLocaleString('fr-FR')} €`)
     }
     window.localStorage.setItem(FIRST_TX_TOUR_DONE_KEY, '1')
     setShowFirstTxTour(false)
@@ -1585,7 +1721,7 @@ Règles :
 
   const saveAiProvider = (provider: AIProviderId) => {
     setAiProvider(provider)
-    window.localStorage.setItem(AI_PROVIDER_STORAGE_KEY, provider)
+    if (!demoMode) window.localStorage.setItem(AI_PROVIDER_STORAGE_KEY, provider)
     setClaudeTestState('idle')
     setClaudeTestMessage('')
   }
@@ -1593,7 +1729,7 @@ Règles :
   const saveAiProviderKey = (provider: AIProviderId, key: string) => {
     setAiProviderKeys((previous) => {
       const next = { ...previous, [provider]: key }
-      window.localStorage.setItem(AI_PROVIDER_KEYS_STORAGE_KEY, JSON.stringify(next))
+      if (!demoMode) window.localStorage.setItem(AI_PROVIDER_KEYS_STORAGE_KEY, JSON.stringify(next))
       if (provider === 'anthropic') {
         window.localStorage.setItem(ANTHROPIC_KEY_STORAGE, key)
       }
@@ -1636,7 +1772,7 @@ Règles :
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022',
+          model: 'claude-haiku-4-5-20251001',
           max_tokens: 12,
           messages: [{ role: 'user', content: 'Réponds seulement OK.' }],
         }),
@@ -1671,7 +1807,7 @@ Règles :
       .map((g) => `${g.category}: ${euroFormatter.format(g.spent)}/${euroFormatter.format(g.target)} (${g.rate.toFixed(0)}%)`)
       .join(', ')
 
-    return `Tu es un assistant financier personnel intégré dans une app de budget privée.
+    return `Tu t'appelles Cash, l'assistant financier personnel intégré dans une app de budget privée.
 Voici les données financières de l'utilisateur pour ${formatMonth(selectedMonth)} :
 - Profil actif : ${selectedProfileName}
 - Budget mensuel : ${euroFormatter.format(budget)}
@@ -1683,7 +1819,7 @@ Voici les données financières de l'utilisateur pour ${formatMonth(selectedMont
 - Objectifs d'épargne : ${goalsText || 'aucun'}
 - Alertes actives : ${alertMessages.length > 0 ? alertMessages.map((a) => a.message).join(' | ') : 'aucune'}
 
-Réponds en français, de façon concise et bienveillante. Tu peux analyser les données ci-dessus et répondre à toutes les questions (pas seulement financières).`
+Réponds en français, de façon concise et bienveillante, en vouvoyant l'utilisateur. Tu peux analyser les données ci-dessus et répondre à toutes les questions (pas seulement financières).`
   }
 
   const handlePredictMonth = async () => {
@@ -1715,7 +1851,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022',
+          model: 'claude-haiku-4-5-20251001',
           max_tokens: 400,
           messages: [{ role: 'user', content: prompt }],
         }),
@@ -1738,10 +1874,29 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
   }
 
-  const sendChatMessage = async (presetMessage?: string) => {    const message = (presetMessage ?? chatInput).trim()
+  const sendChatMessage = async (
+    presetMessage?: string,
+    attachment?: { name: string; mediaType: string; data: string } | null,
+  ) => {
+    const message = (presetMessage ?? chatInput).trim()
     if (!message || !anthropicKey || chatLoading) return
 
-    const newMessages: ChatMessage[] = [...chatMessages, { role: 'user', content: message }]
+    // Historique affiché/stocké : texte seul (la pièce jointe est signalée par
+    // son nom). Elle n'est transmise au modèle que pour ce tour-ci.
+    const displayContent = attachment ? `📎 ${attachment.name}\n${message}` : message
+    const newMessages: ChatMessage[] = [...chatMessages, { role: 'user', content: displayContent }]
+    const lastApiContent = attachment
+      ? [
+          attachment.mediaType === 'application/pdf'
+            ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: attachment.data } }
+            : { type: 'image', source: { type: 'base64', media_type: attachment.mediaType, data: attachment.data } },
+          { type: 'text', text: message },
+        ]
+      : message
+    const apiMessages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [
+      ...chatMessages,
+      { role: 'user', content: lastApiContent },
+    ]
     // Timestamp réel de l'action utilisateur (handler, pas du render).
     // eslint-disable-next-line react-hooks/purity
     updateChatThreadActivity(activeChatThread.id, Date.now())
@@ -1759,10 +1914,10 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022',
+          model: 'claude-haiku-4-5-20251001',
           max_tokens: 1024,
           system: buildFinancialContext(),
-          messages: newMessages,
+          messages: apiMessages,
         }),
       })
 
@@ -1780,7 +1935,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     } catch {
       setChatMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: '⚠️ Impossible de contacter Claude. Vérifie ta connexion et ta clé API.' },
+        { role: 'assistant', content: '⚠️ Impossible de contacter Cash. Vérifiez votre connexion et votre clé API.' },
       ])
     } finally {
       setChatLoading(false)
@@ -1792,6 +1947,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
       chatInputRef.current?.focus()
     }
+    const timer = window.setTimeout(updateChatScrollHints, 350)
+    return () => window.clearTimeout(timer)
   }, [chatMessages, chatOpen, chatLoading])
   // ──────────────────────────────────────────────────────────────────────
 
@@ -1803,8 +1960,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const chatThreadScopeKey = getChatThreadScopeKey(selectedProfileId, selectedMonth)
   const activeChatThread =
     chatThreads.find((thread) => thread.id === chatThreadId) ?? chatThreads[0] ?? DEFAULT_CHAT_THREAD
-  const canCreateChatTopic = chatThreads.length < MAX_CHAT_THREADS_PER_SCOPE
-  const canManageActiveEmptyThread = chatMessages.length === 0
   const chatHistoryStorageKey = getChatHistoryStorageKey(
     selectedProfileId,
     selectedMonth,
@@ -1836,79 +1991,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     )
   }
 
-  const createChatTopic = () => {
-    if (!canCreateChatTopic) {
-      return
-    }
-
-    const label = normalizeChatThreadLabel(chatTopicDraft)
-    if (!label) {
-      return
-    }
-
-    // Timestamp réel de l'action utilisateur (handler, pas du render).
-    // eslint-disable-next-line react-hooks/purity
-    const baseId = createChatThreadId(label) || `topic-${Date.now()}`
-    let nextId = baseId
-    let suffix = 2
-    while (chatThreads.some((thread) => thread.id === nextId)) {
-      nextId = `${baseId}-${suffix}`
-      suffix += 1
-    }
-
-    // Timestamp réel de l'action utilisateur (handler, pas du render).
-    // eslint-disable-next-line react-hooks/purity
-    const nextThread = { id: nextId, label, lastActivityAt: Date.now() }
-    setChatThreads((previous) => [nextThread, ...previous])
-    setChatThreadId(nextThread.id)
-    setChatRenameDraft(label)
-    setChatTopicDraft('')
-    setChatMessages([])
-    setChatClearConfirmOpen(false)
-    resetChatUndoState()
-  }
-
-  const renameActiveChatTopic = () => {
-    if (!canManageActiveEmptyThread) {
-      return
-    }
-
-    const label = normalizeChatThreadLabel(chatRenameDraft)
-    if (!label) {
-      return
-    }
-
-    setChatThreads((previous) =>
-      previous.map((thread) =>
-        thread.id === activeChatThread.id
-          ? {
-              ...thread,
-              label,
-            }
-          : thread,
-      ),
-    )
-  }
-
-  const deleteActiveChatTopic = () => {
-    if (!canManageActiveEmptyThread || chatThreads.length <= 1) {
-      return
-    }
-
-    const nextThreads = chatThreads.filter((thread) => thread.id !== activeChatThread.id)
-    const fallbackThread = nextThreads[0] ?? DEFAULT_CHAT_THREAD
-    setChatThreads(nextThreads)
-    setChatThreadId(fallbackThread.id)
-    setChatRenameDraft(fallbackThread.label)
-    setChatMessages([])
-    setChatClearConfirmOpen(false)
-    resetChatUndoState()
-
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(chatHistoryStorageKey)
-    }
-  }
-
   useEffect(() => {
     if (typeof window === 'undefined') {
       return
@@ -1922,7 +2004,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setChatThreads(fallback)
       setChatThreadId(DEFAULT_CHAT_THREAD.id)
-      setChatRenameDraft(DEFAULT_CHAT_THREAD.label)
       chatThreadScopeReadyRef.current = chatThreadScopeKey
       return
     }
@@ -1949,21 +2030,13 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       setChatThreadId((previous) =>
         nextThreads.some((thread) => thread.id === previous) ? previous : nextThreads[0].id,
       )
-      setChatRenameDraft((previous) => previous || nextThreads[0].label)
       chatThreadScopeReadyRef.current = chatThreadScopeKey
     } catch {
       setChatThreads(fallback)
       setChatThreadId(DEFAULT_CHAT_THREAD.id)
-      setChatRenameDraft(DEFAULT_CHAT_THREAD.label)
       chatThreadScopeReadyRef.current = chatThreadScopeKey
     }
   }, [chatThreadScopeKey])
-
-  useEffect(() => {
-    // Réinitialise le brouillon de renommage au changement de fil actif.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setChatRenameDraft(activeChatThread.label)
-  }, [activeChatThread.id, activeChatThread.label])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -2217,6 +2290,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }, [sentInvites, relanceTick])
 
   const handleResendInvite = async (invite: SentInvite) => {
+    if (blockInDemo('les invitations famille')) return
     if (inviteBusy) return
     setInviteBusy(true)
     setInviteFeedback(null)
@@ -2246,6 +2320,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const handleCancelInvite = async (invite: SentInvite) => {
+    if (blockInDemo('les invitations famille')) return
     const ok = await cancelSentInvite(invite.membershipId)
     if (ok) {
       showToast(`Invitation de ${invite.email} annulée`)
@@ -2273,6 +2348,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const handleReportPrefsChange = async (
     patch: Partial<Pick<ReportPrefs, 'frequency' | 'format' | 'attachment' | 'ccEmails'>>,
   ) => {
+    if (blockInDemo('les rapports par email')) return
     const next = {
       frequency: reportPrefs.frequency,
       format: reportPrefs.format,
@@ -2305,6 +2381,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const handleSendTestReport = async () => {
+    if (blockInDemo('l\u2019envoi de rapports par email')) return
     if (reportBusy) return
     setReportBusy(true)
     setReportFeedback(null)
@@ -2323,6 +2400,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const handleSendFamilyInvite = async () => {
+    if (blockInDemo('les invitations famille')) return
     const email = inviteEmail.trim().toLowerCase()
     if (!email || inviteBusy) return
     setInviteBusy(true)
@@ -2653,7 +2731,9 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   )
 
   const activeMonthTransactions = useMemo(
-    () => filteredTransactions.filter((item) => item.date.startsWith(selectedMonth)),
+    // Le mois de budget prime sur le mois de la date : une dépense imputée
+    // à septembre compte dans les stats de septembre, même payée en août.
+    () => filteredTransactions.filter((item) => (item.budgetMonth ?? item.date.slice(0, 7)) === selectedMonth),
     [filteredTransactions, selectedMonth],
   )
 
@@ -2803,13 +2883,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
   const budgetHealthLabel = budgetMasteryScore >= 80 ? 'Excellente maîtrise' : budgetMasteryScore >= 60 ? 'Stable' : 'À surveiller'
   const budgetHealthColor = budgetMasteryScore >= 80 ? '#22c55e' : budgetMasteryScore >= 60 ? '#f59e0b' : '#f43f5e'
-  const budgetHumanAdvice = remaining < 0
-    ? 'Vous dépassez le budget. Mettez en pause les dépenses non urgentes.'
-    : projectionData.projectedOverrun > 0
-      ? 'Attention, au rythme actuel vous risquez de dépasser avant la fin du mois.'
-      : usageRate >= 75
-        ? 'Vous tenez le cap, mais il faut rester prudent jusqu’à la fin du mois.'
-        : 'Vous êtes tranquille ce mois-ci. Continuez comme ça.'
 
   const budgetInsights = useMemo(() => {
     const insights: string[] = []
@@ -2872,35 +2945,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const budgetStatusColor = remaining < 0 ? '#f43f5e' : usageRate >= 85 ? '#f59e0b' : '#22c55e'
   const budgetStatusLabel = remaining < 0 ? 'Dépassé' : usageRate >= 85 ? 'Attention' : 'Normal'
 
-  // Génération des actions
-  const budgetActionsList = useMemo(() => {
-    const actions: string[] = []
-    if (remaining < 0) actions.push('🔴 Dépassement : réduire une catégorie immédiatement')
-    else if (usageRate >= 85) actions.push('⚠️ 85% du budget atteint : freiner les dépenses')
-    else actions.push('✅ Budget maîtrisé : bon rythme')
-    
-    if (depenseChangePercent !== null && depenseChangePercent > 15) {
-      actions.push(`📈 +${depenseChangePercent.toFixed(0)}% vs mois dernier : vérifier les grosses dépenses`)
-    } else if (depenseChangePercent !== null && depenseChangePercent < -15) {
-      actions.push(`📉 ${depenseChangePercent.toFixed(0)}% vs mois dernier : très bon contrôle`)
-    }
-    
-    if (monthlyExpense > budget * 0.5) actions.push('💡 Dépenses > 50% : envisager un rééquilibrage')
-    
-    return actions.slice(0, 3)
-  }, [budget, depenseChangePercent, monthlyExpense, remaining, usageRate])
-
-  const budgetAssistantLocalMessage = useMemo(() => {
-    const actionsSummary = budgetActionsList
-      .slice(0, 2)
-      .map((action) => action.replace(/^[^A-Za-z0-9À-ÿ]+/, '').replace(/\s+/g, ' ').trim())
-    const actionsText = actionsSummary.length > 0 ? `🎯 Actions: ${actionsSummary.join(' | ')}.` : ''
-    return [
-      `✅ ${budgetHumanAdvice}`,
-      `📅 ${projectedMessage}`,
-      actionsText,
-    ].filter(Boolean).join('\n')
-  }, [budgetActionsList, budgetHumanAdvice, projectedMessage])
 
   const budgetAssistantContextKey = useMemo(
     () => [
@@ -2910,8 +2954,9 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       Math.round(monthlyIncome),
       Math.round(remaining),
       Math.round(usageRate),
+      ['budget', 'stats', 'operations'].includes(activeSectionId) ? activeSectionId : 'general',
     ].join('|'),
-    [monthlyExpense, monthlyIncome, remaining, selectedMonth, selectedProfileId, usageRate],
+    [activeSectionId, monthlyExpense, monthlyIncome, remaining, selectedMonth, selectedProfileId, usageRate],
   )
 
   const pieData = useMemo(() => {
@@ -3013,6 +3058,274 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
 
   const monthlyNet = monthlyIncome - monthlyExpense
+
+  useEffect(() => {
+    if (demoMode) return
+    try {
+      window.localStorage.setItem(ENVELOPE_BUDGETS_STORAGE_KEY, JSON.stringify(envelopeBudgets))
+    } catch {
+      /* stockage plein/indisponible : silencieux */
+    }
+  }, [envelopeBudgets, demoMode])
+
+  useEffect(() => {
+    if (demoMode) return
+    try {
+      window.localStorage.setItem(ENVELOPE_FUNDS_STORAGE_KEY, JSON.stringify(envelopeFunds))
+    } catch {
+      /* stockage indisponible : silencieux */
+    }
+  }, [envelopeFunds, demoMode])
+
+  const profileEnvelopeBudgets = envelopeBudgets[selectedProfileId] ?? {}
+  const profileEnvelopeFunds = envelopeFunds[selectedProfileId] ?? {}
+
+  useEffect(() => {
+    if (demoMode) return
+    try {
+      window.localStorage.setItem(CUSTOM_ENVELOPES_STORAGE_KEY, JSON.stringify(customEnvelopes))
+    } catch {
+      /* stockage indisponible : silencieux */
+    }
+  }, [customEnvelopes, demoMode])
+
+  const profileCustomEnvelopes = customEnvelopes[selectedProfileId] ?? []
+
+  /** Clic sur une poche : rabat qui s'ouvre, puis modale de gestion. */
+  const openEnvelopeModal = (name: string) => {
+    setEnvelopeOpenName(name)
+    setEnvModalName(name)
+    setEnvModalTarget(profileEnvelopeBudgets[name] ? String(profileEnvelopeBudgets[name]) : '')
+    const inside = envelopeCards.find((card) => card.name === name)?.inside ?? 0
+    setEnvModalAdd(String(Math.round(inside * 100) / 100))
+    setEnvModalDeleteAsk(false)
+    window.setTimeout(() => setEnvelopeModal({ mode: 'edit', name }), 340)
+  }
+
+  const closeEnvelopeModal = () => {
+    setEnvelopeModal(null)
+    setEnvelopeOpenName(null)
+    setEnvModalDeleteAsk(false)
+  }
+
+  /** Bloc Conseils de Cash — partagé entre les vues (Accueil, Budget, Stats, Dépenses, Famille). */
+  const renderCashAdvice = () => (
+    <>
+        {!isBudgetAiConfigured ? (
+          <>
+            <div className="budget-assistant-title-row">
+              <div className="budget-assistant-title-main">
+                <p className="eyebrow">Assistant IA</p>
+              </div>
+            </div>
+            <p className="budget-advice-helper">
+              <strong>Assistant IA non configuré.</strong>
+              <br />
+              Activez votre fournisseur IA dans les paramètres pour débloquer les analyses
+              automatiques et le coaching avancé.
+            </p>
+            <button type="button" className="hero-cta-button" onClick={() => openSettingsPanel('ai')}>
+              Configurer l&apos;IA
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="budget-assistant-title-row">
+              <div className="budget-assistant-title-main">
+                <p className="eyebrow">Conseils</p>
+                <span className="budget-assistant-ai-tag">
+                  <Bot size={12} /> Cash · IA
+                </span>
+              </div>
+            </div>
+            <p className="budget-advice-helper">
+              {activeSectionId === 'budget'
+                ? 'Cash analyse votre budget, vos poches et vos plafonds.'
+                : activeSectionId === 'stats'
+                ? 'Cash analyse vos semaines et leurs tendances.'
+                : activeSectionId === 'operations'
+                ? 'Cash analyse vos dépenses du mois.'
+                : 'Cash analyse votre mois en cours et vous conseille.'}
+            </p>
+            {budgetAssistantError ? (
+              <>
+                <p className="budget-assistant-error">{budgetAssistantError}</p>
+                <ul className="alert-list coaching-list overview-coaching-list">
+                  {coachingTips.slice(0, 3).map((tip) => (
+                    <li key={tip}>
+                      <Brain size={15} />
+                      <span>{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : budgetAssistantLoading || !budgetAssistantAdvice ? (
+              <div className="budget-assistant-skeleton" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : (
+              <p className="budget-assistant-answer">{budgetAssistantAdvice}</p>
+            )}
+          </>
+        )}
+    </>
+  )
+
+  const createEnvelope = (rawName: string) => {
+    const name = rawName.trim().slice(0, 40)
+    if (!name) return
+    const exists = [...envelopes, ...profileCustomEnvelopes].some(
+      (existing) => existing.toLowerCase() === name.toLowerCase(),
+    )
+    if (exists) {
+      showToast('Cette poche existe déjà', 'danger')
+      return
+    }
+    setCustomEnvelopes((previous) => ({
+      ...previous,
+      [selectedProfileId]: [...(previous[selectedProfileId] ?? []), name],
+    }))
+    const target = Number(envModalTarget)
+    if (target > 0) saveEnvelopeBudget(name, target)
+    const available = Number(envModalAdd.replace(',', '.'))
+    if (available > 0) {
+      setEnvelopeFunds((previous) => ({
+        ...previous,
+        [selectedProfileId]: { ...(previous[selectedProfileId] ?? {}), [name]: Math.round(available * 100) / 100 },
+      }))
+    }
+    showToast(`✉️ Poche « ${name} » créée`)
+    closeEnvelopeModal()
+  }
+
+  const renameEnvelope = (oldName: string, rawNext: string) => {
+    const next = rawNext.trim().slice(0, 40)
+    if (!next || next === oldName) return
+    // Remap partout : poches perso, objectifs, fonds, transactions, règles.
+    setCustomEnvelopes((previous) => ({
+      ...previous,
+      [selectedProfileId]: [
+        ...(previous[selectedProfileId] ?? []).filter((n) => n !== oldName && n !== next),
+        next,
+      ],
+    }))
+    setEnvelopeBudgets((previous) => {
+      const forProfile = { ...(previous[selectedProfileId] ?? {}) }
+      if (forProfile[oldName] !== undefined) {
+        forProfile[next] = forProfile[oldName]
+        delete forProfile[oldName]
+      }
+      return { ...previous, [selectedProfileId]: forProfile }
+    })
+    setEnvelopeFunds((previous) => {
+      const forProfile = { ...(previous[selectedProfileId] ?? {}) }
+      if (forProfile[oldName] !== undefined) {
+        forProfile[next] = (forProfile[next] ?? 0) + forProfile[oldName]
+        delete forProfile[oldName]
+      }
+      return { ...previous, [selectedProfileId]: forProfile }
+    })
+    setTransactions((previous) =>
+      previous.map((tx) => (tx.member === selectedProfileId && tx.envelope === oldName ? { ...tx, envelope: next } : tx)),
+    )
+    setRecurringRules((previous) =>
+      previous.map((rule) =>
+        rule.member === selectedProfileId && rule.envelope === oldName ? { ...rule, envelope: next, updatedAt: Date.now() } : rule,
+      ),
+    )
+    showToast(`✉️ Poche renommée en « ${next} »`)
+    closeEnvelopeModal()
+  }
+
+  const deleteEnvelope = (name: string) => {
+    if (name === 'Perso') {
+      showToast('La poche Perso sert de repli — elle ne peut pas être supprimée.', 'danger')
+      return
+    }
+    setCustomEnvelopes((previous) => ({
+      ...previous,
+      [selectedProfileId]: (previous[selectedProfileId] ?? []).filter((n) => n !== name),
+    }))
+    setEnvelopeBudgets((previous) => {
+      const forProfile = { ...(previous[selectedProfileId] ?? {}) }
+      delete forProfile[name]
+      return { ...previous, [selectedProfileId]: forProfile }
+    })
+    setEnvelopeFunds((previous) => {
+      const forProfile = { ...(previous[selectedProfileId] ?? {}) }
+      delete forProfile[name]
+      return { ...previous, [selectedProfileId]: forProfile }
+    })
+    setTransactions((previous) =>
+      previous.map((tx) => (tx.member === selectedProfileId && tx.envelope === name ? { ...tx, envelope: 'Perso' } : tx)),
+    )
+    setRecurringRules((previous) =>
+      previous.map((rule) =>
+        rule.member === selectedProfileId && rule.envelope === name ? { ...rule, envelope: 'Perso', updatedAt: Date.now() } : rule,
+      ),
+    )
+    showToast(`Poche « ${name} » supprimée — ses opérations passent dans Perso`)
+    closeEnvelopeModal()
+  }
+
+  /** Fixe l'argent DISPONIBLE d'une poche (le fonds est recalculé : dispo + dépensé du mois). */
+  const setEnvelopeAvailable = (name: string, availableTarget: number) => {
+    const spent = envelopeCards.find((card) => card.name === name)?.spent ?? 0
+    const fund = Math.max(0, Math.round((availableTarget + spent) * 100) / 100)
+    setEnvelopeFunds((previous) => {
+      const forProfile = { ...(previous[selectedProfileId] ?? {}) }
+      if (fund > 0) forProfile[name] = fund
+      else delete forProfile[name]
+      return { ...previous, [selectedProfileId]: forProfile }
+    })
+  }
+
+  const saveEnvelopeBudget = (name: string, value: number) => {
+    setEnvelopeBudgets((previous) => {
+      const forProfile = { ...(previous[selectedProfileId] ?? {}) }
+      if (value > 0) forProfile[name] = Math.round(value)
+      else delete forProfile[name]
+      return { ...previous, [selectedProfileId]: forProfile }
+    })
+  }
+
+  // Cartes enveloppes : dépensé du mois + objectif + météo.
+  const envelopeCards = useMemo(() => {
+    const spentBy = new Map<string, number>()
+    for (const tx of activeMonthTransactions) {
+      if (tx.kind !== 'depense') continue
+      spentBy.set(tx.envelope, (spentBy.get(tx.envelope) ?? 0) + tx.amount)
+    }
+    const names = new Set<string>([...envelopes, ...profileCustomEnvelopes, ...Object.keys(profileEnvelopeBudgets), ...spentBy.keys()])
+    return [...names]
+      .map((name) => {
+        const spent = spentBy.get(name) ?? 0
+        const target = profileEnvelopeBudgets[name] ?? 0
+        const fund = profileEnvelopeFunds[name] ?? 0
+        const ratio = target > 0 ? spent / target : null
+        const weather =
+          ratio === null
+            ? { icon: '🌤️', label: "Pas d'objectif — définissez-en un !", tone: 'none' as const }
+            : ratio <= 0.7
+            ? { icon: '☀️', label: 'Grand beau — tout va bien', tone: 'sun' as const }
+            : ratio <= 0.9
+            ? { icon: '⛅', label: 'Ça se couvre — surveillez', tone: 'cloud' as const }
+            : ratio <= 1
+            ? { icon: '🌧️', label: 'Pluie — la limite approche', tone: 'rain' as const }
+            : { icon: '⛈️', label: 'Orage — objectif dépassé !', tone: 'storm' as const }
+        return { name, spent, target, fund, inside: fund - spent, ratio, weather }
+      })
+      .sort((a, b) => b.spent - a.spent)
+  }, [activeMonthTransactions, profileEnvelopeBudgets, profileEnvelopeFunds, profileCustomEnvelopes])
+
+  // Groupes de poches pour la modale d'opération : les poches créées par
+  // l'utilisateur apparaissent en tête, dans un groupe « Mes poches ».
+  const envelopeGroupsWithCustom = useMemo(
+    () => [{ label: 'Mes poches', options: envelopeCards.map((card) => card.name) }],
+    [envelopeCards],
+  )
 
   const envelopeBreakdown = useMemo(
     () =>
@@ -3143,27 +3456,213 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     const hottestGoal = [...goalProgress].sort((left, right) => right.rate - left.rate)[0]
 
     if (monthlyNet < 0) {
-      tips.push('Le solde du mois est negatif. Coupez une enveloppe variable avant la fin du cycle.')
+      tips.push('Ce mois-ci, vous dépensez plus que vous ne gagnez. Réduisez une dépense souple (loisirs, sorties) avant la fin du mois.')
     }
 
     if (maisonTotal > budget * 0.35) {
-      tips.push('L’enveloppe Maison prend une part elevee du budget. Verifiez les charges fixes et les courses.')
+      tips.push('La maison représente une grosse part de votre budget. Jetez un œil aux factures et aux courses.')
     }
 
     if (vacancesTotal > 120) {
-      tips.push('L’enveloppe Vacances/Loisirs est dynamique. Fixez un plafond hebdomadaire pour lisser les depenses.')
+      tips.push('Les dépenses loisirs et vacances grimpent vite. Fixez-vous un petit plafond par semaine pour les lisser.')
     }
 
     if (hottestGoal && hottestGoal.rate > 90) {
-      tips.push(`L’objectif ${hottestGoal.category} approche du plafond. Reallouez du reste disponible si prioritaire.`)
+      tips.push(`Vous approchez du plafond prévu pour ${hottestGoal.category}. Si c'est une priorité, augmentez-le ou réduisez ailleurs.`)
     }
 
     if (tips.length === 0) {
-      tips.push('Trajectoire saine ce mois-ci. Vous pouvez diriger le surplus vers une enveloppe projet ou epargne.')
+      tips.push('Tout va bien ce mois-ci 👍 Vous pouvez mettre le surplus de côté ou le diriger vers un projet.')
     }
 
     return tips.slice(0, 3)
   }, [budget, envelopeBreakdown, goalProgress, monthlyNet])
+
+  // ── Rail latéral de la vue Dépenses (échéances, top dépenses, tags) ──
+  const upcomingCharges = useMemo(() => {
+    // Uniquement la semaine PROCHAINE (lundi → dimanche suivants).
+    const nextMonday = shiftDay(mondayOf(todayIso), 7)
+    const nextSunday = shiftDay(nextMonday, 6)
+    const materialized = new Set(
+      activeTransactions.filter((t) => t.recurringRuleId).map((t) => `${t.recurringRuleId}|${t.date}`),
+    )
+    const items: Array<{ date: string; label: string; amount: number; kind: TransactionKind }> = []
+    for (const rule of recurringRules) {
+      if (rule.pausedAt !== null || rule.member !== selectedProfileId) continue
+      for (const date of getOccurrencesBetween(rule, nextMonday, nextSunday)) {
+        if (materialized.has(`${rule.id}|${date}`)) continue
+        items.push({ date, label: rule.label, amount: rule.amount, kind: rule.kind })
+      }
+    }
+    items.sort((a, b) => a.date.localeCompare(b.date))
+    const totalSpent = items.reduce((sum, item) => sum + (item.kind === 'depense' ? item.amount : 0), 0)
+    const fmt = (iso: string, withMonth: boolean) =>
+      new Date(`${iso}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', ...(withMonth ? { month: 'short' } : {}) })
+    const sameMonth = nextMonday.slice(0, 7) === nextSunday.slice(0, 7)
+    const rangeLabel = `${fmt(nextMonday, !sameMonth)} – ${fmt(nextSunday, true)}`
+    return { items: items.slice(0, 8), totalSpent, rangeLabel }
+  }, [recurringRules, activeTransactions, selectedProfileId, todayIso])
+
+  const topExpensesMonth = useMemo(
+    () =>
+      activeMonthTransactions
+        .filter((t) => t.kind === 'depense')
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 5),
+    [activeMonthTransactions],
+  )
+
+  const topTags = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const tx of activeMonthTransactions) {
+      for (const tag of tx.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
+  }, [activeMonthTransactions])
+
+  // Vue Statistiques : 12 dernières semaines (lundi → dimanche).
+  // weeklyStatsData reste calé sur aujourd'hui (carte Accueil) ; la vue
+  // Statistiques navigue avec sa propre ancre.
+  const weeklyStatsData = useMemo(
+    () => weeklyStats(activeTransactions, todayIso, 12),
+    [activeTransactions, todayIso],
+  )
+  // Mois affiché dans la vue Statistiques (YYYY-MM) + semaine dépliée.
+  const [statsMonth, setStatsMonth] = useState(todayIso.slice(0, 7))
+  const [statsSelectedWeek, setStatsSelectedWeek] = useState<string | null>(null)
+  const [statsPickerOpen, setStatsPickerOpen] = useState(false)
+  const [statsPickerYear, setStatsPickerYear] = useState(() => Number(todayIso.slice(0, 4)))
+  const statsMonthEnd = useMemo(() => shiftDay(`${shiftMonth(statsMonth, 1)}-01`, -1), [statsMonth])
+  const statsViewData = useMemo(
+    () => weeklyStats(activeTransactions, statsMonthEnd, 12),
+    [activeTransactions, statsMonthEnd],
+  )
+  // Semaines qui touchent le mois sélectionné (liste « Semaine par semaine »).
+  const statsMonthWeeks = useMemo(() => {
+    const firstDay = `${statsMonth}-01`
+    return statsViewData.filter((week) => week.weekStart <= statsMonthEnd && week.weekEnd >= firstDay)
+  }, [statsViewData, statsMonth, statsMonthEnd])
+  // Détail quotidien de la semaine sélectionnée (Lun → Dim).
+  const statsWeekDaily = useMemo(() => {
+    if (!statsSelectedWeek) return null
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = shiftDay(statsSelectedWeek, i)
+      let spent = 0
+      let income = 0
+      for (const tx of activeTransactions) {
+        if (tx.date !== date) continue
+        if (tx.kind === 'depense') spent += tx.amount
+        else income += tx.amount
+      }
+      return {
+        label: new Date(`${date}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' }),
+        spent: Math.round(spent * 100) / 100,
+        income: Math.round(income * 100) / 100,
+      }
+    })
+  }, [statsSelectedWeek, activeTransactions])
+  const statsChartRef = useRef<HTMLDivElement | null>(null)
+
+  const exportWeeklyStatsPdf = async (targetWeek?: (typeof statsViewData)[number]) => {
+    const svg = statsChartRef.current?.querySelector('svg')
+    const lastWeek = targetWeek ?? statsMonthWeeks.at(-1) ?? statsViewData.at(-1)
+    if (!svg || !lastWeek) return
+    const { default: JsPdf } = await import('jspdf')
+
+    // Graphique SVG → PNG (fond crème charte).
+    const xml = new XMLSerializer().serializeToString(svg)
+    const blobUrl = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }))
+    const width = svg.clientWidth || Number(svg.getAttribute('width')) || 800
+    const height = svg.clientHeight || Number(svg.getAttribute('height')) || 280
+    let png: string
+    try {
+      png = await new Promise<string>((resolve, reject) => {
+        const image = new Image()
+        image.onload = () => {
+          const canvas = window.document.createElement('canvas')
+          canvas.width = width * 2
+          canvas.height = height * 2
+          const ctx = canvas.getContext('2d')
+          if (!ctx) return reject(new Error('canvas'))
+          ctx.fillStyle = '#FDFAF6'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+          ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
+          resolve(canvas.toDataURL('image/png'))
+        }
+        image.onerror = () => reject(new Error('svg'))
+        image.src = blobUrl
+      })
+    } catch {
+      showToast("Impossible d'exporter le graphique", 'danger')
+      return
+    } finally {
+      URL.revokeObjectURL(blobUrl)
+    }
+
+    const doc = new JsPdf({ orientation: 'landscape' })
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const reportDate = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    doc.setTextColor(61, 43, 31)
+    doc.setFontSize(18)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Statistiques hebdomadaires — Plan Financier', 14, 16)
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(160, 128, 96)
+    doc.text(`Exporté le ${reportDate} · ${selectedProfileName}`, 14, 23)
+    doc.text(`Période affichée : du ${statsViewData[0].weekStart} au ${statsViewData.at(-1)!.weekEnd}`, 14, 29)
+
+    // ── Bandeau de statut : l'information clé de l'export ──────────────
+    const STATUS: Record<string, { label: string; advice: string; fill: [number, number, number] }> = {
+      danger: {
+        label: 'DANGER',
+        advice: 'Vous avez dépensé plus que reçu cette semaine. Réduisez les dépenses souples (loisirs, sorties) et évitez les gros achats.',
+        fill: [192, 92, 42],
+      },
+      up: {
+        label: 'UP — EN PROGRESSION',
+        advice: 'Solde positif et en hausse par rapport à la semaine précédente. Bon moment pour mettre un peu de côté.',
+        fill: [58, 125, 68],
+      },
+      highest: {
+        label: 'HIGHEST EVER — RECORD',
+        advice: 'Meilleure semaine jamais enregistrée ! Idéal pour renforcer votre épargne ou financer un projet.',
+        fill: [184, 150, 62],
+      },
+      normal: {
+        label: 'NORMAL',
+        advice: 'Semaine équilibrée, rien à signaler. Continuez sur ce rythme.',
+        fill: [139, 108, 82],
+      },
+    }
+    const status = STATUS[lastWeek.type]
+    doc.setFillColor(...status.fill)
+    doc.roundedRect(14, 34, pageWidth - 28, 30, 3, 3, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(19)
+    doc.text(status.label, 20, 45)
+    doc.setFontSize(12)
+    doc.text(`Semaine du ${lastWeek.label}`, pageWidth - 20, 45, { align: 'right' })
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(11)
+    doc.text(doc.splitTextToSize(status.advice, pageWidth - 40), 20, 53)
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    doc.setTextColor(58, 125, 68)
+    doc.text(`Revenus : +${euroFormatter.format(lastWeek.income)}`, 14, 72)
+    doc.setTextColor(192, 92, 42)
+    doc.text(`Dépenses : -${euroFormatter.format(lastWeek.spent)}`, 80, 72)
+    doc.setTextColor(61, 43, 31)
+    doc.text(`Solde : ${lastWeek.net >= 0 ? '+' : ''}${euroFormatter.format(lastWeek.net)}`, 150, 72)
+
+    const imgWidth = pageWidth - 28
+    const imgHeight = Math.min((height / width) * imgWidth, 118)
+    doc.addImage(png, 'PNG', 14, 78, imgWidth, imgHeight)
+    doc.save(`statistiques-semaine-${lastWeek.weekStart}.pdf`)
+    showToast('📄 Statistiques exportées en PDF')
+  }
 
   const recurringItems = useMemo(() => {
     type RecurringEntry = { label: string; avgAmount: number; monthCount: number }
@@ -3286,14 +3785,19 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const [quickAddForm, setQuickAddForm] = useState({
     label: '',
     amount: '',
+    kind: 'depense' as TransactionKind,
     category: 'Courses' as Category,
     envelope: 'Maison' as Envelope,
     tags: '',
     recurrence: 'none' as 'none' | RecurringFrequency,
+    /** '' = compte sur le mois de la date ; sinon YYYY-MM choisi. */
+    budgetMonth: '',
   })
 
   // Null = création ; sinon id de la transaction en cours de modification.
   const [quickAddEditingId, setQuickAddEditingId] = useState<number | null>(null)
+  // Confirmation de suppression dans la modale (évite les fausses manips).
+  const [quickAddDeleteAsk, setQuickAddDeleteAsk] = useState(false)
   // Classification IA (catégorie + tags) : proposée automatiquement quand
   // l'assistant est configuré, sans jamais écraser un choix manuel.
   const quickAddAiTimerRef = useRef<number | null>(null)
@@ -3315,10 +3819,10 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022',
+          model: 'claude-haiku-4-5-20251001',
           max_tokens: 120,
           system:
-            'Tu classes une dépense de budget familial français. Réponds UNIQUEMENT un objet JSON de la forme {"category": "...", "tags": ["..."], "icon": "🛒"} sans autre texte. category doit être exactement une valeur parmi: Courses, Transport, Ecole, Loisirs, Sante, Maison, Autre. tags: 0 à 3 étiquettes courtes en minuscules, utiles et non redondantes avec la catégorie, sinon tableau vide. icon: UN SEUL emoji représentant au mieux le marchand ou la dépense (jamais de texte).',
+            'Tu classes une dépense de budget familial français. Réponds UNIQUEMENT un objet JSON de la forme {"category": "...", "tags": ["..."], "icon": "🛒"} sans autre texte. category doit être exactement une valeur parmi: ' + allExpenseCategories.join(', ') + '. tags: 0 à 3 étiquettes courtes en minuscules, utiles et non redondantes avec la catégorie, sinon tableau vide. icon: UN SEUL emoji représentant au mieux le marchand ou la dépense (jamais de texte).',
           messages: [{ role: 'user', content: label }],
         }),
       })
@@ -3329,7 +3833,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       if (!match) return
       const parsed = JSON.parse(match[0]) as { category?: string; tags?: unknown; icon?: unknown }
       if (isValidTxIcon(parsed.icon)) quickAddAiIconRef.current = parsed.icon
-      const aiCategory = categories.includes(parsed.category as Category)
+      const aiCategory = allExpenseCategories.includes(parsed.category as string)
         ? (parsed.category as Category)
         : null
       const aiTags = Array.isArray(parsed.tags)
@@ -3355,7 +3859,9 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const scheduleQuickAddAi = (label: string) => {
-    if (!isBudgetAiConfigured || quickAddEditingId !== null) return
+    // La classification IA (catégorie/tags/emoji marchand) ne vaut que pour
+    // les dépenses.
+    if (!isBudgetAiConfigured || quickAddEditingId !== null || quickAddForm.kind === 'revenu') return
     if (quickAddAiTimerRef.current !== null) window.clearTimeout(quickAddAiTimerRef.current)
     if (label.trim().length < 3) return
     quickAddAiTimerRef.current = window.setTimeout(() => {
@@ -3365,24 +3871,38 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const openQuickAdd = (date: string) => {
-    setQuickAddForm({ label: '', amount: '', category: 'Courses', envelope: 'Maison', tags: '', recurrence: 'none' })
+    setQuickAddForm({ label: '', amount: '', kind: 'depense', category: 'Courses', envelope: 'Maison', tags: '', recurrence: 'none', budgetMonth: '' })
     setQuickAddEditingId(null)
+    setQuickAddDeleteAsk(false)
     quickAddTouchedRef.current = { category: false, tags: false }
     quickAddAiIconRef.current = null
     setQuickAddAiApplied(false)
     setQuickAddDate(date)
   }
 
+  /** Règle récurrente encore active liée à une transaction (le cas échéant). */
+  const activeRuleOf = (tx: Transaction | undefined): RecurringRule | undefined => {
+    if (!tx?.recurringRuleId) return undefined
+    const rule = recurringRules.find((r) => r.id === tx.recurringRuleId)
+    if (!rule || rule.pausedAt !== null) return undefined
+    if (rule.endDate && rule.endDate <= todayIso) return undefined
+    return rule
+  }
+
   const openQuickEdit = (tx: Transaction) => {
     setQuickAddForm({
       label: tx.label,
       amount: String(tx.amount).replace('.', ','),
+      kind: tx.kind,
       category: tx.category,
       envelope: tx.envelope,
       tags: (tx.tags ?? []).join(', '),
-      recurrence: 'none',
+      // Pré-remplit avec la fréquence de la règle liée si elle tourne encore.
+      recurrence: activeRuleOf(tx)?.frequency ?? 'none',
+      budgetMonth: tx.budgetMonth ?? '',
     })
     setQuickAddEditingId(tx.id)
+    setQuickAddDeleteAsk(false)
     setQuickAddDate(tx.date)
   }
 
@@ -3393,6 +3913,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
     setQuickAddDate(null)
     setQuickAddEditingId(null)
+    setQuickAddDeleteAsk(false)
   }
 
   const handleQuickAddSubmit = (event: React.FormEvent<HTMLFormElement>) => {
@@ -3415,15 +3936,72 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
                 ...tx,
                 label: quickAddForm.label.trim(),
                 amount,
+                kind: quickAddForm.kind,
                 category: quickAddForm.category,
                 envelope: quickAddForm.envelope,
                 date: quickAddDate,
                 ...(parsedTags.length > 0 ? { tags: parsedTags } : { tags: undefined }),
+                budgetMonth: quickAddForm.budgetMonth || undefined,
               }
             : tx,
         ),
       )
-      showToast('Dépense mise à jour')
+      // Récurrence en édition : arrêt, changement de fréquence, ou création
+      // d'une règle depuis une opération existante.
+      const editedTx = transactions.find((tx) => tx.id === quickAddEditingId)
+      const linkedRule = activeRuleOf(editedTx)
+      const chosen = quickAddForm.recurrence
+      if (linkedRule && chosen === 'none') {
+        // « Ne plus répéter » : la règle s'arrête à la date de l'opération.
+        setRecurringRules((previous) =>
+          previous.map((rule) =>
+            rule.id === linkedRule.id ? { ...rule, endDate: quickAddDate, updatedAt: Date.now() } : rule,
+          ),
+        )
+        showToast('Cette opération ne se répétera plus')
+      } else if (linkedRule && chosen !== 'none' && chosen !== linkedRule.frequency) {
+        const dayOfPeriod =
+          chosen === 'weekly'
+            ? ((new Date(`${quickAddDate}T12:00:00`).getDay() + 6) % 7) + 1
+            : Number(quickAddDate.slice(8, 10))
+        setRecurringRules((previous) =>
+          previous.map((rule) =>
+            rule.id === linkedRule.id
+              ? { ...rule, frequency: chosen, dayOfPeriod, amount, label: quickAddForm.label.trim(), updatedAt: Date.now() }
+              : rule,
+          ),
+        )
+        showToast('Fréquence de répétition mise à jour')
+      } else if (!linkedRule && chosen !== 'none' && editedTx) {
+        const dayOfPeriod =
+          chosen === 'weekly'
+            ? ((new Date(`${quickAddDate}T12:00:00`).getDay() + 6) % 7) + 1
+            : Number(quickAddDate.slice(8, 10))
+        const rule: RecurringRule = {
+          id: `rule-${Date.now()}`,
+          member: selectedProfileId,
+          category: quickAddForm.category,
+          envelope: quickAddForm.envelope,
+          label: quickAddForm.label.trim(),
+          amount,
+          kind: quickAddForm.kind,
+          frequency: chosen,
+          dayOfPeriod,
+          startDate: quickAddDate,
+          endDate: null,
+          lastGeneratedOn: quickAddDate,
+          pausedAt: null,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }
+        setRecurringRules((previous) => [...previous, rule])
+        setTransactions((previous) =>
+          previous.map((tx) => (tx.id === quickAddEditingId ? { ...tx, recurringRuleId: rule.id } : tx)),
+        )
+        showToast('Cette opération se répétera automatiquement')
+      } else {
+        showToast(quickAddForm.kind === 'revenu' ? 'Revenu mis à jour' : 'Dépense mise à jour')
+      }
       closeQuickAdd()
       return
     }
@@ -3444,7 +4022,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
         envelope: quickAddForm.envelope,
         label: quickAddForm.label.trim(),
         amount,
-        kind: 'depense',
+        kind: quickAddForm.kind,
         frequency,
         dayOfPeriod,
         startDate: quickAddDate,
@@ -3471,15 +4049,20 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       category: quickAddForm.category,
       member: selectedProfileId,
       date: quickAddDate,
-      kind: 'depense',
+      kind: quickAddForm.kind,
       envelope: quickAddForm.envelope,
       ...(icon ? { icon } : {}),
       ...(parsedTags.length > 0 ? { tags: parsedTags } : {}),
       ...(createdRuleId ? { recurringRuleId: createdRuleId } : {}),
+      ...(quickAddForm.budgetMonth ? { budgetMonth: quickAddForm.budgetMonth } : {}),
       accountId: resolvedAccountId,
     }
     setTransactions((previous) => [...previous, newTransaction])
-    showToast(createdRuleId ? 'Dépense ajoutée — elle se répétera automatiquement' : 'Dépense ajoutée')
+    showToast(
+      quickAddForm.kind === 'revenu'
+        ? (createdRuleId ? 'Revenu ajouté — il se répétera automatiquement' : 'Revenu ajouté')
+        : (createdRuleId ? 'Dépense ajoutée — elle se répétera automatiquement' : 'Dépense ajoutée'),
+    )
     closeQuickAdd()
   }
 
@@ -3535,23 +4118,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       setForm((previous) => ({ ...previous, label: '', amount: '' }))
       setSmartCategory(null)
     }
-  }
-
-  const updateGoalTarget = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const amount = Number(goalEditor.amount)
-    if (Number.isNaN(amount) || amount <= 0) {
-      return
-    }
-
-    setSavingsGoals((previous) => ({
-      ...previous,
-      [selectedProfileId]: {
-        ...(previous[selectedProfileId] ?? defaultGoalTemplate),
-        [goalEditor.category]: amount,
-      },
-    }))
-    setGoalEditor((previous) => ({ ...previous, amount: '' }))
   }
 
   const handleCsvFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -3731,7 +4297,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     goalProgress.slice(0, 5).forEach((goal, index) => {
       const y = 108 + index * 14
       const barWidth = Math.min(120, (goal.spent / Math.max(goal.target, 1)) * 120)
-      const color = categoryColors[goal.category]
+      const color = colorForCategory(goal.category)
       const rgb = color.match(/[0-9a-f]{2}/gi)?.map((value) => parseInt(value, 16)) ?? [
         TERRE[0],
         TERRE[1],
@@ -3812,94 +4378,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     document.save(`bilan-${selectedProfileName.toLowerCase().replace(/\s+/g, '-')}-${currentMonth}.pdf`)
   }
 
-  const exportBudgetSummary = async () => {
-    const todayLabel = new Date().toLocaleDateString('fr-FR')
-    const fileBase = `resume-budget-${currentMonth}`
-    const summary = {
-      date: todayLabel,
-      profil: selectedProfileName,
-      mois: currentMonth,
-      budget,
-      depense: monthlyExpense,
-      revenu: monthlyIncome,
-      reste: remaining,
-      utilisationPercent: Number(usageRate.toFixed(0)),
-      etat: budgetStatusLabel,
-      score: budgetMasteryScore,
-      projectionDepense: Math.round(projectionData.projectedExpense),
-      projectionEcart: Math.round(projectionData.projectedOverrun),
-      message: budgetSimpleMessage,
-      actions: budgetActionsList,
-    }
-
-    const downloadBlob = (content: BlobPart, mimeType: string, extension: string) => {
-      const blob = new Blob([content], { type: mimeType })
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = `${fileBase}.${extension}`
-      document.body.appendChild(anchor)
-      anchor.click()
-      anchor.remove()
-      URL.revokeObjectURL(url)
-    }
-
-    if (budgetExportFormat === 'txt') {
-      const text = [
-        `Résumé Budget - ${todayLabel}`,
-        `Profil: ${selectedProfileName}`,
-        `Mois: ${currentMonth}`,
-        '',
-        `Budget: ${euroFormatter.format(budget)}`,
-        `Dépensé: ${euroFormatter.format(monthlyExpense)}`,
-        `Revenus: ${euroFormatter.format(monthlyIncome)}`,
-        `Reste: ${euroFormatter.format(remaining)}`,
-        `Utilisation: ${usageRate.toFixed(0)}%`,
-        `Score de maîtrise: ${budgetMasteryScore}/100`,
-        `Projection dépenses fin de mois: ${euroFormatter.format(projectionData.projectedExpense)}`,
-        `État: ${budgetStatusLabel}`,
-        '',
-        'Actions recommandées:',
-        ...budgetActionsList.map((action) => `- ${action}`),
-      ].join('\n')
-      downloadBlob(text, 'text/plain;charset=utf-8', 'txt')
-      return
-    }
-
-    if (budgetExportFormat === 'csv') {
-      const escapeCsvCell = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`
-      const csvRows = [
-        ['date', 'profil', 'mois', 'budget', 'depense', 'revenu', 'reste', 'utilisation_percent', 'score', 'projection_depense', 'projection_ecart', 'etat', 'message'],
-        [
-          summary.date,
-          summary.profil,
-          summary.mois,
-          summary.budget,
-          summary.depense,
-          summary.revenu,
-          summary.reste,
-          summary.utilisationPercent,
-          summary.score,
-          summary.projectionDepense,
-          summary.projectionEcart,
-          summary.etat,
-          summary.message,
-        ],
-      ]
-      const actionsRows = budgetActionsList.map((action) => ['action', action])
-      const csv = [...csvRows.map((row) => row.map(escapeCsvCell).join(',')), ...actionsRows.map((row) => row.map(escapeCsvCell).join(','))].join('\n')
-      downloadBlob(csv, 'text/csv;charset=utf-8', 'csv')
-      return
-    }
-
-    if (budgetExportFormat === 'json') {
-      downloadBlob(JSON.stringify(summary, null, 2), 'application/json;charset=utf-8', 'json')
-      return
-    }
-
-    await exportMonthlyPdf()
-  }
-
 
   const handleLogout = () => {
     void (async () => {
@@ -3969,6 +4447,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const setProfileAvatar = (profileId: string, avatar: string | undefined) => {
+    if (blockInDemo('le changement de photo ou d\u2019avatar')) return
     setProfiles((previous) =>
       previous.map((item) => {
         if (item.id !== profileId) return item
@@ -3983,6 +4462,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const handleAvatarUpload = async (file: File | undefined) => {
+    if (blockInDemo('le changement de photo')) return
     if (!file) return
     setSettingsError('')
     setSettingsSuccess('')
@@ -3996,6 +4476,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const handleUpdateManagedProfile = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (blockInDemo('la modification des profils')) return
     event.preventDefault()
     setSettingsError('')
     setSettingsSuccess('')
@@ -4039,7 +4521,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     setBudgetAssistantLoading(true)
     setBudgetAssistantError('')
 
-    const prompt = `Tu es un assistant budget familial. Donne des conseils concrets et simples.
+    const prompt = `Tu t'appelles Cash, l'assistant budget familial de cette app. Donne des conseils concrets et simples.
 Contexte:
 - Profil: ${selectedProfileName}
 - Mois: ${formatMonth(selectedMonth)}
@@ -4049,17 +4531,32 @@ Contexte:
 - Reste: ${euroFormatter.format(remaining)}
 - État: ${budgetStatusLabel}
 - Projection: ${projectedMessage}
-
+${activeSectionId === 'stats'
+  ? `- Dernières semaines (lun→dim): ${weeklyStatsData.slice(-4).map((w) => `${w.label} ${w.net >= 0 ? '+' : ''}${Math.round(w.net)}€ (${w.type})`).join(' · ')}
+`
+  : ''}${activeSectionId === 'operations'
+  ? `- Top dépenses du mois: ${topExpensesMonth.map((t) => `${t.label} ${euroFormatter.format(t.amount)} (${t.category})`).join(' · ') || 'aucune'}
+`
+  : ''}${activeSectionId === 'budget'
+  ? `- Poches (dispo / objectif): ${envelopeCards.map((c) => `${c.name} ${euroFormatter.format(c.inside)} dispo${c.target > 0 ? ` / obj ${euroFormatter.format(c.target)} (${Math.round((c.ratio ?? 0) * 100)}%)` : ''}`).join(' · ')}
+- Plafonds par catégorie: ${goalProgress.map((g) => `${g.category} ${g.rate.toFixed(0)}%`).join(' · ')}
+`
+  : ''}
 Réponse attendue:
-- 4 lignes maximum
-- français simple
-- format: "Résumé" puis 2 actions courtes
-- pas de markdown
+- TRÈS COURT: 3 phrases maximum, 320 caractères au total
+- français simple, en vouvoyant l'utilisateur
+- une phrase de résumé puis 1 ou 2 actions concrètes
+- pas de markdown, pas de titres
 - ton bienveillant et direct.`
 
+    // Garde-fou : sans réponse en 20 s, on abandonne proprement (sinon le
+    // squelette de chargement pourrait rester affiché indéfiniment).
+    const abort = new AbortController()
+    const abortTimer = window.setTimeout(() => abort.abort(), 20_000)
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
+        signal: abort.signal,
         headers: {
           'x-api-key': anthropicKey,
           'anthropic-version': '2023-06-01',
@@ -4067,8 +4564,8 @@ Réponse attendue:
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022',
-          max_tokens: 220,
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 160,
           messages: [{ role: 'user', content: prompt }],
         }),
       })
@@ -4084,26 +4581,38 @@ Réponse attendue:
       const data = (await response.json()) as AnthropicResponse
       const text = data.content.find((c) => c.type === 'text')?.text?.trim() ?? ''
       setBudgetAssistantAdvice(text || 'Conseil IA indisponible pour le moment.')
-      setBudgetAssistantContextLoaded(budgetAssistantContextKey)
-    } catch {
-      setBudgetAssistantError('Impossible de contacter Claude pour le moment.')
+    } catch (error) {
+      setBudgetAssistantError(
+        error instanceof DOMException && error.name === 'AbortError'
+          ? "L'analyse a pris trop de temps — réessayez dans un instant."
+          : 'Impossible de contacter Cash pour le moment.',
+      )
     } finally {
+      window.clearTimeout(abortTimer)
+      // Succès OU échec : le contexte est marqué traité, sinon l'effet
+      // relançait l'analyse en boucle (en effaçant le message d'erreur —
+      // d'où un squelette de chargement affiché en permanence).
+      setBudgetAssistantContextLoaded(budgetAssistantContextKey)
       setBudgetAssistantLoading(false)
     }
   }
 
 
   useEffect(() => {
-    if (activeSectionId !== 'budget') {
+    // L'analyse IA alimente le rail Conseils du Budget, de l'Accueil,
+    // des Opérations et de la Famille.
+    if (!['budget', 'overview', 'family', 'operations', 'stats'].includes(activeSectionId)) {
       return
     }
 
     if (!isBudgetAiConfigured) {
       // Reset de l'état de l'assistant à l'entrée de section / config absente.
+      // Le contexte est remis à zéro (pas marqué « traité ») pour que
+      // l'analyse parte bien dès que l'IA est (re)configurée.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setBudgetAssistantAdvice('')
       setBudgetAssistantError('')
-      setBudgetAssistantContextLoaded(budgetAssistantContextKey)
+      setBudgetAssistantContextLoaded('')
       return
     }
 
@@ -4195,6 +4704,7 @@ Réponse attendue:
   }
 
   const handleExportEncryptedBackup = async () => {
+    if (blockInDemo('l\u2019export de sauvegarde')) return
     setSettingsError('')
     setSettingsSuccess('')
 
@@ -4230,6 +4740,7 @@ Réponse attendue:
   }
 
   const handleRestoreEncryptedBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (blockInDemo('la restauration de sauvegarde')) return
     setSettingsError('')
     setSettingsSuccess('')
 
@@ -4328,6 +4839,8 @@ Réponse attendue:
 
   const handleAddProfile = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (blockInDemo('la cr\u00e9ation de profils')) return
+    event.preventDefault()
     setSettingsError('')
     setSettingsSuccess('')
 
@@ -4385,6 +4898,8 @@ Réponse attendue:
   }
 
   const handlePinUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (blockInDemo('le changement de PIN')) return
     event.preventDefault()
     setSettingsError('')
     setSettingsSuccess('')
@@ -4658,7 +5173,7 @@ Réponse attendue:
               </div>
               {onboardingProvider !== null && (() => {
                 const selectedProvider = ONBOARDING_PROVIDERS.find((provider) => provider.id === onboardingProvider) ?? ONBOARDING_PROVIDERS[0]
-                return (
+  return (
                   <>
                     <div className="onboarding-provider-help glass-card">
                       <div>
@@ -4854,7 +5369,7 @@ Réponse attendue:
       </div>
     ) : null}
 
-    <main className={`dashboard-shell${isActiveView('budget') || isActiveView('overview') || isActiveView('operations') || isActiveView('family') ? ' dashboard-shell--three-columns' : ''}`} id="app-main" aria-label="Tableau de bord budgétaire">
+    <main className={`dashboard-shell${isActiveView('budget') || isActiveView('overview') || isActiveView('operations') || isActiveView('family') || isActiveView('stats') ? ' dashboard-shell--three-columns' : ''}`} id="app-main" aria-label="Tableau de bord budgétaire">
       <h1 className="sr-only">Plan Financier — Tableau de bord</h1>
       <aside className="glass-card side-menu" aria-label="Navigation principale">
         <div className="side-menu-profiles" role="tablist" aria-label="Sélection du profil">
@@ -4894,23 +5409,6 @@ Réponse attendue:
           ))}
         </nav>
         <div className="side-menu-footer">
-          <p
-            className={`cloud-sync-badge cloud-sync-badge--${cloudSyncStatus}`}
-            title={
-              cloudSyncStatus === 'ok'
-                ? 'Vos données sont synchronisées dans le cloud.'
-                : cloudSyncStatus === 'syncing'
-                ? 'Synchronisation en cours…'
-                : cloudSyncStatus === 'error'
-                ? 'Synchronisation impossible — vos données restent enregistrées sur cet appareil.'
-                : 'Synchronisation en attente de connexion.'
-            }
-          >
-            {cloudSyncStatus === 'ok' && '☁️ Synchronisé'}
-            {cloudSyncStatus === 'syncing' && '☁️ Synchronisation…'}
-            {cloudSyncStatus === 'error' && '☁️ Hors ligne'}
-            {cloudSyncStatus === 'idle' && '☁️ En attente'}
-          </p>
           <button
             type="button"
             className="side-menu-settings-btn"
@@ -4950,9 +5448,37 @@ Réponse attendue:
               ? `≈ ${euroFormatter.format(dailyAllowance)} / jour sur les ${daysLeftInMonth} jours restants`
               : 'Budget dépassé — réduisez une catégorie ou ajustez le budget.'}
           </p>
+          {(() => {
+            const week = weeklyStatsData.at(-1)
+            if (!week) return null
+            const WEEK_STATUS = {
+              danger: { icon: '⚠️', label: 'Danger', advice: 'Vous dépensez plus que vous ne recevez — levez le pied cette semaine.' },
+              up: { icon: '📈', label: 'Up', advice: 'Solde en hausse par rapport à la semaine dernière — continuez !' },
+              highest: { icon: '🏆', label: 'Highest ever', advice: 'Record absolu de la semaine — bravo !' },
+              normal: { icon: '✅', label: 'Normal', advice: 'Semaine équilibrée, rien à signaler.' },
+            } as const
+            const status = WEEK_STATUS[week.type]
+            return (
+              <button
+                type="button"
+                className={`hero-week-status hero-week-status--${week.type}`}
+                onClick={() => navigateToSection('stats')}
+                title="Voir les statistiques hebdomadaires"
+              >
+                <span className="hero-week-status__icon" aria-hidden="true">{status.icon}</span>
+                <span className="hero-week-status__text">
+                  <strong>Semaine du {week.label} : {status.label}</strong>
+                  <small>{status.advice}</small>
+                </span>
+                <strong className={`hero-week-status__net ${week.net < 0 ? 'expense' : 'income'}`}>
+                  {week.net >= 0 ? '+' : ''}{euroFormatter.format(week.net)}
+                </strong>
+              </button>
+            )
+          })()}
           <div className="hero-primary-actions">
             <button type="button" className="hero-cta-button" onClick={() => openQuickAdd(todayIso)}>
-              <Plus size={16} /> Ajouter une dépense
+              <Plus size={16} /> Ajouter une dépense ou un revenu
             </button>
             <button type="button" className="ghost-button" onClick={() => void exportMonthlyPdf()}>
               <Download size={16} /> PDF mensuel
@@ -4992,7 +5518,7 @@ Réponse attendue:
         ) : null}
 
         {isActiveView('overview') ? (
-        <section className="glass-card kpi-summary" style={{ margin: '0 0 1rem 0' }}>
+        <section className="kpi-summary" style={{ margin: '0 0 1rem 0' }}>
           <div className="kpi-card kpi-card--secondary">
             <div className="kpi-card-label">Revenus ce mois</div>
             <div className="kpi-card-value">{euroFormatter.format(monthlyIncome)}</div>
@@ -5064,11 +5590,7 @@ Réponse attendue:
                   onClick={() => openQuickEdit(tx)}
                   aria-label={`Modifier ${tx.label}`}
                 >
-                  {tx.icon ? (
-                    <span className="tx-merchant-icon" aria-hidden="true">{tx.icon}</span>
-                  ) : (
-                    <span className="recent-tx-dot" style={{ background: categoryColors[tx.category] }} aria-hidden="true" />
-                  )}
+                  <MerchantLogo label={tx.label} fallbackIcon={tx.icon ?? categoryEmoji(tx.category)} />
                   <span className="recent-tx-label">
                     {tx.label}
                     {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
@@ -5114,7 +5636,7 @@ Réponse attendue:
                 <div className="month-summary-cats">
                   {monthSummary.topCategories.map(([category, total]) => (
                     <span key={category} className="month-summary-cat">
-                      <span className="recent-tx-dot" style={{ background: categoryColors[category] }} aria-hidden="true" />
+                      <span className="recent-tx-dot" style={{ background: colorForCategory(category) }} aria-hidden="true" />
                       {category} · {euroFormatter.format(total)}
                     </span>
                   ))}
@@ -5556,7 +6078,7 @@ Réponse attendue:
                       <div className="panel-title">
                         <h2>
                           ♿ Accessibilité
-                          <InfoHint text="Astuce : la vue Budget propose aussi un « Mode simple » qui agrandit encore ses textes." />
+                         
                         </h2>
                         <p>Adaptez l'application à vos besoins de lecture et de confort.</p>
                       </div>
@@ -5797,6 +6319,44 @@ Réponse attendue:
                   <div className="settings-section-grid">
                     <article className="glass-card settings-section-card form-panel">
                       <div className="panel-title">
+                        <h2>Enregistrement en ligne</h2>
+                        <p>Vos données suivent votre compte, sur tous vos appareils.</p>
+                      </div>
+                      <div className={`sync-status-card sync-status-card--${cloudSyncStatus}`} role="status">
+                        {cloudSyncStatus === 'ok' ? (
+                          <>
+                            <strong>✅ Vos données sont enregistrées en ligne</strong>
+                            <small>
+                              Tout ce que vous ajoutez est copié automatiquement sur votre compte.
+                              Connectez-vous depuis n'importe quel appareil pour les retrouver.
+                            </small>
+                          </>
+                        ) : cloudSyncStatus === 'syncing' ? (
+                          <>
+                            <strong>☁️ Enregistrement en cours…</strong>
+                            <small>Vos dernières modifications sont en train d'être copiées en ligne.</small>
+                          </>
+                        ) : cloudSyncStatus === 'error' ? (
+                          <>
+                            <strong>⚠️ Enregistrement en ligne impossible pour le moment</strong>
+                            <small>
+                              Pas d'inquiétude : tout reste enregistré sur cet appareil. La copie en
+                              ligne reprendra automatiquement dès que la connexion reviendra.
+                            </small>
+                          </>
+                        ) : (
+                          <>
+                            <strong>☁️ En attente de connexion</strong>
+                            <small>
+                              Vos données sont enregistrées sur cet appareil. La copie en ligne
+                              démarre dès que vous êtes connecté.
+                            </small>
+                          </>
+                        )}
+                      </div>
+                    </article>
+                    <article className="glass-card settings-section-card form-panel">
+                      <div className="panel-title">
                         <h2>
                           Sauvegarde chiffrée
                           <InfoHint text="Le fichier exporté est chiffré avec votre PIN : vous pouvez le déplacer d'un appareil à l'autre en toute sécurité." />
@@ -5907,7 +6467,10 @@ Réponse attendue:
                       <button
                         type="button"
                         className="hero-cta-button"
-                        onClick={() => setShowPrivacyPanel(true)}
+                        onClick={() => {
+                          if (blockInDemo('les données RGPD')) return
+                          setShowPrivacyPanel(true)
+                        }}
                       >
                         🔒 Ouvrir mes données RGPD
                       </button>
@@ -6041,7 +6604,11 @@ Réponse attendue:
           <ul className="operations-category-list">
             {pieData.map((entry) => (
               <li key={entry.name} className="operations-category-item">
+                <span className="recent-tx-dot" style={{ background: colorForCategory(entry.name) }} aria-hidden="true" />
                 <span className="operations-category-name">{entry.name}</span>
+                <small className="operations-category-share">
+                  {monthlyExpense > 0 ? `${Math.round((entry.value / monthlyExpense) * 100)}%` : ''}
+                </small>
                 <span className="operations-category-amount">{euroFormatter.format(entry.value)}</span>
               </li>
             ))}
@@ -6166,7 +6733,7 @@ Réponse attendue:
                 >
                   <div>
                     <p>
-                      {item.icon ? <span className="tx-merchant-icon" aria-hidden="true">{item.icon}</span> : null}
+                      <MerchantLogo label={item.label} fallbackIcon={item.icon ?? categoryEmoji(item.category)} />
                       {item.label}
                       {item.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
                     </p>
@@ -6406,6 +6973,194 @@ Réponse attendue:
       </section>
       ) : null}
 
+      {isActiveView('stats') ? (
+      <section id="stats" className="panel-grid">
+        <article className="glass-card chart-card wide-card">
+          <div className="panel-title">
+            <div>
+              <h2>Dépenses vs Revenus par semaine</h2>
+              <p>Semaines du lundi au dimanche · 12 semaines affichées sur le graphique.</p>
+            </div>
+            <div className="stats-toolbar">
+              <button
+                type="button"
+                onClick={() => { setStatsMonth(shiftMonth(statsMonth, -1)); setStatsSelectedWeek(null) }}
+                aria-label="Mois précédent"
+              >‹</button>
+              <span className="stats-month-picker-wrap">
+                <button
+                  type="button"
+                  className="stats-month-title"
+                  onClick={() => {
+                    setStatsPickerYear(Number(statsMonth.slice(0, 4)))
+                    setStatsPickerOpen((previous) => !previous)
+                  }}
+                  aria-expanded={statsPickerOpen}
+                  title="Choisir le mois et l'année"
+                >
+                  {formatMonth(statsMonth).charAt(0).toUpperCase() + formatMonth(statsMonth).slice(1)} ▾
+                </button>
+                {statsPickerOpen ? (
+                  <div className="stats-month-popover" role="dialog" aria-label="Choisir le mois et l'année">
+                    <div className="stats-month-popover__year">
+                      <button type="button" onClick={() => setStatsPickerYear((y) => y - 1)} aria-label="Année précédente">‹</button>
+                      <strong>{statsPickerYear}</strong>
+                      <button
+                        type="button"
+                        onClick={() => setStatsPickerYear((y) => y + 1)}
+                        aria-label="Année suivante"
+                        disabled={statsPickerYear >= Number(todayIso.slice(0, 4))}
+                      >›</button>
+                    </div>
+                    <div className="stats-month-popover__grid">
+                      {['Janv', 'Févr', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc'].map((name, index) => {
+                        const value = `${statsPickerYear}-${String(index + 1).padStart(2, '0')}`
+                        return (
+                          <button
+                            key={name}
+                            type="button"
+                            className={value === statsMonth ? 'active' : ''}
+                            disabled={value > todayIso.slice(0, 7)}
+                            onClick={() => {
+                              setStatsMonth(value)
+                              setStatsSelectedWeek(null)
+                              setStatsPickerOpen(false)
+                            }}
+                          >
+                            {name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setStatsMonth(shiftMonth(statsMonth, 1)); setStatsSelectedWeek(null) }}
+                aria-label="Mois suivant"
+                disabled={statsMonth >= todayIso.slice(0, 7)}
+              >›</button>
+              {statsMonth !== todayIso.slice(0, 7) ? (
+                <button type="button" onClick={() => { setStatsMonth(todayIso.slice(0, 7)); setStatsSelectedWeek(null) }}>
+                  Aujourd&apos;hui
+                </button>
+              ) : null}
+              <button type="button" className="hero-cta-button stats-export-btn" onClick={() => void exportWeeklyStatsPdf()}>
+                📄 Exporter
+              </button>
+            </div>
+          </div>
+          {statsSelectedWeek && statsWeekDaily ? (
+            <div className="stats-week-detail-bar">
+              <strong>
+                Détail de la semaine du{' '}
+                {statsMonthWeeks.find((w) => w.weekStart === statsSelectedWeek)?.label ?? statsSelectedWeek}
+              </strong>
+              <button type="button" className="ghost-button" onClick={() => setStatsSelectedWeek(null)}>
+                ← Retour aux 12 semaines
+              </button>
+            </div>
+          ) : null}
+          <div className="stats-chart-wrap" ref={statsChartRef}>
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={statsSelectedWeek && statsWeekDaily ? statsWeekDaily : statsViewData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(160, 128, 96, 0.2)" />
+                <XAxis dataKey="label" stroke="#a1a1aa" fontSize={11} interval="preserveStartEnd" />
+                <YAxis stroke="#a1a1aa" fontSize={11} />
+                <Tooltip
+                  formatter={(value, name) => [
+                    euroFormatter.format(Number(value)),
+                    name === 'income' ? 'Revenus' : 'Dépenses',
+                  ]}
+                  labelFormatter={(label) => (statsSelectedWeek ? String(label) : `Semaine du ${label}`)}
+                  contentStyle={{
+                    background: 'var(--bg-2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 10,
+                    color: 'var(--text-1)',
+                  }}
+                  labelStyle={{ color: 'var(--text-1)', fontWeight: 700 }}
+                />
+                <Line
+                  type="linear"
+                  dataKey="income"
+                  name="income"
+                  stroke="#3A7D44"
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: '#3A7D44' }}
+                  activeDot={{ r: 5 }}
+                  isAnimationActive={false}
+                />
+                <Line
+                  type="linear"
+                  dataKey="spent"
+                  name="spent"
+                  stroke="#C05C2A"
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: '#C05C2A' }}
+                  activeDot={{ r: 5 }}
+                  isAnimationActive={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="stats-legend">
+            <span><i className="stats-legend__dot" style={{ background: '#3A7D44' }} /> Revenus</span>
+            <span><i className="stats-legend__dot" style={{ background: '#C05C2A' }} /> Dépenses</span>
+          </div>
+        </article>
+
+        <article className="glass-card chart-card wide-card">
+          <div className="panel-title">
+            <div>
+              <h2>Semaine par semaine</h2>
+              <p>
+                Les semaines de {formatMonth(statsMonth)} — appuyez sur une semaine pour voir son
+                détail jour par jour sur le graphique.
+              </p>
+            </div>
+          </div>
+          <ul className="stats-week-list">
+            {[...statsMonthWeeks].reverse().map((week) => (
+              <li key={week.weekStart} className={statsSelectedWeek === week.weekStart ? 'stats-week-row--active' : ''}>
+                <button
+                  type="button"
+                  className="stats-week-main"
+                  onClick={() => setStatsSelectedWeek((previous) => (previous === week.weekStart ? null : week.weekStart))}
+                  aria-label={`Voir le détail de la semaine du ${week.label}`}
+                >
+                  <span className="stats-week-label">{week.label}</span>
+                  <span className="stats-week-amounts">
+                    <span className="income">+{euroFormatter.format(week.income)}</span>
+                    <span className="expense">−{euroFormatter.format(week.spent)}</span>
+                  </span>
+                  <strong className={`stats-week-net ${week.net < 0 ? 'expense' : 'income'}`}>
+                    {week.net >= 0 ? '+' : ''}{euroFormatter.format(week.net)}
+                  </strong>
+                  <span className={`stats-week-type stats-week-type--${week.type}`}>
+                    {week.type === 'danger' ? '⚠️ Danger'
+                      : week.type === 'highest' ? '🏆 Highest ever'
+                      : week.type === 'up' ? '📈 Up'
+                      : 'Normal'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="stats-week-export"
+                  onClick={() => void exportWeeklyStatsPdf(week)}
+                  aria-label={`Exporter la semaine du ${week.label} en PDF`}
+                  title="Exporter cette semaine en PDF"
+                >
+                  📄
+                </button>
+              </li>
+            ))}
+          </ul>
+        </article>
+      </section>
+      ) : null}
+
       {isActiveView('operations') || isActiveView('budget') ? (
       <section id="pilotage" className="panel-grid">
         {isActiveView('budget') ? (
@@ -6413,70 +7168,15 @@ Réponse attendue:
           <div className="panel-title">
             <div className="budget-title-row">
               <h2>
-                <span className="budget-title-main">Mon budget · {formatMonth(selectedMonth)}</span>
-              </h2>
-              <button
-                type="button"
-                className={`budget-export-toggle budget-export-toggle-inline${budgetExportOpen ? ' open' : ''}`}
-                onClick={() => setBudgetExportOpen((open) => !open)}
-                aria-expanded={budgetExportOpen}
-                aria-controls="budget-export-panel-content"
-              >
-                <span>Exporter</span>
-                {budgetExportOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-              </button>
-            </div>
-            <div
-              id="budget-export-panel-content"
-              className={`budget-export-controls budget-export-controls-inline${budgetExportOpen ? ' open' : ''}`}
-              aria-hidden={!budgetExportOpen}
-            >
-              <label className="budget-export-label" htmlFor="budget-export-format">
-                Format du fichier
-              </label>
-              <div className="budget-export-row">
-                <select
-                  id="budget-export-format"
-                  value={budgetExportFormat}
-                  onChange={(event) => setBudgetExportFormat(event.target.value as 'txt' | 'csv' | 'json' | 'pdf')}
-                  aria-label="Choisir le format de téléchargement"
-                >
-                  <option value="pdf">PDF</option>
-                  <option value="txt">TXT</option>
-                  <option value="csv">CSV</option>
-                  <option value="json">JSON</option>
-                </select>
-                <button
-                  type="button"
-                  className="budget-export-link"
-                  onClick={() => { void exportBudgetSummary() }}
-                  aria-label="Télécharger le résumé du budget"
-                >
-                  <Download size={14} />
-                  Télécharger le résumé
-                </button>
-              </div>
-            </div>
-            <div className="budget-quick-actions-row">
-              <button
-                type="button"
-                className={`budget-switch${budgetSimpleMode ? ' on' : ''}`}
-                onClick={() => setBudgetSimpleMode((previous) => !previous)}
-                aria-pressed={budgetSimpleMode}
-                aria-label="Activer ou désactiver le mode simple"
-              >
-                <span className="budget-switch-label">Mode simple</span>
-                <span className="budget-switch-track" aria-hidden="true">
-                  <span className="budget-switch-thumb" />
+                <span className="budget-title-main">
+                  Mon budget ·{' '}
+                  <span className="budget-title-month-nav">
+                    <button type="button" onClick={() => navigateMonth(-1)} aria-label="Mois précédent">‹</button>
+                    <span>{formatMonth(selectedMonth)}</span>
+                    <button type="button" onClick={() => navigateMonth(1)} aria-label="Mois suivant">›</button>
+                  </span>
                 </span>
-              </button>
-              <button
-                type="button"
-                className="budget-mini-btn budget-mini-btn-primary"
-                onClick={openQuickBudgetEditor}
-              >
-                Ajuster mon budget
-              </button>
+              </h2>
             </div>
           </div>
           <div className="budget-shell-layout">
@@ -6501,7 +7201,18 @@ Réponse attendue:
                   ) : null}
                 </span>
               </p>
-              <strong>{euroFormatter.format(budget)}</strong>
+              <strong className="budget-simple-value-row">
+                {euroFormatter.format(budget)}
+                <button
+                  type="button"
+                  className="budget-edit-icon"
+                  onClick={openQuickBudgetEditor}
+                  aria-label="Ajuster mon budget"
+                  title="Ajuster mon budget"
+                >
+                  <Pencil size={14} />
+                </button>
+              </strong>
             </div>
             <div className="budget-simple-card">
               <p>
@@ -6887,6 +7598,80 @@ Réponse attendue:
         </article>
         ) : null}
 
+        {isActiveView('budget') ? (
+        <article className="glass-card chart-card wide-card envelope-board">
+          <div className="panel-title">
+            <div>
+              <h2>✉️ Mes poches</h2>
+              <p>La météo de chaque poche — appuyez sur une poche pour la gérer.</p>
+            </div>
+          </div>
+          <div className="envelope-grid">
+            {envelopeCards.map((card, index) => (
+              <button
+                type="button"
+                key={card.name}
+                className={`envelope-card envelope-card--${card.weather.tone}${envelopeOpenName === card.name ? ' envelope-card--open' : ''}`}
+                style={{ animationDelay: `${index * 70}ms` }}
+                onClick={() => openEnvelopeModal(card.name)}
+                aria-label={`Gérer la poche ${card.name}`}
+              >
+                <div className="envelope-card__flap" aria-hidden="true" />
+                <div className="envelope-card__body">
+                  <div className="envelope-card__top">
+                    <strong className="envelope-card__name">{card.name}</strong>
+                    <span
+                      className={`envelope-card__weather envelope-card__weather--${card.weather.tone}`}
+                      title={card.weather.label}
+                      aria-label={card.weather.label}
+                    >
+                      {card.weather.icon}
+                    </span>
+                  </div>
+                  <p className="envelope-card__spent">
+                    −{euroFormatter.format(card.spent)}
+                    <small> dépensés ce mois-ci</small>
+                  </p>
+                  <small className="envelope-card__fund-line">
+                    💰 Dans la poche :{' '}
+                    <strong className={card.inside >= 0 ? 'income' : 'expense'}>{euroFormatter.format(card.inside)}</strong>
+                  </small>
+                  {card.target > 0 ? (
+                    <div className="envelope-card__bar" aria-hidden="true">
+                      <div
+                        className={`envelope-card__bar-fill envelope-card__bar-fill--${card.weather.tone}`}
+                        style={{ width: `${Math.min(100, ((card.ratio ?? 0) * 100))}%` }}
+                      />
+                    </div>
+                  ) : null}
+                  <small className="envelope-card__target-line">
+                    🎯 {card.target > 0
+                      ? `Objectif : ${euroFormatter.format(card.target)} — ${Math.round((card.ratio ?? 0) * 100)}% utilisé`
+                      : 'Pas encore d\u2019objectif'}
+                  </small>
+                  <small className="envelope-card__forecast">{card.weather.label}</small>
+                </div>
+              </button>
+            ))}
+            <button
+              type="button"
+              className="envelope-card envelope-card--new"
+              onClick={() => {
+                setEnvModalName('')
+                setEnvModalTarget('')
+                setEnvModalAdd('')
+                setEnvModalDeleteAsk(false)
+                setEnvelopeModal({ mode: 'create', name: '' })
+              }}
+            >
+              <div className="envelope-card__body envelope-card__body--new">
+                <span className="envelope-card__new-plus" aria-hidden="true">＋</span>
+                <strong>Nouvelle poche</strong>
+              </div>
+            </button>
+          </div>
+        </article>
+        ) : null}
         {isPilotageWidgetVisible('alerts') && isActiveView('budget') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
@@ -6916,51 +7701,81 @@ Réponse attendue:
             <h2>Budgets par catégorie</h2>
             <p>Plafond mensuel par catégorie — {selectedProfileName}</p>
           </div>
-          <ul className="goal-list">
-            {goalProgress.map((goal) => (
-              <li key={goal.category}>
-                <div>
-                  <strong>{goal.category}</strong>
-                  <small>
-                    {euroFormatter.format(goal.spent)} / {euroFormatter.format(goal.target)}
-                  </small>
-                </div>
-                <div className="goal-progress-track">
-                  <span style={{ width: `${goal.rate}%` }} />
-                </div>
-              </li>
-            ))}
+          <ul className="goal-list goal-list--v2">
+            {goalProgress.map((goal) => {
+              const tone = goal.rate <= 70 ? 'sun' : goal.rate <= 90 ? 'cloud' : goal.rate <= 100 ? 'rain' : 'storm'
+              return (
+                <li key={goal.category}>
+                  <div className="goal-row-head">
+                    <span className="recent-tx-dot" style={{ background: colorForCategory(goal.category) }} aria-hidden="true" />
+                    <strong className="goal-row-name">{goal.category}</strong>
+                    {goalRowEditing === goal.category ? (
+                      <span className="goal-row-edit">
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min="1"
+                          step="10"
+                          value={goalRowDraft}
+                          onChange={(event) => setGoalRowDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              const amount = Number(goalRowDraft)
+                              if (amount > 0) {
+                                setSavingsGoals((previous) => ({
+                                  ...previous,
+                                  [selectedProfileId]: {
+                                    ...(previous[selectedProfileId] ?? defaultGoalTemplate),
+                                    [goal.category]: Math.round(amount),
+                                  },
+                                }))
+                              }
+                              setGoalRowEditing(null)
+                            }
+                            if (event.key === 'Escape') setGoalRowEditing(null)
+                          }}
+                          onBlur={() => {
+                            const amount = Number(goalRowDraft)
+                            if (amount > 0) {
+                              setSavingsGoals((previous) => ({
+                                ...previous,
+                                [selectedProfileId]: {
+                                  ...(previous[selectedProfileId] ?? defaultGoalTemplate),
+                                  [goal.category]: Math.round(amount),
+                                },
+                              }))
+                            }
+                            setGoalRowEditing(null)
+                          }}
+                          aria-label={`Plafond mensuel pour ${goal.category} (euros)`}
+                          autoFocus
+                        />
+                        <small>€</small>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="goal-row-amount"
+                        onClick={() => {
+                          setGoalRowDraft(String(goal.target))
+                          setGoalRowEditing(goal.category)
+                        }}
+                        title="Modifier le plafond"
+                      >
+                        {euroFormatter.format(goal.spent)} <small>/ {euroFormatter.format(goal.target)}</small>
+                      </button>
+                    )}
+                    <span className={`goal-row-rate goal-row-rate--${tone}`}>{goal.rate.toFixed(0)}%</span>
+                  </div>
+                  <div className="goal-progress-track goal-progress-track--v2">
+                    <span className={`goal-progress-fill--${tone}`} style={{ width: `${Math.min(100, goal.rate)}%` }} />
+                  </div>
+                </li>
+              )
+            })}
           </ul>
-          <form className="goal-editor" onSubmit={updateGoalTarget}>
-            <select
-              value={goalEditor.category}
-              onChange={(event) =>
-                setGoalEditor((previous) => ({
-                  ...previous,
-                  category: event.target.value as Category,
-                }))
-              }
-            >
-              {categories.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-            <input
-              type="number"
-              min="1"
-              value={goalEditor.amount}
-              onChange={(event) =>
-                setGoalEditor((previous) => ({
-                  ...previous,
-                  amount: event.target.value,
-                }))
-              }
-              placeholder="Nouvel objectif"
-            />
-            <button type="submit">Mettre a jour</button>
-          </form>
+          <p className="goal-list-hint">Appuyez sur un montant pour ajuster le plafond de la catégorie.</p>
         </article>
         ) : null}
 
@@ -7117,7 +7932,12 @@ Réponse attendue:
                   <ul className="accounts-widget-breakdown">
                     {nonZeroTypes.map(([type, amount]) => (
                       <li key={type}>
-                        <span className="accounts-widget-type">{ACCOUNT_TYPE_LABELS[type]}</span>
+                        <span className="accounts-widget-type">
+                          <span aria-hidden="true">
+                            {({ checking: '🏦', savings: '💰', cash: '💵', envelope: '✉️', credit_card: '💳', investment: '📈' } as Record<string, string>)[type] ?? '🏦'}
+                          </span>{' '}
+                          {ACCOUNT_TYPE_LABELS[type]}
+                        </span>
                         <span className={amount >= 0 ? 'is-positive' : 'is-negative'}>
                           {euroFormatter.format(amount)}
                         </span>
@@ -7404,7 +8224,7 @@ Réponse attendue:
                   paddingAngle={3}
                 >
                   {pieData.map((entry) => (
-                    <Cell key={entry.name} fill={categoryColors[entry.name as Category]} />
+                    <Cell key={entry.name} fill={colorForCategory(entry.name)} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(value) => formatTooltipValue(value)} />
@@ -7472,229 +8292,137 @@ Réponse attendue:
 
       </div>
 
-      {isActiveView('overview') || isActiveView('operations') || isActiveView('family') ? (
-      <aside className="glass-card budget-advice-rail dashboard-right-rail overview-coaching-rail" aria-label="Assistant">
-        {!isBudgetAiConfigured ? (
-          <>
-            <div className="budget-assistant-title-row">
-              <div className="budget-assistant-title-main">
-                <p className="eyebrow">Assistant IA</p>
-              </div>
-            </div>
-            <p className="budget-advice-helper">
-              <strong>Assistant IA non configuré.</strong>
-              <br />
-              Activez votre fournisseur IA dans les paramètres pour débloquer les analyses
-              automatiques et le coaching avancé.
-            </p>
-            <button type="button" className="hero-cta-button" onClick={() => openSettingsPanel('ai')}>
-              Configurer l&apos;IA
-            </button>
-          </>
-        ) : (
-          <>
-            <div className="budget-assistant-title-row">
-              <div className="budget-assistant-title-main">
-                <p className="eyebrow">Conseils</p>
-                <span className="budget-assistant-ai-tag">
-                  <Brain size={12} /> Coaching financier
-                </span>
-              </div>
-            </div>
-            <p className="budget-advice-helper">
-              Conseils rapides pour garder le cap ce mois-ci.
-            </p>
-            <ul className="alert-list coaching-list overview-coaching-list">
-              {(coachingTips.length > 0 ? coachingTips.slice(0, 4) : ['Ajoutez vos premières transactions pour obtenir des conseils personnalisés.']).map((tip) => (
-                <li key={tip}>
-                  <Brain size={15} />
-                  <span>{tip}</span>
+      {isActiveView('operations') ? (
+      <aside className="glass-card budget-advice-rail dashboard-right-rail ops-rail" aria-label="Repères dépenses">
+        <div className="ops-rail__section">{renderCashAdvice()}</div>
+        <div className="ops-rail__section">
+          <div className="ops-rail__week-head">
+            <span>⏳ À venir · semaine du {upcomingCharges.rangeLabel}</span>
+            {upcomingCharges.totalSpent > 0 ? (
+              <strong className="expense">−{euroFormatter.format(upcomingCharges.totalSpent)}</strong>
+            ) : null}
+          </div>
+          {upcomingCharges.items.length === 0 ? (
+            <p className="ops-rail__empty">Aucune échéance la semaine prochaine.</p>
+          ) : (
+            <ul className="ops-rail__list">
+              {upcomingCharges.items.map((item) => (
+                <li key={`${item.date}-${item.label}-${item.amount}`}>
+                  <span className="ops-rail__date">
+                    {new Date(`${item.date}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })}
+                  </span>
+                  <span className="ops-rail__label">{item.label}</span>
+                  <strong className={item.kind === 'revenu' ? 'income' : 'expense'}>
+                    {item.kind === 'revenu' ? '+' : '−'}{euroFormatter.format(item.amount)}
+                  </strong>
                 </li>
               ))}
             </ul>
-          </>
-        )}
-      </aside>
-      ) : null}
-
-      {isActiveView('budget') ? (
-      <aside className={`glass-card budget-advice-rail dashboard-right-rail${budgetAssistantVisible ? '' : ' collapsed'}`} aria-label="Conseils budget">
-        <div className="budget-assistant-title-row">
-          <div className="budget-assistant-title-main">
-            <p className="eyebrow">Assistant conseil</p>
-            {isBudgetAiConfigured ? (
-              <span className="budget-assistant-ai-tag">
-                <Bot size={12} /> Connecté IA
-              </span>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            className="budget-assistant-hide"
-            onClick={() => setBudgetAssistantVisible((previous) => !previous)}
-          >
-            {budgetAssistantVisible ? 'Masquer' : 'Afficher'}
-          </button>
-        </div>
-        {budgetAssistantVisible ? (
-        <>
-        <p className="budget-advice-helper">
-          {isBudgetAiConfigured
-            ? 'IA connectée: conseil dynamique selon votre situation.'
-            : 'Mode local: conseils automatiques selon les données du mois.'}
-        </p>
-        <div className="budget-assistant-panel" aria-live="polite">
-          <div className="budget-assistant-header">
-            <strong>{isBudgetAiConfigured ? '🤖 Assistant IA actif' : '🧭 Assistant local actif'}</strong>
-          </div>
-
-          {isBudgetAiConfigured ? (
-            <div className="budget-assistant-answer-wrap budget-assistant-answer-wrap--ia">
-              {budgetAssistantError ? (
-                <p className="budget-assistant-error">{budgetAssistantError}</p>
-              ) : budgetAssistantLoading ? (
-                <div className="budget-assistant-skeleton" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              ) : (
-                <p className="budget-assistant-answer">
-                  {budgetAssistantAdvice || 'Analyse en cours…'}
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="budget-assistant-answer-wrap budget-assistant-answer-wrap--local" aria-label="Conseil automatique local">
-              <p className="budget-assistant-answer">{budgetAssistantLocalMessage}</p>
-            </div>
           )}
         </div>
-        </>
+        <div className="ops-rail__section">
+          <p className="eyebrow">🔝 Plus grosses dépenses du mois</p>
+          {topExpensesMonth.length === 0 ? (
+            <p className="ops-rail__empty">Aucune dépense ce mois-ci.</p>
+          ) : (
+            <ul className="ops-rail__list">
+              {topExpensesMonth.map((tx) => (
+                <li key={tx.id}>
+                  <MerchantLogo label={tx.label} fallbackIcon={tx.icon ?? categoryEmoji(tx.category)} className="ops-rail__icon" />
+                  <span className="ops-rail__label">
+                    {tx.label}
+                    <small>{tx.category}</small>
+                  </span>
+                  <strong className="expense">−{euroFormatter.format(tx.amount)}</strong>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {topTags.length > 0 ? (
+          <div className="ops-rail__section">
+            <p className="eyebrow">🏷️ Tags du mois</p>
+            <div className="ops-rail__tags">
+              {topTags.map(([tag, count]) => (
+                <button key={tag} type="button" onClick={() => setTxSearch(tag)} title={`Filtrer les transactions « ${tag} »`}>
+                  #{tag} <small>{count}</small>
+                </button>
+              ))}
+            </div>
+            <small className="ops-rail__hint">Un clic filtre la liste des transactions.</small>
+          </div>
         ) : null}
       </aside>
       ) : null}
+
+      {isActiveView('stats') ? (
+      <aside className="glass-card budget-advice-rail dashboard-right-rail overview-coaching-rail" aria-label="Assistant">
+        {renderCashAdvice()}
+      </aside>
+      ) : null}
+
+      {isActiveView('overview') || isActiveView('family') || isActiveView('budget') ? (
+      <aside className="glass-card budget-advice-rail dashboard-right-rail overview-coaching-rail" aria-label="Assistant">
+        {renderCashAdvice()}
+      </aside>
+      ) : null}
+
     </main>
 
     {/* ── Claude AI Chat ─────────────────────────────────────────── */}
     {isAuthenticated && isCurrentAiProviderOperational && anthropicKey ? (
       <>
+        {chatNudgeVisible && !chatOpen ? (
+          <button
+            type="button"
+            className="chat-fab-nudge"
+            onClick={() => {
+              setChatNudgeVisible(false)
+              setChatOpen(true)
+            }}
+          >
+            👋 Je suis Cash, votre assistant budget. Une question sur vos finances ? Demandez-moi !
+          </button>
+        ) : null}
         <button
           type="button"
           className={`chat-fab${chatOpen ? ' chat-fab--open' : ''}`}
           onClick={() => setChatOpen((prev) => !prev)}
-          title="Assistant Claude"
-          aria-label="Ouvrir l'assistant Claude"
+          title="Cash, votre assistant budget"
+          aria-label="Ouvrir Cash, votre assistant budget"
         >
-          {chatOpen ? <X size={22} /> : <MessageCircle size={22} />}
+          {chatOpen ? <X size={22} /> : <Bot size={24} />}
           {!chatOpen && chatMessages.length > 0 && (
             <span className="chat-fab-badge">{chatMessages.filter((m) => m.role === 'assistant').length}</span>
           )}
         </button>
 
         {chatOpen ? (
-          <div className="chat-panel glass-card" role="dialog" aria-label="Assistant Claude">
+          <div className="chat-panel glass-card" role="dialog" aria-label="Cash, votre assistant budget">
             <div className="chat-header">
               <Bot size={18} />
-              <span>Assistant Claude</span>
-              <small>{selectedProfileName} · {formatMonth(selectedMonth)}</small>
-              <button
-                type="button"
-                className="chat-clear-btn"
-                onClick={() => setChatClearConfirmOpen((prev) => !prev)}
-                title="Effacer la conversation"
-                aria-label="Effacer la conversation"
-                disabled={chatMessages.length === 0 || chatLoading}
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-
-            <div className="chat-topic-bar">
-              <label className="chat-topic-select">
-                <span>Sujet</span>
-                <select
-                  value={activeChatThread.id}
-                  onChange={(event) => setChatThreadId(event.target.value)}
-                  disabled={chatLoading}
-                >
-                  {chatThreads.map((thread) => (
-                    <option key={thread.id} value={thread.id}>
-                      {thread.label} · {formatChatThreadActivity(thread.lastActivityAt)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="chat-topic-create">
-                <input
-                  value={chatTopicDraft}
-                  onChange={(event) => setChatTopicDraft(event.target.value)}
-                  placeholder="Nouveau sujet"
-                  disabled={chatLoading}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      createChatTopic()
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={createChatTopic}
-                  disabled={!chatTopicDraft.trim() || chatLoading || !canCreateChatTopic}
-                  title={canCreateChatTopic ? 'Créer un sujet' : `Limite de ${MAX_CHAT_THREADS_PER_SCOPE} sujets atteinte`}
-                >
-                  <Plus size={14} />
-                </button>
-              </div>
-            </div>
-
-            <div className="chat-topic-meta">
-              <span>
-                Dernière activité: {formatChatThreadActivity(activeChatThread.lastActivityAt)}
+              <span className="chat-header-title">
+                Cash 💰 <small>· votre assistant virtuel</small>
               </span>
-              <span>
-                {chatThreads.length}/{MAX_CHAT_THREADS_PER_SCOPE} sujets
-              </span>
-            </div>
-
-            {canManageActiveEmptyThread ? (
-              <div className="chat-topic-manage">
-                <input
-                  value={chatRenameDraft}
-                  onChange={(event) => setChatRenameDraft(event.target.value)}
-                  placeholder="Renommer le sujet vide"
+              {chatMessages.length > 0 ? (
+                <button
+                  type="button"
+                  className="chat-clear-btn"
+                  onClick={() => setChatClearConfirmOpen((prev) => !prev)}
+                  title="Effacer la conversation"
+                  aria-label="Effacer la conversation"
                   disabled={chatLoading}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      renameActiveChatTopic()
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  className="chat-topic-rename-btn"
-                  onClick={renameActiveChatTopic}
-                  disabled={!chatRenameDraft.trim() || chatLoading}
-                >
-                  <Pencil size={14} />
-                </button>
-                <button
-                  type="button"
-                  className="chat-topic-delete-btn"
-                  onClick={deleteActiveChatTopic}
-                  disabled={chatThreads.length <= 1 || chatLoading}
                 >
                   <Trash2 size={14} />
+                  <span>Effacer</span>
                 </button>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
 
             {chatClearConfirmOpen ? (
               <div className="chat-clear-confirm" role="status" aria-live="polite">
                 <span>
-                  Effacer la conversation du sujet {activeChatThread.label} pour {selectedProfileName} en {formatMonth(selectedMonth)} ?
+                  Effacer cette conversation ?
                 </span>
                 <div className="chat-clear-confirm-actions">
                   <button type="button" className="chat-clear-confirm-yes" onClick={clearChatConversation}>
@@ -7720,17 +8448,52 @@ Réponse attendue:
               </div>
             ) : null}
 
-            <div className="chat-messages" aria-live="polite" aria-relevant="additions text">
+            <div className="chat-messages-wrap">
+              {chatScrollHints.up ? (
+                <button
+                  type="button"
+                  className="chat-scroll-hint chat-scroll-hint--up"
+                  onClick={() => chatScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+                  aria-label="Remonter la conversation"
+                >
+                  <ChevronUp size={18} />
+                </button>
+              ) : null}
+              {chatScrollHints.down ? (
+                <button
+                  type="button"
+                  className="chat-scroll-hint chat-scroll-hint--down"
+                  onClick={() => {
+                    const el = chatScrollRef.current
+                    el?.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+                  }}
+                  aria-label="Descendre en bas de la conversation"
+                >
+                  <ChevronDown size={18} />
+                </button>
+              ) : null}
+            <div
+              className="chat-messages"
+              ref={chatScrollRef}
+              onScroll={updateChatScrollHints}
+              aria-live="polite"
+              aria-relevant="additions text"
+            >
               {chatMessages.length === 0 ? (
                 <div className="chat-empty">
                   <Bot size={32} />
-                  <p>Bonjour ! Je peux analyser tes dépenses, ton budget et tes objectifs en quelques secondes.</p>
-                  <small className="chat-empty-meta">Profil: {selectedProfileName} · Période: {formatMonth(selectedMonth)}</small>
+                  <p>
+                    Bonjour, moi c'est <strong>Cash</strong> 💰 Je compte vos sous plus vite que
+                    votre banquier — et sans commission. Une question sur vos finances ?
+                  </p>
                   <div className="chat-suggestions">
                     {[
                       'Résume mon mois',
                       'Où puis-je économiser ?',
                       'Mon budget tient-il ?',
+                      'Quelle est ma plus grosse dépense ?',
+                      'Analyse mes abonnements',
+                      'Prépare mon budget du mois prochain',
                     ].map((s) => (
                       <button
                         key={s}
@@ -7760,26 +8523,199 @@ Réponse attendue:
               ) : null}
               <div ref={chatEndRef} />
             </div>
+            </div>
 
+            {chatAttachment ? (
+              <span className="advice-attachment-chip chat-attachment-chip">
+                📎 {chatAttachment.name}
+                <button type="button" onClick={() => setChatAttachment(null)} aria-label="Retirer la pièce jointe">✕</button>
+              </span>
+            ) : null}
             <form
               className="chat-input-row"
-              onSubmit={(event) => { event.preventDefault(); void sendChatMessage() }}
+              onSubmit={(event) => {
+                event.preventDefault()
+                void sendChatMessage(undefined, chatAttachment)
+                setChatAttachment(null)
+              }}
             >
+              <button
+                type="button"
+                className="advice-icon-btn"
+                onClick={() => chatFileInputRef.current?.click()}
+                title="Joindre une image ou un PDF (ticket, facture…)"
+                aria-label="Joindre une pièce jointe"
+                disabled={chatLoading}
+              >
+                <Paperclip size={16} />
+              </button>
+              {speechRecognitionCtor ? (
+                <button
+                  type="button"
+                  className={`advice-icon-btn${chatListening ? ' advice-icon-btn--live' : ''}`}
+                  onClick={toggleChatDictation}
+                  title={chatListening ? 'Arrêter la dictée' : 'Dicter la question'}
+                  aria-label={chatListening ? 'Arrêter la dictée' : 'Dicter la question'}
+                  disabled={chatLoading}
+                >
+                  <Mic size={16} />
+                </button>
+              ) : null}
               <input
                 ref={chatInputRef}
                 value={chatInput}
                 onChange={(event) => setChatInput(event.target.value)}
-                placeholder="Pose une question…"
+                placeholder={chatListening ? 'Cash vous écoute…' : 'Posez une question…'}
                 disabled={chatLoading}
                 autoFocus
               />
               <button type="submit" disabled={!chatInput.trim() || chatLoading}>
                 {chatLoading ? <span className="inline-loader" aria-hidden="true" /> : <Send size={16} />}
               </button>
+              <input
+                type="file"
+                hidden
+                ref={chatFileInputRef}
+                accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+                onChange={handleChatFile}
+              />
             </form>
           </div>
         ) : null}
       </>
+    ) : null}
+
+    {/* ── Modale de gestion d'une poche ──────────────────────────── */}
+    {envelopeModal ? (
+      <div className="budget-actions-modal-overlay" onClick={closeEnvelopeModal}>
+        <div className="budget-actions-modal envelope-modal" onClick={(event) => event.stopPropagation()}>
+          <button type="button" className="budget-actions-modal-close" onClick={closeEnvelopeModal} aria-label="Fermer">
+            ✕
+          </button>
+          {envelopeModal.mode === 'create' ? (
+            <>
+              <h3>✉️ Nouvelle poche</h3>
+              <label>
+                Nom de la poche
+                <input
+                  value={envModalName}
+                  onChange={(event) => setEnvModalName(event.target.value)}
+                  placeholder="Ex : Cadeaux, Voiture, Études…"
+                  maxLength={40}
+                  autoFocus
+                />
+              </label>
+              <label>
+                🎯 Objectif mensuel (€)
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  step="10"
+                  value={envModalTarget}
+                  onChange={(event) => setEnvModalTarget(event.target.value)}
+                  placeholder="0 = pas d'objectif"
+                />
+              </label>
+              <label>
+                💰 Argent disponible dans la poche (€)
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="10"
+                  value={envModalAdd}
+                  onChange={(event) => setEnvModalAdd(event.target.value)}
+                  placeholder="Ex : 100"
+                />
+              </label>
+              <div className="quick-add-actions">
+                <button type="button" className="ghost-button" onClick={closeEnvelopeModal}>Annuler</button>
+                <button type="button" className="hero-cta-button" onClick={() => createEnvelope(envModalName)} disabled={!envModalName.trim()}>
+                  Créer la poche
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h3>✉️ Poche {envelopeModal.name}</h3>
+              <label>
+                🎯 Objectif mensuel (€)
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  step="10"
+                  value={envModalTarget}
+                  onChange={(event) => setEnvModalTarget(event.target.value)}
+                  placeholder="0 = pas d'objectif"
+                />
+              </label>
+              <label>
+                💰 Argent disponible dans la poche (€)
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="10"
+                  value={envModalAdd}
+                  onChange={(event) => setEnvModalAdd(event.target.value)}
+                  placeholder="Ex : 100"
+                />
+                <small className="field-hint">Le montant actuellement utilisable — modifiez-le librement.</small>
+              </label>
+              <label>
+                ✏️ Renommer la poche
+                <input
+                  value={envModalName}
+                  onChange={(event) => setEnvModalName(event.target.value)}
+                  maxLength={40}
+                />
+              </label>
+              {envModalDeleteAsk ? (
+                <div className="quick-add-delete-confirm" role="alertdialog" aria-label="Confirmer la suppression">
+                  <span>Supprimer la poche « {envelopeModal.name} » ? Ses opérations passeront dans Perso.</span>
+                  <div>
+                    <button type="button" className="quick-add-delete-yes" onClick={() => deleteEnvelope(envelopeModal.name)}>
+                      Oui, supprimer
+                    </button>
+                    <button type="button" className="ghost-button" onClick={() => setEnvModalDeleteAsk(false)}>
+                      Non, garder
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              <div className="quick-add-actions">
+                {envelopeModal.name !== 'Perso' && !envModalDeleteAsk ? (
+                  <button type="button" className="quick-add-delete-btn" onClick={() => setEnvModalDeleteAsk(true)}>
+                    🗑️ Supprimer
+                  </button>
+                ) : null}
+                <button type="button" className="ghost-button" onClick={closeEnvelopeModal}>Annuler</button>
+                <button
+                  type="button"
+                  className="hero-cta-button"
+                  onClick={() => {
+                    const target = Number(envModalTarget)
+                    saveEnvelopeBudget(envelopeModal.name, Number.isNaN(target) ? 0 : target)
+                    const available = Number(envModalAdd.replace(',', '.'))
+                    if (!Number.isNaN(available)) {
+                      setEnvelopeAvailable(envelopeModal.name, available)
+                    }
+                    if (envModalName.trim() && envModalName.trim() !== envelopeModal.name) {
+                      renameEnvelope(envelopeModal.name, envModalName)
+                    } else {
+                      showToast(`✉️ Poche ${envelopeModal.name} mise à jour`)
+                      closeEnvelopeModal()
+                    }
+                  }}
+                >
+                  Enregistrer
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     ) : null}
 
     {/* ── Toast notifications ───────────────────────────────────── */}
@@ -7804,11 +8740,11 @@ Réponse attendue:
       />
     ) : null}
 
-    {/* ── Tour de première transaction (onboarding final) ───────── */}
+    {/* ── Tour de bienvenue : définir le budget mensuel ──────────── */}
     {showFirstTxTour && !showOnboarding ? (
-      <FirstTransactionTour
-        member={selectedProfileId}
-        onSubmit={(tx) => completeFirstTxTour(tx)}
+      <FirstBudgetTour
+        currentBudget={selectedProfile.monthlyBudget}
+        onSubmit={(value) => completeFirstTxTour(value)}
         onSkip={() => completeFirstTxTour()}
       />
     ) : null}
@@ -7839,7 +8775,10 @@ Réponse attendue:
     {/* ── Ajout rapide de dépense depuis le calendrier ────────────── */}
     {quickAddDate ? (
       <div className="budget-actions-modal-overlay" onClick={closeQuickAdd}>
-        <div className="budget-actions-modal quick-add-modal" onClick={(event) => event.stopPropagation()}>
+        <div
+          className={`budget-actions-modal quick-add-modal quick-add-modal--${quickAddForm.kind}`}
+          onClick={(event) => event.stopPropagation()}
+        >
           <button
             type="button"
             className="budget-actions-modal-close"
@@ -7849,12 +8788,46 @@ Réponse attendue:
             ✕
           </button>
           <h3>
-            {quickAddEditingId !== null ? 'Modifier la dépense' : 'Ajouter une dépense'} —{' '}
-            {new Date(`${quickAddDate}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+            {quickAddEditingId !== null
+              ? (quickAddForm.kind === 'revenu' ? 'Modifier le revenu' : 'Modifier la dépense')
+              : (quickAddForm.kind === 'revenu' ? 'Ajouter un revenu' : 'Ajouter une dépense')}{' '}
+            — {new Date(`${quickAddDate}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
           </h3>
           <form onSubmit={handleQuickAddSubmit} className="quick-add-form">
+            <div className="quick-add-kind" role="radiogroup" aria-label="Type d'opération">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={quickAddForm.kind === 'depense'}
+                className={`quick-add-kind__option${quickAddForm.kind === 'depense' ? ' quick-add-kind__option--active' : ''}`}
+                onClick={() =>
+                  setQuickAddForm((previous) => ({
+                    ...previous,
+                    kind: 'depense',
+                    category: quickAddTouchedRef.current.category ? previous.category : 'Courses',
+                  }))
+                }
+              >
+                💸 Dépense
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={quickAddForm.kind === 'revenu'}
+                className={`quick-add-kind__option${quickAddForm.kind === 'revenu' ? ' quick-add-kind__option--active' : ''}`}
+                onClick={() =>
+                  setQuickAddForm((previous) => ({
+                    ...previous,
+                    kind: 'revenu',
+                    category: quickAddTouchedRef.current.category ? previous.category : 'Salaire',
+                  }))
+                }
+              >
+                💰 Revenu
+              </button>
+            </div>
             <label>
-              Libellé
+              <span>Libellé <span className="required-star" aria-hidden="true">*</span></span>
               <input
                 value={quickAddForm.label}
                 onChange={(event) => {
@@ -7875,7 +8848,7 @@ Réponse attendue:
             </label>
             <div className="quick-add-selects">
               <label>
-                Montant (€)
+                <span>Montant (€) <span className="required-star" aria-hidden="true">*</span></span>
                 <input
                   type="text"
                   inputMode="decimal"
@@ -7886,7 +8859,7 @@ Réponse attendue:
                 />
               </label>
               <label>
-                Date
+                <span>Date <span className="required-star" aria-hidden="true">*</span></span>
                 <input
                   type="date"
                   value={quickAddDate}
@@ -7897,6 +8870,23 @@ Réponse attendue:
                 />
               </label>
             </div>
+            {quickAddForm.kind === 'depense' &&
+            (Number(quickAddForm.amount.replace(',', '.')) >= 150 || quickAddForm.budgetMonth) ? (
+              <label className="quick-add-budget-month">
+                💡 Grosse dépense — la compter sur le budget d'un autre mois ?
+                <select
+                  value={quickAddForm.budgetMonth}
+                  onChange={(event) =>
+                    setQuickAddForm((previous) => ({ ...previous, budgetMonth: event.target.value }))
+                  }
+                >
+                  <option value="">Non — sur le mois de la dépense</option>
+                  {[shiftMonth(quickAddDate.slice(0, 7), 1), shiftMonth(quickAddDate.slice(0, 7), 2), shiftMonth(quickAddDate.slice(0, 7), -1)].map((m) => (
+                    <option key={m} value={m}>Oui — budget de {formatMonth(m)}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <div className="quick-add-selects">
               <label>
                 Catégorie
@@ -7905,28 +8895,26 @@ Réponse attendue:
                 ) : quickAddAiApplied ? (
                   <small className="quick-add-hint"> ✨ suggéré par l'IA — modifiable</small>
                 ) : null}
-                <select
+                <GroupedSearchSelect
                   value={quickAddForm.category}
-                  onChange={(event) => {
+                  groups={quickAddForm.kind === 'revenu' ? INCOME_CATEGORY_GROUPS : EXPENSE_CATEGORY_GROUPS}
+                  onChange={(category) => {
                     quickAddTouchedRef.current.category = true
-                    setQuickAddForm((previous) => ({ ...previous, category: event.target.value as Category }))
+                    setQuickAddForm((previous) => ({ ...previous, category }))
                   }}
-                >
-                  {categories.map((category) => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
+                  selectAriaLabel="Catégorie"
+                  customPlaceholder="Votre catégorie…"
+                />
               </label>
               <label>
                 Poche
-                <select
+                <GroupedSearchSelect
                   value={quickAddForm.envelope}
-                  onChange={(event) => setQuickAddForm((previous) => ({ ...previous, envelope: event.target.value as Envelope }))}
-                >
-                  {envelopes.map((envelope) => (
-                    <option key={envelope} value={envelope}>{envelope}</option>
-                  ))}
-                </select>
+                  groups={envelopeGroupsWithCustom}
+                  onChange={(envelope) => setQuickAddForm((previous) => ({ ...previous, envelope }))}
+                  selectAriaLabel="Poche"
+                  customPlaceholder="Votre poche…"
+                />
               </label>
             </div>
             <label>
@@ -7953,8 +8941,7 @@ Réponse attendue:
                 automatiquement la catégorie et les tags de vos dépenses.
               </button>
             ) : null}
-            {quickAddEditingId === null ? (
-              <label>
+            <label>
                 Répéter
                 <select
                   value={quickAddForm.recurrence}
@@ -7965,15 +8952,50 @@ Réponse attendue:
                     }))
                   }
                 >
-                  <option value="none">Jamais (dépense unique)</option>
+                  <option value="none">
+                    {quickAddEditingId !== null && activeRuleOf(transactions.find((tx) => tx.id === quickAddEditingId))
+                      ? 'Ne plus répéter'
+                      : 'Jamais (opération unique)'}
+                  </option>
                   <option value="weekly">Chaque semaine</option>
                   <option value="monthly">Chaque mois</option>
                   <option value="quarterly">Chaque trimestre</option>
                   <option value="yearly">Chaque année</option>
                 </select>
               </label>
+            <p className="quick-add-required-note">
+              <span className="required-star" aria-hidden="true">*</span> Champs obligatoires pour enregistrer.
+            </p>
+            {quickAddEditingId !== null && quickAddDeleteAsk ? (
+              <div className="quick-add-delete-confirm" role="alertdialog" aria-label="Confirmer la suppression">
+                <span>Supprimer définitivement cette opération ?</span>
+                <div>
+                  <button
+                    type="button"
+                    className="quick-add-delete-yes"
+                    onClick={() => {
+                      deleteTransaction(quickAddEditingId)
+                      closeQuickAdd()
+                    }}
+                  >
+                    Oui, supprimer
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => setQuickAddDeleteAsk(false)}>
+                    Non, garder
+                  </button>
+                </div>
+              </div>
             ) : null}
             <div className="quick-add-actions">
+              {quickAddEditingId !== null && !quickAddDeleteAsk ? (
+                <button
+                  type="button"
+                  className="quick-add-delete-btn"
+                  onClick={() => setQuickAddDeleteAsk(true)}
+                >
+                  🗑️ Supprimer
+                </button>
+              ) : null}
               <button type="button" className="ghost-button" onClick={closeQuickAdd}>
                 Annuler
               </button>

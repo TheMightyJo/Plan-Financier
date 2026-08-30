@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Pencil, Trash2, Pause, Play, Plus, X } from 'lucide-react'
 import type { RecurringRule, Category, Envelope, FamilyMember, TransactionKind } from '../types'
 import { RECURRING_FREQUENCIES, type RecurringFrequency } from '../types'
-import { categories, categoryColors, envelopes, inferEnvelope } from '../lib/categories'
+import { categories, colorForCategory, envelopes, inferEnvelope } from '../lib/categories'
 import { validateRule } from '../lib/recurring'
 import { buildRecurringRule, removeRule, toggleRulePause, upsertRule } from '../repos/recurringRulesRepo'
 
@@ -327,7 +327,7 @@ export function RecurringRulesPanel({ rules, onChange, member, onClose }: Props)
                 >
                   <span
                     className="recurring-color-dot"
-                    style={{ background: categoryColors[rule.category] }}
+                    style={{ background: colorForCategory(rule.category) }}
                     aria-hidden="true"
                   />
                   <div className="recurring-item-main">
