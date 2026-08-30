@@ -8408,6 +8408,9 @@ Réponse attendue:
                       'Résume mon mois',
                       'Où puis-je économiser ?',
                       'Mon budget tient-il ?',
+                      'Quelle est ma plus grosse dépense ?',
+                      'Analyse mes abonnements',
+                      'Prépare mon budget du mois prochain',
                     ].map((s) => (
                       <button
                         key={s}
