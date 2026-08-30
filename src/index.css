@@ -9885,3 +9885,41 @@ h1 {
   color: var(--text-1);
   box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.22);
 }
+
+/* ── Modale d'opération : teinte selon le type choisi ─────────────── */
+/* Dépense → terracotta chaleureux ; Revenu → vert. Le changement est
+   immédiat au clic sur la bascule, pour qu'on ne se trompe pas de sens. */
+.quick-add-modal--depense {
+  border: 1.5px solid rgba(192, 92, 42, 0.45) !important;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.28), 0 0 0 4px rgba(192, 92, 42, 0.12);
+}
+
+.quick-add-modal--revenu {
+  border: 1.5px solid rgba(58, 125, 68, 0.5) !important;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.28), 0 0 0 4px rgba(58, 125, 68, 0.14);
+}
+
+.quick-add-modal--depense .quick-add-kind__option--active {
+  border-color: rgba(192, 92, 42, 0.65);
+  background: rgba(192, 92, 42, 0.13);
+  box-shadow: 0 0 0 2px rgba(192, 92, 42, 0.22);
+}
+
+.quick-add-modal--revenu .quick-add-kind__option--active {
+  border-color: rgba(58, 125, 68, 0.65);
+  background: rgba(58, 125, 68, 0.13);
+  box-shadow: 0 0 0 2px rgba(58, 125, 68, 0.24);
+}
+
+.quick-add-modal--depense .quick-add-form button[type='submit'] {
+  background: linear-gradient(130deg, #b3562a, #cf7a3f);
+}
+
+.quick-add-modal--revenu .quick-add-form button[type='submit'] {
+  background: linear-gradient(130deg, #33703d, #4f9159);
+}
+
+.quick-add-modal--depense .quick-add-form button[type='submit'],
+.quick-add-modal--revenu .quick-add-form button[type='submit'] {
+  color: #fff;
+}

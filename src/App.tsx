@@ -8054,7 +8054,10 @@ Réponse attendue:
     {/* ── Ajout rapide de dépense depuis le calendrier ────────────── */}
     {quickAddDate ? (
       <div className="budget-actions-modal-overlay" onClick={closeQuickAdd}>
-        <div className="budget-actions-modal quick-add-modal" onClick={(event) => event.stopPropagation()}>
+        <div
+          className={`budget-actions-modal quick-add-modal quick-add-modal--${quickAddForm.kind}`}
+          onClick={(event) => event.stopPropagation()}
+        >
           <button
             type="button"
             className="budget-actions-modal-close"
