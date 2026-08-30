@@ -3394,24 +3394,54 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     doc.text(`Exporté le ${reportDate} · ${selectedProfileName}`, 14, 23)
     doc.text(`Période affichée : du ${statsViewData[0].weekStart} au ${statsViewData.at(-1)!.weekEnd}`, 14, 29)
 
-    doc.setFontSize(12)
-    doc.setTextColor(61, 43, 31)
+    // ── Bandeau de statut : l'information clé de l'export ──────────────
+    const STATUS: Record<string, { label: string; advice: string; fill: [number, number, number] }> = {
+      danger: {
+        label: 'DANGER',
+        advice: 'Vous avez dépensé plus que reçu cette semaine. Réduisez les dépenses souples (loisirs, sorties) et évitez les gros achats.',
+        fill: [192, 92, 42],
+      },
+      up: {
+        label: 'UP — EN PROGRESSION',
+        advice: 'Solde positif et en hausse par rapport à la semaine précédente. Bon moment pour mettre un peu de côté.',
+        fill: [58, 125, 68],
+      },
+      highest: {
+        label: 'HIGHEST EVER — RECORD',
+        advice: 'Meilleure semaine jamais enregistrée ! Idéal pour renforcer votre épargne ou financer un projet.',
+        fill: [184, 150, 62],
+      },
+      normal: {
+        label: 'NORMAL',
+        advice: 'Semaine équilibrée, rien à signaler. Continuez sur ce rythme.',
+        fill: [139, 108, 82],
+      },
+    }
+    const status = STATUS[lastWeek.type]
+    doc.setFillColor(...status.fill)
+    doc.roundedRect(14, 34, pageWidth - 28, 30, 3, 3, 'F')
+    doc.setTextColor(255, 255, 255)
     doc.setFont('helvetica', 'bold')
-    const typeLabel =
-      lastWeek.type === 'danger' ? 'Danger' : lastWeek.type === 'highest' ? 'Highest ever' : lastWeek.type === 'up' ? 'Up' : 'Normal'
-    doc.text(`Semaine du ${lastWeek.label} : ${typeLabel}`, 14, 38)
+    doc.setFontSize(19)
+    doc.text(status.label, 20, 45)
+    doc.setFontSize(12)
+    doc.text(`Semaine du ${lastWeek.label}`, pageWidth - 20, 45, { align: 'right' })
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(11)
+    doc.text(doc.splitTextToSize(status.advice, pageWidth - 40), 20, 53)
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
     doc.setTextColor(58, 125, 68)
-    doc.text(`Revenus : +${euroFormatter.format(lastWeek.income)}`, 14, 45)
+    doc.text(`Revenus : +${euroFormatter.format(lastWeek.income)}`, 14, 72)
     doc.setTextColor(192, 92, 42)
-    doc.text(`Dépenses : -${euroFormatter.format(lastWeek.spent)}`, 70, 45)
+    doc.text(`Dépenses : -${euroFormatter.format(lastWeek.spent)}`, 80, 72)
     doc.setTextColor(61, 43, 31)
-    doc.text(`Solde : ${lastWeek.net >= 0 ? '+' : ''}${euroFormatter.format(lastWeek.net)}`, 130, 45)
+    doc.text(`Solde : ${lastWeek.net >= 0 ? '+' : ''}${euroFormatter.format(lastWeek.net)}`, 150, 72)
 
     const imgWidth = pageWidth - 28
-    const imgHeight = (height / width) * imgWidth
-    doc.addImage(png, 'PNG', 14, 52, imgWidth, imgHeight)
+    const imgHeight = Math.min((height / width) * imgWidth, 118)
+    doc.addImage(png, 'PNG', 14, 78, imgWidth, imgHeight)
     doc.save(`statistiques-semaine-${lastWeek.weekStart}.pdf`)
     showToast('📄 Statistiques exportées en PDF')
   }
