@@ -4905,6 +4905,12 @@ h1 {
   position: sticky;
   top: 1rem;
   align-self: start;
+  /* Une réponse IA longue ne doit jamais dépasser l'écran : la carte
+     défile en interne (sinon la zone de question devient inaccessible). */
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .budget-advice-rail {
@@ -5671,6 +5677,8 @@ h1 {
   font-size: var(--text-sm);
   line-height: 1.42;
   white-space: pre-wrap;
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 .budget-assistant-answer {

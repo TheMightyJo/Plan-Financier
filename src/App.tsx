@@ -1739,7 +1739,7 @@ Règles :
       .map((g) => `${g.category}: ${euroFormatter.format(g.spent)}/${euroFormatter.format(g.target)} (${g.rate.toFixed(0)}%)`)
       .join(', ')
 
-    return `Tu es un assistant financier personnel intégré dans une app de budget privée.
+    return `Tu t'appelles Sou, l'assistant financier personnel intégré dans une app de budget privée.
 Voici les données financières de l'utilisateur pour ${formatMonth(selectedMonth)} :
 - Profil actif : ${selectedProfileName}
 - Budget mensuel : ${euroFormatter.format(budget)}
@@ -1867,7 +1867,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     } catch {
       setChatMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: '⚠️ Impossible de contacter Claude. Vérifie ta connexion et ta clé API.' },
+        { role: 'assistant', content: '⚠️ Impossible de contacter Sou. Vérifiez votre connexion et votre clé API.' },
       ])
     } finally {
       setChatLoading(false)
@@ -4135,7 +4135,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     setBudgetAssistantLoading(true)
     setBudgetAssistantError('')
 
-    const prompt = `Tu es un assistant budget familial. Donne des conseils concrets et simples.
+    const prompt = `Tu t'appelles Sou, l'assistant budget familial de cette app. Donne des conseils concrets et simples.
 Contexte:
 - Profil: ${selectedProfileName}
 - Mois: ${formatMonth(selectedMonth)}
@@ -4189,7 +4189,7 @@ Réponse attendue:
       setBudgetAssistantError(
         error instanceof DOMException && error.name === 'AbortError'
           ? "L'analyse a pris trop de temps — réessayez dans un instant."
-          : 'Impossible de contacter Claude pour le moment.',
+          : 'Impossible de contacter Sou pour le moment.',
       )
     } finally {
       window.clearTimeout(abortTimer)
@@ -7631,12 +7631,12 @@ Réponse attendue:
               <div className="budget-assistant-title-main">
                 <p className="eyebrow">Conseils</p>
                 <span className="budget-assistant-ai-tag">
-                  <Bot size={12} /> Analyse IA
+                  <Bot size={12} /> Sou · IA
                 </span>
               </div>
             </div>
             <p className="budget-advice-helper">
-              Votre assistant analyse le mois en cours et vous conseille.
+              Sou analyse votre mois en cours et vous conseille.
             </p>
             {budgetAssistantError ? (
               <>
@@ -7711,7 +7711,7 @@ Réponse attendue:
                   type="text"
                   value={adviceQuestion}
                   onChange={(event) => setAdviceQuestion(event.target.value)}
-                  placeholder={adviceListening ? '🎤 Je vous écoute…' : 'Votre question…'}
+                  placeholder={adviceListening ? '🎤 Sou vous écoute…' : 'Votre question à Sou…'}
                   aria-label="Question à l'assistant IA"
                 />
                 <button type="submit" disabled={!adviceQuestion.trim() || chatLoading} aria-label="Envoyer la question" title="Envoyer">
@@ -7755,12 +7755,12 @@ Réponse attendue:
         <>
         <p className="budget-advice-helper">
           {isBudgetAiConfigured
-            ? 'IA connectée: conseil dynamique selon votre situation.'
+            ? 'Sou vous conseille en direct selon votre situation.'
             : 'Mode local: conseils automatiques selon les données du mois.'}
         </p>
         <div className="budget-assistant-panel" aria-live="polite">
           <div className="budget-assistant-header">
-            <strong>{isBudgetAiConfigured ? '🤖 Assistant IA actif' : '🧭 Assistant local actif'}</strong>
+            <strong>{isBudgetAiConfigured ? '🪙 Sou est en ligne' : '🧭 Assistant local actif'}</strong>
           </div>
 
           {isBudgetAiConfigured ? (
@@ -7798,8 +7798,8 @@ Réponse attendue:
           type="button"
           className={`chat-fab${chatOpen ? ' chat-fab--open' : ''}`}
           onClick={() => setChatOpen((prev) => !prev)}
-          title="Assistant Claude"
-          aria-label="Ouvrir l'assistant Claude"
+          title="Sou, votre assistant budget"
+          aria-label="Ouvrir Sou, votre assistant budget"
         >
           {chatOpen ? <X size={22} /> : <MessageCircle size={22} />}
           {!chatOpen && chatMessages.length > 0 && (
@@ -7808,10 +7808,10 @@ Réponse attendue:
         </button>
 
         {chatOpen ? (
-          <div className="chat-panel glass-card" role="dialog" aria-label="Assistant Claude">
+          <div className="chat-panel glass-card" role="dialog" aria-label="Sou, votre assistant budget">
             <div className="chat-header">
               <Bot size={18} />
-              <span>Assistant Claude</span>
+              <span>Sou 🪙</span>
               <small>{selectedProfileName} · {formatMonth(selectedMonth)}</small>
               <button
                 type="button"
