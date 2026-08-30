@@ -891,17 +891,12 @@ function App() {
   const [reportBusy, setReportBusy] = useState(false)
   const [reportFeedback, setReportFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [reportCcDraft, setReportCcDraft] = useState('')
-  const [adviceQuestion, setAdviceQuestion] = useState('')
   const [chatAttachment, setChatAttachment] = useState<{ name: string; mediaType: string; data: string } | null>(null)
   const [chatListening, setChatListening] = useState(false)
   const chatFileInputRef = useRef<HTMLInputElement | null>(null)
   const chatRecognitionRef = useRef<{ stop: () => void } | null>(null)
   // Bulle d'invitation près de la bulle de chat (1× par jour, discrète).
   const [chatNudgeVisible, setChatNudgeVisible] = useState(false)
-  const [adviceAttachment, setAdviceAttachment] = useState<{ name: string; mediaType: string; data: string } | null>(null)
-  const [adviceListening, setAdviceListening] = useState(false)
-  const adviceFileInputRef = useRef<HTMLInputElement | null>(null)
-  const adviceRecognitionRef = useRef<{ stop: () => void } | null>(null)
 
   type SpeechRecognitionLike = {
     lang: string
@@ -922,49 +917,6 @@ function App() {
     }
     return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null
   })()
-
-  const toggleAdviceDictation = () => {
-    if (adviceListening) {
-      adviceRecognitionRef.current?.stop()
-      return
-    }
-    if (!speechRecognitionCtor) return
-    const recognition = new speechRecognitionCtor()
-    recognition.lang = 'fr-FR'
-    recognition.interimResults = true
-    recognition.continuous = false
-    recognition.onresult = (event) => {
-      const text = Array.from({ length: event.results.length }, (_, i) => event.results[i][0].transcript).join(' ')
-      setAdviceQuestion(text)
-    }
-    recognition.onend = () => setAdviceListening(false)
-    recognition.onerror = () => setAdviceListening(false)
-    adviceRecognitionRef.current = recognition
-    setAdviceListening(true)
-    recognition.start()
-  }
-
-  const handleAdviceFile = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-    if (file.size > 5 * 1024 * 1024) {
-      showToast('Fichier trop lourd — 5 Mo maximum', 'danger')
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = String(reader.result ?? '')
-      const comma = result.indexOf(',')
-      if (comma < 0) return
-      setAdviceAttachment({
-        name: file.name,
-        mediaType: file.type || 'application/octet-stream',
-        data: result.slice(comma + 1),
-      })
-    }
-    reader.readAsDataURL(file)
-  }
 
   const handleChatFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -8169,74 +8121,6 @@ Réponse attendue:
             ) : (
               <p className="budget-assistant-answer">{budgetAssistantAdvice}</p>
             )}
-            {/* Même condition que le panneau de chat : sans lui, la question
-                n'aurait nulle part où s'afficher (mode démo notamment). */}
-            {isAuthenticated && anthropicKey ? (
-            <form
-              className="advice-chat-form"
-              onSubmit={(event) => {
-                event.preventDefault()
-                const question = adviceQuestion.trim()
-                if (!question) return
-                setAdviceQuestion('')
-                setChatOpen(true)
-                void sendChatMessage(question, adviceAttachment)
-                setAdviceAttachment(null)
-              }}
-            >
-              {adviceAttachment ? (
-                <span className="advice-attachment-chip">
-                  📎 {adviceAttachment.name}
-                  <button
-                    type="button"
-                    onClick={() => setAdviceAttachment(null)}
-                    aria-label="Retirer la pièce jointe"
-                  >
-                    ✕
-                  </button>
-                </span>
-              ) : null}
-              <div className="advice-chat-row">
-                <button
-                  type="button"
-                  className="advice-icon-btn"
-                  onClick={() => adviceFileInputRef.current?.click()}
-                  title="Joindre une image ou un PDF (ticket, facture…)"
-                  aria-label="Joindre une pièce jointe"
-                >
-                  📎
-                </button>
-                {speechRecognitionCtor ? (
-                  <button
-                    type="button"
-                    className={`advice-icon-btn${adviceListening ? ' advice-icon-btn--live' : ''}`}
-                    onClick={toggleAdviceDictation}
-                    title={adviceListening ? 'Arrêter la dictée' : 'Dicter la question'}
-                    aria-label={adviceListening ? 'Arrêter la dictée' : 'Dicter la question'}
-                  >
-                    🎤
-                  </button>
-                ) : null}
-                <input
-                  type="text"
-                  value={adviceQuestion}
-                  onChange={(event) => setAdviceQuestion(event.target.value)}
-                  placeholder={adviceListening ? '🎤 Cash vous écoute…' : 'Votre question à Cash…'}
-                  aria-label="Question à l'assistant IA"
-                />
-                <button type="submit" disabled={!adviceQuestion.trim() || chatLoading} aria-label="Envoyer la question" title="Envoyer">
-                  ➤
-                </button>
-              </div>
-              <input
-                type="file"
-                hidden
-                ref={adviceFileInputRef}
-                accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
-                onChange={handleAdviceFile}
-              />
-            </form>
-            ) : null}
           </>
         )}
       </aside>
@@ -8334,16 +8218,18 @@ Réponse attendue:
             <div className="chat-header">
               <Bot size={18} />
               <span>Cash 🪙</span>
-              <button
-                type="button"
-                className="chat-clear-btn"
-                onClick={() => setChatClearConfirmOpen((prev) => !prev)}
-                title="Effacer la conversation"
-                aria-label="Effacer la conversation"
-                disabled={chatMessages.length === 0 || chatLoading}
-              >
-                <Trash2 size={14} />
-              </button>
+              {chatMessages.length > 0 ? (
+                <button
+                  type="button"
+                  className="chat-clear-btn"
+                  onClick={() => setChatClearConfirmOpen((prev) => !prev)}
+                  title="Effacer la conversation"
+                  aria-label="Effacer la conversation"
+                  disabled={chatLoading}
+                >
+                  <Trash2 size={14} />
+                </button>
+              ) : null}
             </div>
 
             {chatClearConfirmOpen ? (
@@ -8379,7 +8265,10 @@ Réponse attendue:
               {chatMessages.length === 0 ? (
                 <div className="chat-empty">
                   <Bot size={32} />
-                  <p>Bonjour ! Je peux analyser tes dépenses, ton budget et tes objectifs en quelques secondes.</p>
+                  <p>
+                    Bonjour, moi c'est <strong>Cash</strong> 🪙 Je compte vos sous plus vite que
+                    votre banquier — et sans commission. Une question sur vos finances ?
+                  </p>
                   <div className="chat-suggestions">
                     {[
                       'Résume mon mois',

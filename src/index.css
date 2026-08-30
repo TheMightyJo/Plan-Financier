@@ -9785,22 +9785,6 @@ h1 {
   font-weight: 400;
 }
 
-/* ── Rail Conseils : question directe à l'assistant IA ────────────── */
-.advice-chat-form {
-  display: grid;
-  gap: 0.45rem;
-  margin-top: 0.2rem;
-  /* Même précaution Safari que .budget-advice-rail : colonne bornée. */
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.advice-chat-row {
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
-  min-width: 0;
-}
-
 .advice-icon-btn {
   flex-shrink: 0;
   width: 2.35rem;
@@ -9846,41 +9830,6 @@ h1 {
   cursor: pointer;
   padding: 0 0.1rem;
   font-size: var(--text-xs);
-}
-
-.advice-chat-form input {
-  /* Base 0 : le champ se partage l'espace restant au lieu d'imposer sa
-     largeur intrinsèque (Safari poussait le bouton ➤ hors de la carte). */
-  flex: 1 1 0%;
-  min-width: 0;
-  border-radius: 0.7rem;
-  border: 1px solid var(--border);
-  background: var(--field-bg);
-  color: var(--text-1);
-  padding: 0.5rem 0.6rem;
-  font-size: var(--text-sm);
-  outline: none;
-}
-
-.advice-chat-form input:focus {
-  border-color: rgba(var(--accent-rgb), 0.8);
-}
-
-.advice-chat-form button[type='submit'] {
-  flex-shrink: 0;
-  border: 0;
-  border-radius: 0.7rem;
-  padding: 0.5rem 0.7rem;
-  background: linear-gradient(130deg, var(--accent), var(--accent-2, var(--accent)));
-  color: var(--accent-contrast, #fff);
-  font-weight: 700;
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-.advice-chat-form button[type='submit']:disabled {
-  opacity: 0.55;
-  cursor: default;
 }
 
 /* ── Modale d'ajout : bascule Dépense / Revenu ────────────────────── */
