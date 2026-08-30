@@ -81,44 +81,40 @@ class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundary
         <section className="app-error-card">
           <div className="app-error-layout">
             <div>
-              <div className="app-error-badge-row">
-                <p className="app-error-eyebrow">Plan Financier Assistance</p>
-                <span className="app-error-pill">Recuperation guidee</span>
-              </div>
+              <p className="app-error-eyebrow">Plan Financier</p>
 
-              <h1>Un incident a interrompu l'affichage</h1>
+              <h1>Oups, un petit souci d'affichage</h1>
               <p className="app-error-copy">
-                Rien n'est perdu. Vos donnees locales sont conservees et vous pouvez reprendre en quelques secondes.
+                Pas d'inquiétude : vos données sont en sécurité.
               </p>
-
-              <ul className="app-error-steps" aria-label="Etapes de resolution rapide">
-                <li>1. Essayez d'abord Reessayer pour reprendre sans quitter la session.</li>
-                <li>2. Si besoin, rechargez la page pour repartir proprement.</li>
-                <li>3. En dernier recours, copiez le rapport puis revenez sur l'ecran de connexion.</li>
-              </ul>
 
               <div className="app-error-actions">
                 <button type="button" className="app-error-btn app-error-btn--primary" onClick={this.handleRetry}>
-                  Reessayer
+                  Reprendre
                 </button>
                 <button type="button" className="app-error-btn" onClick={this.handleReload}>
                   Recharger la page
                 </button>
-                <button type="button" className="app-error-btn" onClick={this.handleCopyReport}>
-                  {this.state.copied ? 'Rapport copie' : 'Copier le rapport'}
-                </button>
-                <button type="button" className="app-error-btn app-error-btn--ghost" onClick={this.handleBackToLogin}>
-                  Retour connexion
-                </button>
               </div>
 
               <details className="app-error-details">
-                <summary>Details techniques</summary>
+                <summary>Ça ne marche toujours pas ?</summary>
                 <p>
-                  <strong>ID incident:</strong> {this.state.incidentId}
+                  Copiez ce rapport et envoyez-le au support, puis revenez à l'écran de connexion.
+                </p>
+                <div className="app-error-actions">
+                  <button type="button" className="app-error-btn" onClick={this.handleCopyReport}>
+                    {this.state.copied ? 'Rapport copié ✓' : 'Copier le rapport'}
+                  </button>
+                  <button type="button" className="app-error-btn app-error-btn--ghost" onClick={this.handleBackToLogin}>
+                    Retour à la connexion
+                  </button>
+                </div>
+                <p>
+                  <strong>ID incident :</strong> {this.state.incidentId}
                 </p>
                 <p>
-                  <strong>Message:</strong> {this.state.errorMessage}
+                  <strong>Message :</strong> {this.state.errorMessage}
                 </p>
               </details>
             </div>
