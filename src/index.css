@@ -6614,7 +6614,7 @@ h1 {
 }
 
 .settings-nav-group__label {
-  font-size: var(--text-2xs);
+  font-size: var(--text-xs);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -6632,6 +6632,7 @@ h1 {
   background: transparent;
   color: var(--text-2);
   padding: 0.6rem 0.7rem;
+  font-size: var(--text-base);
   font-weight: 700;
   cursor: pointer;
   transition: background 0.14s ease, border-color 0.14s ease;
@@ -6643,7 +6644,7 @@ h1 {
 }
 
 .settings-nav-icon {
-  font-size: 1rem;
+  font-size: 1.2rem;
   line-height: 1;
   flex-shrink: 0;
 }
