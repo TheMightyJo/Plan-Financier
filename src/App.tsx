@@ -85,6 +85,7 @@ import { generateDueTransactions, getOccurrencesBetween } from './lib/recurring'
 import { loadRecurringRules, saveRecurringRules } from './repos/recurringRulesRepo'
 import { RecurringRulesPanel } from './components/RecurringRulesPanel'
 import { FirstBudgetTour } from './components/FirstBudgetTour'
+import { LandingPage } from './components/LandingPage'
 import { AccountsPanel } from './components/AccountsPanel'
 import { TransactionHistoryPanel } from './components/TransactionHistoryPanel'
 import { ExpenseCalendar } from './components/ExpenseCalendar'
@@ -1006,6 +1007,8 @@ function App() {
   // Mode démo : visite guidée sans compte — données en mémoire uniquement
   // (toutes les persistances localStorage sont désactivées tant qu'il est actif).
   const [demoMode, setDemoMode] = useState(false)
+  // Site vitrine affiché avant l'écran de connexion pour les visiteurs.
+  const [showLanding, setShowLanding] = useState(true)
   const [, setAuthRole] = useState<AuthRole>('Parent')
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>(
     () => (window.localStorage.getItem(THEME_STORAGE_KEY) as 'dark' | 'light' | 'system') ?? 'system'
@@ -4960,7 +4963,10 @@ Réponse attendue:
   }
 
   if (!isAuthenticated && !demoMode) {
-    return <AuthScreen onTryDemo={enterDemoMode} />
+    if (showLanding) {
+      return <LandingPage onLogin={() => setShowLanding(false)} onTryDemo={enterDemoMode} />
+    }
+    return <AuthScreen onTryDemo={enterDemoMode} onBackToSite={() => setShowLanding(true)} />
   }
 
   return (
