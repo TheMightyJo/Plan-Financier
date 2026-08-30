@@ -960,7 +960,6 @@ function App() {
   const [budgetSimpleMode, setBudgetSimpleMode] = useState(true)
   const [budgetQuickEditOpen, setBudgetQuickEditOpen] = useState(false)
   const [budgetQuickEditValue, setBudgetQuickEditValue] = useState('')
-  const [budgetAiHintOpen, setBudgetAiHintOpen] = useState(false)
   const [budgetAssistantVisible, setBudgetAssistantVisible] = useState(true)
   const budgetInfoScopeRef = useRef<HTMLElement | null>(null)
 
@@ -3850,13 +3849,6 @@ Réponse attendue:
     }
   }
 
-  const handleBudgetAiClick = () => {
-    if (!isBudgetAiConfigured) {
-      setBudgetAiHintOpen(true)
-      return
-    }
-    setBudgetAiHintOpen((previous) => !previous)
-  }
 
   useEffect(() => {
     if (activeSectionId !== 'budget') {
@@ -5969,23 +5961,7 @@ Réponse attendue:
           <div className="panel-title">
             <div className="budget-title-row">
               <h2>
-                <span className="budget-title-main">Budget: lecture simple</span>
-                <span className="info-dot-wrap">
-                  <button
-                    type="button"
-                    className="info-dot"
-                    onClick={() => setBudgetInfoDotOpen(budgetInfoDotOpen === 'summary' ? null : 'summary')}
-                    aria-label="Information: ce bloc résume votre budget actuel"
-                    aria-expanded={budgetInfoDotOpen === 'summary'}
-                  >
-                    ℹ️
-                  </button>
-                  {budgetInfoDotOpen === 'summary' ? (
-                    <span className="info-mini-pop">
-                      Résumé instantané du budget prévu, des dépenses et du reste.
-                    </span>
-                  ) : null}
-                </span>
+                <span className="budget-title-main">Mon budget · {formatMonth(selectedMonth)}</span>
               </h2>
               <button
                 type="button"
@@ -5998,7 +5974,6 @@ Réponse attendue:
                 {budgetExportOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
               </button>
             </div>
-            <p>Comprenez votre situation en 10 secondes.</p>
             <div
               id="budget-export-panel-content"
               className={`budget-export-controls budget-export-controls-inline${budgetExportOpen ? ' open' : ''}`}
@@ -6050,50 +6025,7 @@ Réponse attendue:
               >
                 Ajuster mon budget
               </button>
-              <button
-                type="button"
-                className="budget-mini-btn budget-mini-btn-secondary"
-                onClick={handleBudgetAiClick}
-                aria-expanded={budgetAiHintOpen}
-              >
-                {isBudgetAiConfigured ? 'IA budget' : 'IA budget (à configurer)'}
-              </button>
             </div>
-            {budgetAiHintOpen ? (
-              <div className={`budget-ai-hint${isBudgetAiConfigured ? '' : ' warning'}`} role="status" aria-live="polite">
-                <span className="budget-ai-hint-text">
-                  {isBudgetAiConfigured
-                    ? `IA prête: ${selectedAiProvider.name} est disponible pour les projections et conseils automatiques.`
-                    : `IA non configurée. Ajoutez d'abord votre clé ${selectedAiProvider.name} pour activer IA budget.`}
-                </span>
-                <span className="budget-ai-hint-actions">
-                  {!isBudgetAiConfigured ? (
-                    <button
-                      type="button"
-                      className="budget-ai-hint-action"
-                      onClick={() => openSettingsPanel('ai')}
-                    >
-                      Configurer l’IA
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="budget-ai-hint-action"
-                      onClick={() => setChatOpen(true)}
-                    >
-                      Ouvrir l'assistant
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="budget-ai-hint-action budget-ai-hint-action-ghost"
-                    onClick={() => setBudgetAiHintOpen(false)}
-                  >
-                    Masquer
-                  </button>
-                </span>
-              </div>
-            ) : null}
           </div>
           <div className="budget-shell-layout">
           <div className="budget-simple-grid" aria-label="Résumé simple du budget">
@@ -6503,6 +6435,252 @@ Réponse attendue:
         </article>
         ) : null}
 
+        {isPilotageWidgetVisible('alerts') && isActiveView('budget') ? (
+        <article className="glass-card chart-card">
+          <div className="panel-title">
+            <h2>Alertes</h2>
+            <p>Signaux budget et dépenses inhabituelles du mois</p>
+          </div>
+          {alertMessages.length === 0 ? (
+                <p className="auth-note">
+                  Aucune alerte pour le moment. Continuez comme ça !
+                </p>
+          ) : (
+            <ul className="alert-list">
+              {alertMessages.map((alert) => (
+                <li key={alert.message} className={`alert--${alert.level}`}>
+                  <BellRing size={15} />
+                  <span>{alert.message}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </article>
+        ) : null}
+
+        {isPilotageWidgetVisible('savingsGoals') && isActiveView('budget') ? (
+        <article className="glass-card chart-card">
+          <div className="panel-title">
+            <h2>Budgets par catégorie</h2>
+            <p>Plafond mensuel par catégorie — {selectedProfileName}</p>
+          </div>
+          <ul className="goal-list">
+            {goalProgress.map((goal) => (
+              <li key={goal.category}>
+                <div>
+                  <strong>{goal.category}</strong>
+                  <small>
+                    {euroFormatter.format(goal.spent)} / {euroFormatter.format(goal.target)}
+                  </small>
+                </div>
+                <div className="goal-progress-track">
+                  <span style={{ width: `${goal.rate}%` }} />
+                </div>
+              </li>
+            ))}
+          </ul>
+          <form className="goal-editor" onSubmit={updateGoalTarget}>
+            <select
+              value={goalEditor.category}
+              onChange={(event) =>
+                setGoalEditor((previous) => ({
+                  ...previous,
+                  category: event.target.value as Category,
+                }))
+              }
+            >
+              {categories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min="1"
+              value={goalEditor.amount}
+              onChange={(event) =>
+                setGoalEditor((previous) => ({
+                  ...previous,
+                  amount: event.target.value,
+                }))
+              }
+              placeholder="Nouvel objectif"
+            />
+            <button type="submit">Mettre a jour</button>
+          </form>
+        </article>
+        ) : null}
+
+        {isPilotageWidgetVisible('recurringCharges') && isActiveView('budget') ? (
+        <article className="glass-card chart-card">
+          <div className="panel-title">
+            <div>
+              <h2>Charges récurrentes</h2>
+              <p>Transactions détectées sur 2+ mois pour {selectedProfileName.toLowerCase()}</p>
+            </div>
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => setShowRecurringPanel(true)}
+            >
+              <Repeat2 size={14} />
+              Gérer les règles ({recurringRules.filter((r) => r.member === selectedProfileId).length})
+            </button>
+          </div>
+          {recurringItems.length === 0 ? (
+            <p className="auth-note">Pas assez de données pour détecter des récurrences sur ce profil.</p>
+          ) : (
+            <ul className="recurring-list">
+              {recurringItems.map((item) => (
+                <li key={item.label}>
+                  <div>
+                    <strong>{item.label}</strong>
+                    <small>{item.monthCount} mois · moy. {euroFormatter.format(item.avgAmount)}</small>
+                  </div>
+                  <Repeat2 size={14} className="recurring-icon" />
+                </li>
+              ))}
+            </ul>
+          )}
+        </article>
+        ) : null}
+
+        {isPilotageWidgetVisible('savingsProjects') && isActiveView('budget') ? (
+        <article className="glass-card chart-card">
+          <div className="panel-title">
+            <div>
+              <h2>Projets d'épargne</h2>
+              <p>Projets financiers et leur progression estimée</p>
+            </div>
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => setShowGoalsPanel(true)}
+              title="Échéance, mensualité conseillée, lien vers un compte dédié"
+            >
+              <Target size={14} />
+              Gérer ({savingsTargets.length})
+            </button>
+          </div>
+          {savingsTargets.length > 0 ? (
+            <ul className="savings-target-list">
+              {savingsTargets.map((target) => {
+                const progress = Math.min(100, (allTimePositiveSurplus / target.targetAmount) * 100)
+                return (
+                  <li key={target.id}>
+                    <div className="savings-target-header">
+                      <strong>{target.label}</strong>
+                      <span>{euroFormatter.format(allTimePositiveSurplus)} / {euroFormatter.format(target.targetAmount)}</span>
+                      <button
+                        type="button"
+                        className="tx-btn tx-delete"
+                        onClick={() => {
+                          setSavingsTargets((prev) => {
+                            const next = prev.filter((t) => t.id !== target.id)
+                            window.localStorage.setItem(SAVINGS_TARGETS_STORAGE_KEY, JSON.stringify(next))
+                            return next
+                          })
+                        }}
+                        title="Supprimer cet objectif"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                    <div className="goal-progress-track">
+                      <span style={{ width: `${progress}%` }} />
+                    </div>
+                    <small>{progress.toFixed(0)}% atteint · basé sur les surplus mensuels cumulés</small>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <p className="auth-note">Aucun objectif défini. Ajoutez-en un ci-dessous.</p>
+          )}
+          <form
+            className="goal-editor savings-target-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              const amount = Number(savingsTargetDraft.amount)
+              if (!savingsTargetDraft.label.trim() || Number.isNaN(amount) || amount <= 0) return
+              const newTarget: SavingsTarget = {
+                id: `target-${Date.now()}`,
+                label: savingsTargetDraft.label.trim(),
+                targetAmount: amount,
+              }
+              setSavingsTargets((prev) => {
+                const next = [...prev, newTarget]
+                window.localStorage.setItem(SAVINGS_TARGETS_STORAGE_KEY, JSON.stringify(next))
+                return next
+              })
+              setSavingsTargetDraft({ label: '', amount: '' })
+            }}
+          >
+            <input
+              value={savingsTargetDraft.label}
+              onChange={(event) => setSavingsTargetDraft((prev) => ({ ...prev, label: event.target.value }))}
+              placeholder="Ex: Vacances, Voiture..."
+            />
+            <input
+              type="number"
+              min="1"
+              value={savingsTargetDraft.amount}
+              onChange={(event) => setSavingsTargetDraft((prev) => ({ ...prev, amount: event.target.value }))}
+              placeholder="Montant cible (€)"
+            />
+            <button type="submit"><Target size={14} /> Ajouter</button>
+          </form>
+        </article>
+        ) : null}
+
+        {isActiveView('budget') ? (
+        <article className="glass-card chart-card accounts-widget">
+          <div className="panel-title">
+            <div>
+              <h2>Comptes</h2>
+              <p>Solde consolidé pour {selectedProfileName.toLowerCase()}</p>
+            </div>
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => setShowAccountsPanel(true)}
+            >
+              <Landmark size={14} />
+              Gérer ({accounts.filter((a) => a.ownerMember === selectedProfileId && a.archivedAt === null).length})
+            </button>
+          </div>
+          {(() => {
+            const consolidated = computeConsolidatedBalance(accounts, transactions, selectedProfileId)
+            const breakdown = balanceByAccountType(accounts, transactions, selectedProfileId)
+            const nonZeroTypes = (Object.entries(breakdown) as Array<[keyof typeof breakdown, number]>)
+              .filter(([, amount]) => amount !== 0)
+            return (
+              <div className="accounts-widget-body">
+                <div className={`accounts-widget-total ${consolidated >= 0 ? 'is-positive' : 'is-negative'}`}>
+                  <span>{euroFormatter.format(consolidated)}</span>
+                  <small>Patrimoine net (hors investissement non liquide)</small>
+                </div>
+                {nonZeroTypes.length > 0 ? (
+                  <ul className="accounts-widget-breakdown">
+                    {nonZeroTypes.map(([type, amount]) => (
+                      <li key={type}>
+                        <span className="accounts-widget-type">{ACCOUNT_TYPE_LABELS[type]}</span>
+                        <span className={amount >= 0 ? 'is-positive' : 'is-negative'}>
+                          {euroFormatter.format(amount)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="auth-note">Aucun compte avec un solde non nul. Cliquez sur « Gérer » pour ajouter un compte.</p>
+                )}
+              </div>
+            )
+          })()}
+        </article>
+        ) : null}
+
         {isPilotageWidgetVisible('coaching') && isActiveView('budget') ? (
         <article className="glass-card chart-card">
           <div className="panel-title">
@@ -6546,6 +6724,7 @@ Réponse attendue:
                   <p>{predictionResult}</p>
                 </div>
               ) : null}
+
             </div>
           ) : null}
         </article>
@@ -6732,251 +6911,10 @@ Réponse attendue:
         </article>
         ) : null}
 
-        {isPilotageWidgetVisible('alerts') && isActiveView('budget') ? (
-        <article className="glass-card chart-card">
-          <div className="panel-title">
-            <h2>Alertes intelligentes</h2>
-            <p>Signaux budget et dépenses inhabituelles du mois</p>
-          </div>
-          {alertMessages.length === 0 ? (
-                <p className="auth-note">
-                  Aucune alerte pour le moment. Continuez comme ça !
-                </p>
-          ) : (
-            <ul className="alert-list">
-              {alertMessages.map((alert) => (
-                <li key={alert.message} className={`alert--${alert.level}`}>
-                  <BellRing size={15} />
-                  <span>{alert.message}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </article>
-        ) : null}
 
-        {isPilotageWidgetVisible('savingsGoals') && isActiveView('budget') ? (
-        <article className="glass-card chart-card">
-          <div className="panel-title">
-            <h2>Objectifs d'épargne</h2>
-            <p>Suivi cible vs dépenses pour {selectedProfileName.toLowerCase()}</p>
-          </div>
-          <ul className="goal-list">
-            {goalProgress.map((goal) => (
-              <li key={goal.category}>
-                <div>
-                  <strong>{goal.category}</strong>
-                  <small>
-                    {euroFormatter.format(goal.spent)} / {euroFormatter.format(goal.target)}
-                  </small>
-                </div>
-                <div className="goal-progress-track">
-                  <span style={{ width: `${goal.rate}%` }} />
-                </div>
-              </li>
-            ))}
-          </ul>
-          <form className="goal-editor" onSubmit={updateGoalTarget}>
-            <select
-              value={goalEditor.category}
-              onChange={(event) =>
-                setGoalEditor((previous) => ({
-                  ...previous,
-                  category: event.target.value as Category,
-                }))
-              }
-            >
-              {categories.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-            <input
-              type="number"
-              min="1"
-              value={goalEditor.amount}
-              onChange={(event) =>
-                setGoalEditor((previous) => ({
-                  ...previous,
-                  amount: event.target.value,
-                }))
-              }
-              placeholder="Nouvel objectif"
-            />
-            <button type="submit">Mettre a jour</button>
-          </form>
-        </article>
-        ) : null}
 
-        {isActiveView('budget') ? (
-        <article className="glass-card chart-card accounts-widget">
-          <div className="panel-title">
-            <div>
-              <h2>Comptes</h2>
-              <p>Solde consolidé pour {selectedProfileName.toLowerCase()}</p>
-            </div>
-            <button
-              type="button"
-              className="hero-cta-button"
-              onClick={() => setShowAccountsPanel(true)}
-            >
-              <Landmark size={14} />
-              Gérer ({accounts.filter((a) => a.ownerMember === selectedProfileId && a.archivedAt === null).length})
-            </button>
-          </div>
-          {(() => {
-            const consolidated = computeConsolidatedBalance(accounts, transactions, selectedProfileId)
-            const breakdown = balanceByAccountType(accounts, transactions, selectedProfileId)
-            const nonZeroTypes = (Object.entries(breakdown) as Array<[keyof typeof breakdown, number]>)
-              .filter(([, amount]) => amount !== 0)
-            return (
-              <div className="accounts-widget-body">
-                <div className={`accounts-widget-total ${consolidated >= 0 ? 'is-positive' : 'is-negative'}`}>
-                  <span>{euroFormatter.format(consolidated)}</span>
-                  <small>Patrimoine net (hors investissement non liquide)</small>
-                </div>
-                {nonZeroTypes.length > 0 ? (
-                  <ul className="accounts-widget-breakdown">
-                    {nonZeroTypes.map(([type, amount]) => (
-                      <li key={type}>
-                        <span className="accounts-widget-type">{ACCOUNT_TYPE_LABELS[type]}</span>
-                        <span className={amount >= 0 ? 'is-positive' : 'is-negative'}>
-                          {euroFormatter.format(amount)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="auth-note">Aucun compte avec un solde non nul. Cliquez sur « Gérer » pour ajouter un compte.</p>
-                )}
-              </div>
-            )
-          })()}
-        </article>
-        ) : null}
 
-        {isPilotageWidgetVisible('recurringCharges') && isActiveView('budget') ? (
-        <article className="glass-card chart-card">
-          <div className="panel-title">
-            <div>
-              <h2>Charges récurrentes</h2>
-              <p>Transactions détectées sur 2+ mois pour {selectedProfileName.toLowerCase()}</p>
-            </div>
-            <button
-              type="button"
-              className="hero-cta-button"
-              onClick={() => setShowRecurringPanel(true)}
-            >
-              <Repeat2 size={14} />
-              Gérer les règles ({recurringRules.filter((r) => r.member === selectedProfileId).length})
-            </button>
-          </div>
-          {recurringItems.length === 0 ? (
-            <p className="auth-note">Pas assez de données pour détecter des récurrences sur ce profil.</p>
-          ) : (
-            <ul className="recurring-list">
-              {recurringItems.map((item) => (
-                <li key={item.label}>
-                  <div>
-                    <strong>{item.label}</strong>
-                    <small>{item.monthCount} mois · moy. {euroFormatter.format(item.avgAmount)}</small>
-                  </div>
-                  <Repeat2 size={14} className="recurring-icon" />
-                </li>
-              ))}
-            </ul>
-          )}
-        </article>
-        ) : null}
 
-        {isPilotageWidgetVisible('savingsProjects') && isActiveView('budget') ? (
-        <article className="glass-card chart-card">
-          <div className="panel-title">
-            <div>
-              <h2>Objectifs d'épargne projet</h2>
-              <p>Projets financiers et leur progression estimée</p>
-            </div>
-            <button
-              type="button"
-              className="hero-cta-button"
-              onClick={() => setShowGoalsPanel(true)}
-              title="Échéance, mensualité conseillée, lien vers un compte dédié"
-            >
-              <Target size={14} />
-              Gérer ({savingsTargets.length})
-            </button>
-          </div>
-          {savingsTargets.length > 0 ? (
-            <ul className="savings-target-list">
-              {savingsTargets.map((target) => {
-                const progress = Math.min(100, (allTimePositiveSurplus / target.targetAmount) * 100)
-                return (
-                  <li key={target.id}>
-                    <div className="savings-target-header">
-                      <strong>{target.label}</strong>
-                      <span>{euroFormatter.format(allTimePositiveSurplus)} / {euroFormatter.format(target.targetAmount)}</span>
-                      <button
-                        type="button"
-                        className="tx-btn tx-delete"
-                        onClick={() => {
-                          setSavingsTargets((prev) => {
-                            const next = prev.filter((t) => t.id !== target.id)
-                            window.localStorage.setItem(SAVINGS_TARGETS_STORAGE_KEY, JSON.stringify(next))
-                            return next
-                          })
-                        }}
-                        title="Supprimer cet objectif"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                    <div className="goal-progress-track">
-                      <span style={{ width: `${progress}%` }} />
-                    </div>
-                    <small>{progress.toFixed(0)}% atteint · basé sur les surplus mensuels cumulés</small>
-                  </li>
-                )
-              })}
-            </ul>
-          ) : (
-            <p className="auth-note">Aucun objectif défini. Ajoutez-en un ci-dessous.</p>
-          )}
-          <form
-            className="goal-editor savings-target-form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              const amount = Number(savingsTargetDraft.amount)
-              if (!savingsTargetDraft.label.trim() || Number.isNaN(amount) || amount <= 0) return
-              const newTarget: SavingsTarget = {
-                id: `target-${Date.now()}`,
-                label: savingsTargetDraft.label.trim(),
-                targetAmount: amount,
-              }
-              setSavingsTargets((prev) => {
-                const next = [...prev, newTarget]
-                window.localStorage.setItem(SAVINGS_TARGETS_STORAGE_KEY, JSON.stringify(next))
-                return next
-              })
-              setSavingsTargetDraft({ label: '', amount: '' })
-            }}
-          >
-            <input
-              value={savingsTargetDraft.label}
-              onChange={(event) => setSavingsTargetDraft((prev) => ({ ...prev, label: event.target.value }))}
-              placeholder="Ex: Vacances, Voiture..."
-            />
-            <input
-              type="number"
-              min="1"
-              value={savingsTargetDraft.amount}
-              onChange={(event) => setSavingsTargetDraft((prev) => ({ ...prev, amount: event.target.value }))}
-              placeholder="Montant cible (€)"
-            />
-            <button type="submit"><Target size={14} /> Ajouter</button>
-          </form>
-        </article>
-        ) : null}
 
 
         {dashboardWidgetState.visibleWidgets.length === 0 && isActiveView('operations') ? (
