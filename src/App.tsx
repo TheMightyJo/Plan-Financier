@@ -194,6 +194,7 @@ const MANUAL_ONBOARDING_PHASES = [
   'Finalisation de votre plan…',
 ]
 const FIRST_TX_TOUR_DONE_KEY = 'plan-financier-first-tx-tour-done-v1'
+const ENVELOPE_BUDGETS_STORAGE_KEY = 'plan-financier-envelope-budgets-v1'
 const THEME_STORAGE_KEY = 'plan-financier-theme-v1'
 const PALETTE_STORAGE_KEY = 'plan-financier-palette-v1'
 const NOTES_STORAGE_KEY = 'plan-financier-notes-v1'
@@ -1100,6 +1101,17 @@ function App() {
   const [budgetAssistantLoading, setBudgetAssistantLoading] = useState(false)
   const [budgetAssistantContextLoaded, setBudgetAssistantContextLoaded] = useState('')
   const [budgetSimpleMode, setBudgetSimpleMode] = useState(true)
+  // Objectifs par poche (enveloppes) : Record<profileId, Record<poche, montant>>.
+  const [envelopeBudgets, setEnvelopeBudgets] = useState<Record<string, Record<string, number>>>(() => {
+    try {
+      const raw = window.localStorage.getItem(ENVELOPE_BUDGETS_STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as Record<string, Record<string, number>>) : {}
+    } catch {
+      return {}
+    }
+  })
+  const [envelopeEditing, setEnvelopeEditing] = useState<string | null>(null)
+  const [envelopeDraft, setEnvelopeDraft] = useState('')
   const [budgetQuickEditOpen, setBudgetQuickEditOpen] = useState(false)
   const [budgetQuickEditValue, setBudgetQuickEditValue] = useState('')
   const [budgetAssistantVisible, setBudgetAssistantVisible] = useState(true)
@@ -3036,6 +3048,54 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
 
   const monthlyNet = monthlyIncome - monthlyExpense
+
+  useEffect(() => {
+    if (demoMode) return
+    try {
+      window.localStorage.setItem(ENVELOPE_BUDGETS_STORAGE_KEY, JSON.stringify(envelopeBudgets))
+    } catch {
+      /* stockage plein/indisponible : silencieux */
+    }
+  }, [envelopeBudgets, demoMode])
+
+  const profileEnvelopeBudgets = envelopeBudgets[selectedProfileId] ?? {}
+
+  const saveEnvelopeBudget = (name: string, value: number) => {
+    setEnvelopeBudgets((previous) => {
+      const forProfile = { ...(previous[selectedProfileId] ?? {}) }
+      if (value > 0) forProfile[name] = Math.round(value)
+      else delete forProfile[name]
+      return { ...previous, [selectedProfileId]: forProfile }
+    })
+  }
+
+  // Cartes enveloppes : dépensé du mois + objectif + météo.
+  const envelopeCards = useMemo(() => {
+    const spentBy = new Map<string, number>()
+    for (const tx of activeMonthTransactions) {
+      if (tx.kind !== 'depense') continue
+      spentBy.set(tx.envelope, (spentBy.get(tx.envelope) ?? 0) + tx.amount)
+    }
+    const names = new Set<string>([...envelopes, ...Object.keys(profileEnvelopeBudgets), ...spentBy.keys()])
+    return [...names]
+      .map((name) => {
+        const spent = spentBy.get(name) ?? 0
+        const target = profileEnvelopeBudgets[name] ?? 0
+        const ratio = target > 0 ? spent / target : null
+        const weather =
+          ratio === null
+            ? { icon: '🌤️', label: "Pas d'objectif — définissez-en un !", tone: 'none' as const }
+            : ratio <= 0.7
+            ? { icon: '☀️', label: 'Grand beau — tout va bien', tone: 'sun' as const }
+            : ratio <= 0.9
+            ? { icon: '⛅', label: 'Ça se couvre — surveillez', tone: 'cloud' as const }
+            : ratio <= 1
+            ? { icon: '🌧️', label: 'Pluie — la limite approche', tone: 'rain' as const }
+            : { icon: '⛈️', label: 'Orage — objectif dépassé !', tone: 'storm' as const }
+        return { name, spent, target, ratio, weather }
+      })
+      .sort((a, b) => b.spent - a.spent)
+  }, [activeMonthTransactions, profileEnvelopeBudgets])
 
   const envelopeBreakdown = useMemo(
     () =>
@@ -6952,6 +7012,90 @@ Réponse attendue:
 
       {isActiveView('operations') || isActiveView('budget') ? (
       <section id="pilotage" className="panel-grid">
+        {isActiveView('budget') ? (
+        <article className="glass-card chart-card wide-card envelope-board">
+          <div className="panel-title">
+            <div>
+              <h2>✉️ Mes poches · {formatMonth(selectedMonth)}</h2>
+              <p>La météo de chaque poche — appuyez sur l'objectif pour l'ajuster.</p>
+            </div>
+          </div>
+          <div className="envelope-grid">
+            {envelopeCards.map((card, index) => (
+              <div
+                key={card.name}
+                className={`envelope-card envelope-card--${card.weather.tone}`}
+                style={{ animationDelay: `${index * 70}ms` }}
+              >
+                <div className="envelope-card__flap" aria-hidden="true" />
+                <div className="envelope-card__body">
+                  <div className="envelope-card__top">
+                    <strong className="envelope-card__name">{card.name}</strong>
+                    <span
+                      className={`envelope-card__weather envelope-card__weather--${card.weather.tone}`}
+                      title={card.weather.label}
+                      aria-label={card.weather.label}
+                    >
+                      {card.weather.icon}
+                    </span>
+                  </div>
+                  <p className="envelope-card__spent">
+                    −{euroFormatter.format(card.spent)}
+                    <small> dépensés</small>
+                  </p>
+                  {card.target > 0 ? (
+                    <div className="envelope-card__bar" aria-hidden="true">
+                      <div
+                        className={`envelope-card__bar-fill envelope-card__bar-fill--${card.weather.tone}`}
+                        style={{ width: `${Math.min(100, ((card.ratio ?? 0) * 100))}%` }}
+                      />
+                    </div>
+                  ) : null}
+                  {envelopeEditing === card.name ? (
+                    <div className="envelope-card__edit">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min="0"
+                        step="10"
+                        value={envelopeDraft}
+                        onChange={(event) => setEnvelopeDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault()
+                            saveEnvelopeBudget(card.name, Number(envelopeDraft) || 0)
+                            setEnvelopeEditing(null)
+                          }
+                          if (event.key === 'Escape') setEnvelopeEditing(null)
+                        }}
+                        onBlur={() => {
+                          saveEnvelopeBudget(card.name, Number(envelopeDraft) || 0)
+                          setEnvelopeEditing(null)
+                        }}
+                        aria-label={`Objectif de la poche ${card.name} (euros)`}
+                        autoFocus
+                      />
+                      <span>€ / mois</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="envelope-card__target"
+                      onClick={() => {
+                        setEnvelopeDraft(card.target > 0 ? String(card.target) : '')
+                        setEnvelopeEditing(card.name)
+                      }}
+                    >
+                      🎯 {card.target > 0 ? `Objectif : ${euroFormatter.format(card.target)}` : 'Définir un objectif'}
+                    </button>
+                  )}
+                  <small className="envelope-card__forecast">{card.weather.label}</small>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+        ) : null}
         {isActiveView('budget') ? (
         <article id="budget" className={`glass-card chart-card wide-card${budgetSimpleMode ? ' budget-senior-mode' : ''}`} ref={budgetInfoScopeRef}>
           <div className="panel-title">
