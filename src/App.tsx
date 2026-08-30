@@ -8366,8 +8366,8 @@ Réponse attendue:
                     quickAddTouchedRef.current.category = true
                     setQuickAddForm((previous) => ({ ...previous, category }))
                   }}
-                  searchPlaceholder="Rechercher une catégorie…"
                   selectAriaLabel="Catégorie"
+                  customPlaceholder="Votre catégorie…"
                 />
               </label>
               <label>
@@ -8376,8 +8376,8 @@ Réponse attendue:
                   value={quickAddForm.envelope}
                   groups={ENVELOPE_GROUPS}
                   onChange={(envelope) => setQuickAddForm((previous) => ({ ...previous, envelope }))}
-                  searchPlaceholder="Rechercher une poche…"
                   selectAriaLabel="Poche"
+                  customPlaceholder="Votre poche…"
                 />
               </label>
             </div>

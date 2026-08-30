@@ -9953,7 +9953,7 @@ h1 {
   min-width: 0;
 }
 
-.grouped-select__search {
+.grouped-select__custom {
   width: 100%;
   border-radius: 0.6rem;
   border: 1px solid var(--border-soft);
@@ -9964,7 +9964,7 @@ h1 {
   outline: none;
 }
 
-.grouped-select__search:focus {
+.grouped-select__custom:focus {
   border-color: rgba(var(--accent-rgb), 0.7);
 }
 
@@ -9972,20 +9972,12 @@ h1 {
   width: 100%;
 }
 
-.grouped-select select[size] {
-  border-radius: 0.6rem;
-  padding: 0.3rem;
-}
 
 .grouped-select select optgroup {
   font-weight: 800;
   color: var(--text-2);
 }
 
-.grouped-select__empty {
-  color: var(--text-2);
-  font-size: var(--text-2xs);
-}
 
 /* ── Modale : imputation d'une grosse dépense sur un autre mois ──── */
 .quick-add-budget-month {

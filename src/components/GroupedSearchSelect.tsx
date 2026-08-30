@@ -1,57 +1,56 @@
 import { useState } from 'react'
 import type { CategoryGroup } from '../lib/categories'
-import { normalizeText } from '../lib/text'
+
+const CUSTOM_VALUE = '__custom__'
 
 /**
- * Sélecteur groupé (optgroup natifs) avec champ de recherche : la saisie
- * filtre les options, la valeur courante reste toujours sélectionnable.
- * Utilisé pour Catégorie et Poche dans la modale d'opération.
+ * Sélecteur groupé (optgroup natifs) pour Catégorie et Poche dans la modale
+ * d'opération. La dernière option « ✏️ Autre (personnalisé)… » ouvre un champ
+ * libre : Category/Envelope étant des chaînes, la valeur saisie est stockée
+ * telle quelle (et survit au rechargement / à la synchro).
  */
 export function GroupedSearchSelect({
   value,
   groups,
   onChange,
-  searchPlaceholder = 'Rechercher…',
   selectAriaLabel,
+  customPlaceholder = 'Votre nom personnalisé…',
 }: {
   value: string
   groups: CategoryGroup[]
   onChange: (next: string) => void
-  searchPlaceholder?: string
   selectAriaLabel: string
+  customPlaceholder?: string
 }) {
-  const [query, setQuery] = useState('')
-  const normalizedQuery = normalizeText(query).trim()
+  const [customMode, setCustomMode] = useState(false)
+  const [draft, setDraft] = useState('')
 
-  const filtered = normalizedQuery
-    ? groups
-        .map((group) => ({
-          ...group,
-          options: group.options.filter((option) => normalizeText(option).includes(normalizedQuery)),
-        }))
-        .filter((group) => group.options.length > 0)
-    : groups
+  const valueListed = groups.some((group) => group.options.includes(value))
 
-  const valueListed = filtered.some((group) => group.options.includes(value))
+  const commitDraft = () => {
+    const custom = draft.trim().slice(0, 40)
+    if (custom) onChange(custom)
+    setCustomMode(false)
+    setDraft('')
+  }
 
   return (
     <div className="grouped-select">
-      <input
-        type="search"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder={searchPlaceholder}
-        aria-label={`${selectAriaLabel} — recherche`}
-        className="grouped-select__search"
-      />
       <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+        value={customMode ? CUSTOM_VALUE : value}
+        onChange={(event) => {
+          if (event.target.value === CUSTOM_VALUE) {
+            setCustomMode(true)
+            setDraft('')
+            return
+          }
+          setCustomMode(false)
+          onChange(event.target.value)
+        }}
         aria-label={selectAriaLabel}
-        size={normalizedQuery ? Math.min(8, Math.max(2, filtered.reduce((n, g) => n + g.options.length + 1, 0))) : undefined}
       >
-        {!valueListed ? <option value={value}>{value}</option> : null}
-        {filtered.map((group) => (
+        {!valueListed && !customMode ? <option value={value}>{value}</option> : null}
+        {groups.map((group) => (
           <optgroup key={group.label} label={group.label}>
             {group.options.map((option) => (
               <option key={option} value={option}>
@@ -60,9 +59,32 @@ export function GroupedSearchSelect({
             ))}
           </optgroup>
         ))}
+        <optgroup label="Pas dans la liste ?">
+          <option value={CUSTOM_VALUE}>✏️ Autre (personnalisé)…</option>
+        </optgroup>
       </select>
-      {normalizedQuery && filtered.length === 0 ? (
-        <small className="grouped-select__empty">Aucun résultat — « {value} » reste sélectionné.</small>
+      {customMode ? (
+        <input
+          type="text"
+          className="grouped-select__custom"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commitDraft}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              commitDraft()
+            }
+            if (event.key === 'Escape') {
+              setCustomMode(false)
+              setDraft('')
+            }
+          }}
+          placeholder={customPlaceholder}
+          aria-label={`${selectAriaLabel} personnalisée`}
+          maxLength={40}
+          autoFocus
+        />
       ) : null}
     </div>
   )
