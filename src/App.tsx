@@ -36,6 +36,8 @@ import {
   Trash2,
   X,
   MessageCircle,
+  Mic,
+  Paperclip,
   Send,
   Bot,
   Repeat2,
@@ -175,7 +177,6 @@ const TRANSACTIONS_STORAGE_KEY = 'plan-financier-transactions-v1'
 const ANTHROPIC_KEY_STORAGE = 'plan-financier-anthropic-key-v1'
 const CHAT_HISTORY_STORAGE_PREFIX = 'plan-financier-chat-history-v1'
 const CHAT_THREADS_STORAGE_PREFIX = 'plan-financier-chat-threads-v1'
-const MAX_CHAT_THREADS_PER_SCOPE = 8
 const ROLLOVER_STORAGE_KEY = 'plan-financier-rollover-v1'
 const GOALS_STORAGE_KEY = 'plan-financier-goals-v1'
 const CSV_MAPPINGS_STORAGE_KEY = 'plan-financier-csv-mappings-v1'
@@ -806,26 +807,11 @@ const loadSavingsTargets = (): SavingsTarget[] => {
   }
 }
 
-const normalizeChatThreadLabel = (value: string) => value.trim().replace(/\s+/g, ' ')
-
-const createChatThreadId = (label: string) => normalizeText(label).replace(/\s+/g, '-').slice(0, 32)
-
 const getChatThreadScopeKey = (profileId: string, month: string) =>
   `${CHAT_THREADS_STORAGE_PREFIX}:${profileId}:${month}`
 
 const getChatHistoryStorageKey = (profileId: string, month: string, threadId: string) =>
   `${CHAT_HISTORY_STORAGE_PREFIX}:${profileId}:${month}:${threadId}`
-
-const formatChatThreadActivity = (value: number) => {
-  if (!value) {
-    return 'jamais'
-  }
-
-  return new Date(value).toLocaleDateString('fr-FR', {
-    day: '2-digit',
-    month: 'short',
-  })
-}
 
 /** ℹ️ cliquable : l'explication ne s'affiche qu'à la demande. */
 function InfoHint({ text }: { text: string }) {
@@ -906,6 +892,12 @@ function App() {
   const [reportFeedback, setReportFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [reportCcDraft, setReportCcDraft] = useState('')
   const [adviceQuestion, setAdviceQuestion] = useState('')
+  const [chatAttachment, setChatAttachment] = useState<{ name: string; mediaType: string; data: string } | null>(null)
+  const [chatListening, setChatListening] = useState(false)
+  const chatFileInputRef = useRef<HTMLInputElement | null>(null)
+  const chatRecognitionRef = useRef<{ stop: () => void } | null>(null)
+  // Bulle d'invitation près de la bulle de chat (1× par jour, discrète).
+  const [chatNudgeVisible, setChatNudgeVisible] = useState(false)
   const [adviceAttachment, setAdviceAttachment] = useState<{ name: string; mediaType: string; data: string } | null>(null)
   const [adviceListening, setAdviceListening] = useState(false)
   const adviceFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -973,6 +965,50 @@ function App() {
     }
     reader.readAsDataURL(file)
   }
+
+  const handleChatFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Fichier trop lourd — 5 Mo maximum', 'danger')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result ?? '')
+      const comma = result.indexOf(',')
+      if (comma < 0) return
+      setChatAttachment({
+        name: file.name,
+        mediaType: file.type || 'application/octet-stream',
+        data: result.slice(comma + 1),
+      })
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const toggleChatDictation = () => {
+    if (chatListening) {
+      chatRecognitionRef.current?.stop()
+      return
+    }
+    if (!speechRecognitionCtor) return
+    const recognition = new speechRecognitionCtor()
+    recognition.lang = 'fr-FR'
+    recognition.interimResults = true
+    recognition.continuous = false
+    recognition.onresult = (event) => {
+      const text = Array.from({ length: event.results.length }, (_, i) => event.results[i][0].transcript).join(' ')
+      setChatInput(text)
+    }
+    recognition.onend = () => setChatListening(false)
+    recognition.onerror = () => setChatListening(false)
+    chatRecognitionRef.current = recognition
+    setChatListening(true)
+    recognition.start()
+  }
+
   const [sentInvites, setSentInvites] = useState<SentInvite[]>([])
   // Cadre de relance : 1× par 24 h et par invitation (horodatage local).
   const [relanceTick, setRelanceTick] = useState(0)
@@ -1150,10 +1186,25 @@ function App() {
   })
   const anthropicKey = aiProviderKeys.anthropic
   const [chatOpen, setChatOpen] = useState(false)
+
+  // Invitation discrète : 3 s après l'arrivée, 1× par 24 h, disparaît en 9 s.
+  useEffect(() => {
+    if (!isAuthenticated || !anthropicKey || chatOpen) return
+    const KEY = 'plan-financier-cash-nudge-at'
+    const last = Number(window.localStorage.getItem(KEY) ?? 0)
+    if (Date.now() - last < 24 * 3600 * 1000) return
+    const showTimer = window.setTimeout(() => {
+      setChatNudgeVisible(true)
+      window.localStorage.setItem(KEY, String(Date.now()))
+    }, 3000)
+    const hideTimer = window.setTimeout(() => setChatNudgeVisible(false), 12_000)
+    return () => {
+      window.clearTimeout(showTimer)
+      window.clearTimeout(hideTimer)
+    }
+  }, [isAuthenticated, anthropicKey, chatOpen])
   const [chatThreads, setChatThreads] = useState<ChatThread[]>([DEFAULT_CHAT_THREAD])
   const [chatThreadId, setChatThreadId] = useState(DEFAULT_CHAT_THREAD.id)
-  const [chatTopicDraft, setChatTopicDraft] = useState('')
-  const [chatRenameDraft, setChatRenameDraft] = useState('')
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
 
   const visibleDashboardWidgets = useMemo(
@@ -1905,8 +1956,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const chatThreadScopeKey = getChatThreadScopeKey(selectedProfileId, selectedMonth)
   const activeChatThread =
     chatThreads.find((thread) => thread.id === chatThreadId) ?? chatThreads[0] ?? DEFAULT_CHAT_THREAD
-  const canCreateChatTopic = chatThreads.length < MAX_CHAT_THREADS_PER_SCOPE
-  const canManageActiveEmptyThread = chatMessages.length === 0
   const chatHistoryStorageKey = getChatHistoryStorageKey(
     selectedProfileId,
     selectedMonth,
@@ -1938,79 +1987,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     )
   }
 
-  const createChatTopic = () => {
-    if (!canCreateChatTopic) {
-      return
-    }
-
-    const label = normalizeChatThreadLabel(chatTopicDraft)
-    if (!label) {
-      return
-    }
-
-    // Timestamp réel de l'action utilisateur (handler, pas du render).
-    // eslint-disable-next-line react-hooks/purity
-    const baseId = createChatThreadId(label) || `topic-${Date.now()}`
-    let nextId = baseId
-    let suffix = 2
-    while (chatThreads.some((thread) => thread.id === nextId)) {
-      nextId = `${baseId}-${suffix}`
-      suffix += 1
-    }
-
-    // Timestamp réel de l'action utilisateur (handler, pas du render).
-    // eslint-disable-next-line react-hooks/purity
-    const nextThread = { id: nextId, label, lastActivityAt: Date.now() }
-    setChatThreads((previous) => [nextThread, ...previous])
-    setChatThreadId(nextThread.id)
-    setChatRenameDraft(label)
-    setChatTopicDraft('')
-    setChatMessages([])
-    setChatClearConfirmOpen(false)
-    resetChatUndoState()
-  }
-
-  const renameActiveChatTopic = () => {
-    if (!canManageActiveEmptyThread) {
-      return
-    }
-
-    const label = normalizeChatThreadLabel(chatRenameDraft)
-    if (!label) {
-      return
-    }
-
-    setChatThreads((previous) =>
-      previous.map((thread) =>
-        thread.id === activeChatThread.id
-          ? {
-              ...thread,
-              label,
-            }
-          : thread,
-      ),
-    )
-  }
-
-  const deleteActiveChatTopic = () => {
-    if (!canManageActiveEmptyThread || chatThreads.length <= 1) {
-      return
-    }
-
-    const nextThreads = chatThreads.filter((thread) => thread.id !== activeChatThread.id)
-    const fallbackThread = nextThreads[0] ?? DEFAULT_CHAT_THREAD
-    setChatThreads(nextThreads)
-    setChatThreadId(fallbackThread.id)
-    setChatRenameDraft(fallbackThread.label)
-    setChatMessages([])
-    setChatClearConfirmOpen(false)
-    resetChatUndoState()
-
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(chatHistoryStorageKey)
-    }
-  }
-
   useEffect(() => {
     if (typeof window === 'undefined') {
       return
@@ -2024,7 +2000,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setChatThreads(fallback)
       setChatThreadId(DEFAULT_CHAT_THREAD.id)
-      setChatRenameDraft(DEFAULT_CHAT_THREAD.label)
       chatThreadScopeReadyRef.current = chatThreadScopeKey
       return
     }
@@ -2051,21 +2026,13 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       setChatThreadId((previous) =>
         nextThreads.some((thread) => thread.id === previous) ? previous : nextThreads[0].id,
       )
-      setChatRenameDraft((previous) => previous || nextThreads[0].label)
       chatThreadScopeReadyRef.current = chatThreadScopeKey
     } catch {
       setChatThreads(fallback)
       setChatThreadId(DEFAULT_CHAT_THREAD.id)
-      setChatRenameDraft(DEFAULT_CHAT_THREAD.label)
       chatThreadScopeReadyRef.current = chatThreadScopeKey
     }
   }, [chatThreadScopeKey])
-
-  useEffect(() => {
-    // Réinitialise le brouillon de renommage au changement de fil actif.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setChatRenameDraft(activeChatThread.label)
-  }, [activeChatThread.id, activeChatThread.label])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -8337,6 +8304,18 @@ Réponse attendue:
     {/* ── Claude AI Chat ─────────────────────────────────────────── */}
     {isAuthenticated && isCurrentAiProviderOperational && anthropicKey ? (
       <>
+        {chatNudgeVisible && !chatOpen ? (
+          <button
+            type="button"
+            className="chat-fab-nudge"
+            onClick={() => {
+              setChatNudgeVisible(false)
+              setChatOpen(true)
+            }}
+          >
+            👋 Je suis Cash, votre assistant budget. Une question sur vos finances ? Demandez-moi !
+          </button>
+        ) : null}
         <button
           type="button"
           className={`chat-fab${chatOpen ? ' chat-fab--open' : ''}`}
@@ -8355,7 +8334,6 @@ Réponse attendue:
             <div className="chat-header">
               <Bot size={18} />
               <span>Cash 🪙</span>
-              <small>{selectedProfileName} · {formatMonth(selectedMonth)}</small>
               <button
                 type="button"
                 className="chat-clear-btn"
@@ -8368,91 +8346,10 @@ Réponse attendue:
               </button>
             </div>
 
-            <div className="chat-topic-bar">
-              <label className="chat-topic-select">
-                <span>Sujet</span>
-                <select
-                  value={activeChatThread.id}
-                  onChange={(event) => setChatThreadId(event.target.value)}
-                  disabled={chatLoading}
-                >
-                  {chatThreads.map((thread) => (
-                    <option key={thread.id} value={thread.id}>
-                      {thread.label} · {formatChatThreadActivity(thread.lastActivityAt)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="chat-topic-create">
-                <input
-                  value={chatTopicDraft}
-                  onChange={(event) => setChatTopicDraft(event.target.value)}
-                  placeholder="Nouveau sujet"
-                  disabled={chatLoading}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      createChatTopic()
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={createChatTopic}
-                  disabled={!chatTopicDraft.trim() || chatLoading || !canCreateChatTopic}
-                  title={canCreateChatTopic ? 'Créer un sujet' : `Limite de ${MAX_CHAT_THREADS_PER_SCOPE} sujets atteinte`}
-                >
-                  <Plus size={14} />
-                </button>
-              </div>
-            </div>
-
-            <div className="chat-topic-meta">
-              <span>
-                Dernière activité: {formatChatThreadActivity(activeChatThread.lastActivityAt)}
-              </span>
-              <span>
-                {chatThreads.length}/{MAX_CHAT_THREADS_PER_SCOPE} sujets
-              </span>
-            </div>
-
-            {canManageActiveEmptyThread ? (
-              <div className="chat-topic-manage">
-                <input
-                  value={chatRenameDraft}
-                  onChange={(event) => setChatRenameDraft(event.target.value)}
-                  placeholder="Renommer le sujet vide"
-                  disabled={chatLoading}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      renameActiveChatTopic()
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  className="chat-topic-rename-btn"
-                  onClick={renameActiveChatTopic}
-                  disabled={!chatRenameDraft.trim() || chatLoading}
-                >
-                  <Pencil size={14} />
-                </button>
-                <button
-                  type="button"
-                  className="chat-topic-delete-btn"
-                  onClick={deleteActiveChatTopic}
-                  disabled={chatThreads.length <= 1 || chatLoading}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ) : null}
-
             {chatClearConfirmOpen ? (
               <div className="chat-clear-confirm" role="status" aria-live="polite">
                 <span>
-                  Effacer la conversation du sujet {activeChatThread.label} pour {selectedProfileName} en {formatMonth(selectedMonth)} ?
+                  Effacer cette conversation ?
                 </span>
                 <div className="chat-clear-confirm-actions">
                   <button type="button" className="chat-clear-confirm-yes" onClick={clearChatConversation}>
@@ -8483,7 +8380,6 @@ Réponse attendue:
                 <div className="chat-empty">
                   <Bot size={32} />
                   <p>Bonjour ! Je peux analyser tes dépenses, ton budget et tes objectifs en quelques secondes.</p>
-                  <small className="chat-empty-meta">Profil: {selectedProfileName} · Période: {formatMonth(selectedMonth)}</small>
                   <div className="chat-suggestions">
                     {[
                       'Résume mon mois',
@@ -8519,21 +8415,60 @@ Réponse attendue:
               <div ref={chatEndRef} />
             </div>
 
+            {chatAttachment ? (
+              <span className="advice-attachment-chip chat-attachment-chip">
+                📎 {chatAttachment.name}
+                <button type="button" onClick={() => setChatAttachment(null)} aria-label="Retirer la pièce jointe">✕</button>
+              </span>
+            ) : null}
             <form
               className="chat-input-row"
-              onSubmit={(event) => { event.preventDefault(); void sendChatMessage() }}
+              onSubmit={(event) => {
+                event.preventDefault()
+                void sendChatMessage(undefined, chatAttachment)
+                setChatAttachment(null)
+              }}
             >
+              <button
+                type="button"
+                className="advice-icon-btn"
+                onClick={() => chatFileInputRef.current?.click()}
+                title="Joindre une image ou un PDF (ticket, facture…)"
+                aria-label="Joindre une pièce jointe"
+                disabled={chatLoading}
+              >
+                <Paperclip size={16} />
+              </button>
+              {speechRecognitionCtor ? (
+                <button
+                  type="button"
+                  className={`advice-icon-btn${chatListening ? ' advice-icon-btn--live' : ''}`}
+                  onClick={toggleChatDictation}
+                  title={chatListening ? 'Arrêter la dictée' : 'Dicter la question'}
+                  aria-label={chatListening ? 'Arrêter la dictée' : 'Dicter la question'}
+                  disabled={chatLoading}
+                >
+                  <Mic size={16} />
+                </button>
+              ) : null}
               <input
                 ref={chatInputRef}
                 value={chatInput}
                 onChange={(event) => setChatInput(event.target.value)}
-                placeholder="Pose une question…"
+                placeholder={chatListening ? 'Cash vous écoute…' : 'Posez une question…'}
                 disabled={chatLoading}
                 autoFocus
               />
               <button type="submit" disabled={!chatInput.trim() || chatLoading}>
                 {chatLoading ? <span className="inline-loader" aria-hidden="true" /> : <Send size={16} />}
               </button>
+              <input
+                type="file"
+                hidden
+                ref={chatFileInputRef}
+                accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+                onChange={handleChatFile}
+              />
             </form>
           </div>
         ) : null}

@@ -7536,7 +7536,7 @@ h1 {
 }
 
 .chat-clear-btn {
-  margin-left: 0.4rem;
+  margin-left: auto;
   width: 1.75rem;
   height: 1.75rem;
   border-radius: 0.45rem;
@@ -10519,4 +10519,49 @@ button.stats-month-title {
 .stats-month-popover__grid button:disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+/* Bouton effacer du chat : rester lisible même désactivé. */
+.chat-clear-btn:disabled {
+  opacity: 0.5;
+}
+
+.chat-attachment-chip {
+  margin: 0 0.9rem 0.4rem;
+}
+
+/* ── Bulle d'invitation de Cash (près de la bulle flottante) ──────── */
+.chat-fab-nudge {
+  position: fixed;
+  bottom: 5.4rem;
+  right: 1.5rem;
+  z-index: 199;
+  max-width: 15.5rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 1rem 1rem 0.25rem 1rem;
+  border: 1px solid rgba(107, 91, 138, 0.55);
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: left;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  animation: nudge-in 480ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+
+.chat-fab-nudge:hover {
+  border-color: rgba(107, 91, 138, 0.9);
+}
+
+@keyframes nudge-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
