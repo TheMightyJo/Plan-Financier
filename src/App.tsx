@@ -2282,8 +2282,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     setReportFeedback(null)
     const result = await sendTestReport()
     if (result.ok) {
-      setReportFeedback({ kind: 'ok', text: `✅ Rapport envoyé à ${userEmail} — vérifiez votre boîte mail.` })
-      showToast('📧 Rapport test envoyé')
+      showToast(`✅ Rapport envoyé à ${userEmail} — vérifiez votre boîte mail.`)
     } else {
       setReportFeedback({
         kind: 'error',
