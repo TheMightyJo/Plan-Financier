@@ -3,7 +3,6 @@ import { X, Download, Trash2, ShieldAlert, FileText } from 'lucide-react'
 import type { Account, RecurringRule, SavingsTarget, Transaction } from '../types'
 import { supabase } from '../supabase'
 import { logAuditEvent } from '../lib/auditLog'
-import { verifyParentPin } from '../security'
 
 type Props = {
   userEmail: string
@@ -40,7 +39,6 @@ export function PrivacyPanel({
 }: Props) {
   const [confirmStep, setConfirmStep] = useState<'idle' | 'confirming'>('idle')
   const [confirmEmail, setConfirmEmail] = useState('')
-  const [confirmPin, setConfirmPin] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -92,12 +90,6 @@ export function PrivacyPanel({
       setError('L\'email ne correspond pas à votre compte.')
       return
     }
-    const pinOk = await verifyParentPin(confirmPin)
-    if (!pinOk) {
-      setError('PIN parent incorrect.')
-      return
-    }
-
     setDeleting(true)
 
     // 1. Logger la demande d'effacement AVANT de signOut (sinon plus de session)
@@ -262,19 +254,7 @@ export function PrivacyPanel({
                   required
                 />
               </label>
-              <label>
-                <span>Et votre PIN parent</span>
-                <input
-                  type="password"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={confirmPin}
-                  onChange={(e) => setConfirmPin(e.target.value)}
-                  placeholder="••••"
-                  autoComplete="off"
-                  required
-                />
-              </label>
+
 
               {error ? <p className="privacy-error">{error}</p> : null}
 
@@ -292,7 +272,6 @@ export function PrivacyPanel({
                   onClick={() => {
                     setConfirmStep('idle')
                     setConfirmEmail('')
-                    setConfirmPin('')
                     setError(null)
                   }}
                   disabled={deleting}

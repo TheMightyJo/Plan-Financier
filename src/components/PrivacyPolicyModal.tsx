@@ -89,12 +89,12 @@ function PrivacyContent() {
           objectifs, règles récurrentes, catégories personnalisées.
         </li>
         <li>
-          <strong>Sécurité locale</strong> : PIN parent haché (PBKDF2-SHA256
+          <strong>Sécurité locale</strong> : données protégées sur l'appareil (PBKDF2-SHA256
           200 000 itérations + sel aléatoire), <em>jamais transmis au serveur</em>.
         </li>
         <li>
           <strong>Logs d'audit</strong> (connexion, déconnexion, export, suppression,
-          changement de PIN) avec horodatage et hash anonyme du User-Agent
+          événements de sécurité) avec horodatage et hash anonyme du User-Agent
           (8 premiers octets seulement).
         </li>
         <li>
@@ -120,7 +120,7 @@ function PrivacyContent() {
       <h3>4. Bases légales (Art. 6 RGPD)</h3>
       <ul>
         <li>Création de compte + stockage des données métier : <em>exécution du contrat</em></li>
-        <li>Hachage PIN parent : <em>intérêt légitime + sécurité</em></li>
+        <li>Protection des données locales : <em>intérêt légitime + sécurité</em></li>
         <li>Assistant IA (optionnel) : <em>consentement explicite</em></li>
         <li>Logs d'audit : <em>intérêt légitime + obligation légale</em></li>
       </ul>

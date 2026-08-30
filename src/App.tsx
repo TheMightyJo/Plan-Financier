@@ -46,18 +46,14 @@ import {
   Zap,
 } from 'lucide-react'
 import {
-  addPinChangeLog,
   clearPinChangeLogs,
   DEFAULT_PARENT_PIN,
   defaultSensitiveState,
   loadSensitiveState,
-  loadPinChangeLogs,
   resetSensitiveStorage,
   saveSensitiveState,
   setParentPin,
-  verifyParentPin,
   type AuthRole,
-  type PinChangeLog,
   type SensitiveState,
 } from './security'
 import {
@@ -75,7 +71,7 @@ import {
   parseCsvRawData,
   parseCsvTransactions,
 } from './lib/csvImport'
-import { BACKUP_VERSION, encryptBackupPayload, decryptBackupPayload } from './lib/backup'
+import { BACKUP_VERSION, decryptBackupPayload } from './lib/backup'
 import { generateOnboardingPlan } from './lib/onboardingPlan'
 import {
   AVATAR_MAX_DATA_URI_LENGTH,
@@ -89,6 +85,7 @@ import { generateDueTransactions, getOccurrencesBetween } from './lib/recurring'
 import { loadRecurringRules, saveRecurringRules } from './repos/recurringRulesRepo'
 import { RecurringRulesPanel } from './components/RecurringRulesPanel'
 import { FirstBudgetTour } from './components/FirstBudgetTour'
+import { LandingPage } from './components/LandingPage'
 import { AccountsPanel } from './components/AccountsPanel'
 import { TransactionHistoryPanel } from './components/TransactionHistoryPanel'
 import { ExpenseCalendar } from './components/ExpenseCalendar'
@@ -1004,14 +1001,15 @@ function App() {
   const [activeSectionId, setActiveSectionId] = useState('overview')
   const [isSecurityReady, setIsSecurityReady] = useState(false)
   const [authProviderReady, setAuthProviderReady] = useState(false)
-  // Seul le setter est utilisé : l'état sert à persister les réglages PIN
   // (saveSensitiveState) — plus aucune lecture depuis la fin des sessions locales.
   const [, setSensitiveState] = useState<SensitiveState>(defaultSensitiveState)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   // Mode démo : visite guidée sans compte — données en mémoire uniquement
   // (toutes les persistances localStorage sont désactivées tant qu'il est actif).
   const [demoMode, setDemoMode] = useState(false)
-  const [authRole, setAuthRole] = useState<AuthRole>('Parent')
+  // Site vitrine affiché avant l'écran de connexion pour les visiteurs.
+  const [showLanding, setShowLanding] = useState(true)
+  const [, setAuthRole] = useState<AuthRole>('Parent')
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>(
     () => (window.localStorage.getItem(THEME_STORAGE_KEY) as 'dark' | 'light' | 'system') ?? 'system'
   )
@@ -1037,7 +1035,6 @@ function App() {
   }, [settingsSuccess])
   const [claudeTestState, setClaudeTestState] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
   const [claudeTestMessage, setClaudeTestMessage] = useState('')
-  const [pinLogs, setPinLogs] = useState<PinChangeLog[]>([])
   const [settingsForm, setSettingsForm] = useState({
     parentPinValidation: '',
     newParentPin: '',
@@ -2171,7 +2168,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     const initializeSecurity = async () => {
       const loaded = await loadSensitiveState()
       setSensitiveState(loaded)
-      setPinLogs(loadPinChangeLogs())
       setStoredCsvMappings(loadStoredCsvMappings())
       setSettingsForm((previous) => ({
         ...previous,
@@ -4708,16 +4704,6 @@ Réponse attendue:
     setSettingsError('')
     setSettingsSuccess('')
 
-    const pin = window.prompt('Entrez le PIN parent pour chiffrer la sauvegarde:')
-    if (!pin) {
-      return
-    }
-
-    if (!(await verifyParentPin(pin))) {
-      setSettingsError('PIN parent incorrect. Sauvegarde annulee.')
-      return
-    }
-
     const payload: BackupPayload = {
       profiles,
       activeProfileId: selectedProfileId,
@@ -4728,15 +4714,17 @@ Réponse attendue:
       storedCsvMappings,
     }
 
-    const encrypted = await encryptBackupPayload(payload, pin)
-    const blob = new Blob([JSON.stringify(encrypted, null, 2)], { type: 'application/json' })
+    const blob = new Blob(
+      [JSON.stringify({ pf: 'backup', version: 2, payload }, null, 2)],
+      { type: 'application/json' },
+    )
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
     link.download = `plan-financier-backup-${new Date().toISOString().slice(0, 10)}.json`
     link.click()
     URL.revokeObjectURL(url)
-    setSettingsSuccess('Sauvegarde chiffree exportee.')
+    setSettingsSuccess('Sauvegarde exportée — gardez ce fichier en lieu sûr.')
   }
 
   const handleRestoreEncryptedBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -4751,23 +4739,24 @@ Réponse attendue:
 
     try {
       const content = await file.text()
-      const encrypted = JSON.parse(content) as EncryptedBackup
-      if (
-        encrypted.version !== BACKUP_VERSION ||
-        typeof encrypted.salt !== 'string' ||
-        typeof encrypted.iv !== 'string' ||
-        typeof encrypted.cipher !== 'string'
+      const parsed = JSON.parse(content) as { pf?: string; version?: number; payload?: BackupPayload } & EncryptedBackup
+      let payload: BackupPayload
+      if (parsed.pf === 'backup' && parsed.version === 2 && parsed.payload) {
+        payload = parsed.payload
+      } else if (
+        parsed.version === BACKUP_VERSION &&
+        typeof parsed.salt === 'string' &&
+        typeof parsed.iv === 'string' &&
+        typeof parsed.cipher === 'string'
       ) {
+        // Ancien format chiffré : on demande le PIN utilisé à l'époque.
+        const legacyPin = window.prompt('Cette sauvegarde vient d\u2019une ancienne version et est chiffrée.\nEntrez le PIN parent utilisé à l\u2019époque pour la déverrouiller :')
+        if (!legacyPin) return
+        payload = await decryptBackupPayload(parsed, legacyPin)
+      } else {
         setSettingsError('Format de sauvegarde invalide.')
         return
       }
-
-      const pin = window.prompt('Entrez le PIN parent pour restaurer la sauvegarde:')
-      if (!pin) {
-        return
-      }
-
-      const payload = await decryptBackupPayload(encrypted, pin)
       const restoredProfiles = payload.profiles
         .map((profile) => normalizeProfile(profile))
         .filter((profile): profile is UserProfile => profile !== null)
@@ -4831,7 +4820,7 @@ Réponse attendue:
       handleManagedProfileSelection(restoredActiveProfileId)
       setSettingsSuccess('Sauvegarde restauree avec succes.')
     } catch {
-      setSettingsError('Echec de restauration: PIN invalide ou fichier corrompu.')
+      setSettingsError('Échec de restauration : fichier corrompu (ou ancien PIN incorrect).')
     } finally {
       event.target.value = ''
     }
@@ -4897,81 +4886,6 @@ Réponse attendue:
     setSettingsSuccess('Profil ajouté.')
   }
 
-  const handlePinUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (blockInDemo('le changement de PIN')) return
-    event.preventDefault()
-    setSettingsError('')
-    setSettingsSuccess('')
-
-    if (authRole !== 'Parent') {
-      setSettingsError('Seul le parent peut modifier les PIN.')
-      return
-    }
-
-    if (!(await verifyParentPin(settingsForm.parentPinValidation))) {
-      setSettingsError('PIN parent incorrect.')
-      return
-    }
-
-    if (settingsForm.newParentPin.length === 0) {
-      setSettingsError('Entrez un nouveau PIN pour le mettre a jour.')
-      return
-    }
-
-    if (settingsForm.newParentPin.length < 4 || settingsForm.newParentPin.length > 6) {
-      setSettingsError('Le nouveau PIN doit contenir entre 4 et 6 chiffres.')
-      return
-    }
-
-    if (settingsForm.newParentPin !== settingsForm.confirmNewParentPin) {
-      setSettingsError('La confirmation du nouveau PIN parent ne correspond pas.')
-      return
-    }
-
-    const nextSensitiveState = await setParentPin(settingsForm.newParentPin)
-    setSensitiveState(nextSensitiveState)
-    await saveSensitiveState(nextSensitiveState)
-    setPinLogs(
-      addPinChangeLog({
-        actor: 'Parent',
-        parentPinChanged: true,
-      }),
-    )
-    void logAuditEvent('pin_change')
-    setSettingsSuccess('PIN parent mis a jour avec succes.')
-    setSettingsForm({
-      parentPinValidation: '',
-      newParentPin: '',
-      confirmNewParentPin: '',
-      sessionDurationDays: String(nextSensitiveState.sessionDurationDays),
-      resetPinValidation: '',
-      newProfileName: '',
-      newProfileBudget: settingsForm.newProfileBudget,
-      manageProfileId: managedProfile.id,
-      manageProfileName: managedProfile.name,
-      manageProfileBudget: String(managedProfile.monthlyBudget),
-    })
-  }
-
-  const handleResetLocalData = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setSettingsError('')
-    setSettingsSuccess('')
-
-    if (authRole !== 'Parent') {
-      setSettingsError('Seul le parent peut reinitialiser les donnees.')
-      return
-    }
-
-    if (!(await verifyParentPin(settingsForm.resetPinValidation))) {
-      setSettingsError('PIN parent incorrect pour la reinitialisation.')
-      return
-    }
-
-    setShowResetConfirmModal(true)
-  }
-
   const resetLocalState = async (nextParentPin: string) => {
     await resetSensitiveStorage()
     const updatedState = await setParentPin(nextParentPin)
@@ -4992,7 +4906,6 @@ Réponse attendue:
     }
 
     clearPinChangeLogs()
-    setPinLogs([])
     setTransactions(baseTransactions)
     setProfiles([defaultProfile])
     setSelectedMember(defaultProfile.id)
@@ -5050,7 +4963,10 @@ Réponse attendue:
   }
 
   if (!isAuthenticated && !demoMode) {
-    return <AuthScreen onTryDemo={enterDemoMode} />
+    if (showLanding) {
+      return <LandingPage onLogin={() => setShowLanding(false)} onTryDemo={enterDemoMode} />
+    }
+    return <AuthScreen onTryDemo={enterDemoMode} onBackToSite={() => setShowLanding(true)} />
   }
 
   return (
@@ -5734,7 +5650,6 @@ Réponse attendue:
                     items: [
                       ['backup', '💾', 'Sauvegarde'],
                       ['report', '📧', 'Rapport par email'],
-                      ['security', '🔐', 'Sécurité'],
                     ],
                   },
                   {
@@ -6249,71 +6164,6 @@ Réponse attendue:
                   </div>
                 ) : null}
 
-                {settingsSection === 'security' ? (
-                  <div className="settings-section-grid">
-                    <article className="glass-card settings-section-card form-panel">
-                      <div className="panel-title">
-                        <h2>Sécurité</h2>
-                        <p>Le PIN parent chiffre vos sauvegardes et verrouille les actions destructives (reset).</p>
-                      </div>
-                      <form onSubmit={(event) => void handlePinUpdate(event)}>
-                        <label>
-                          PIN parent actuel
-                          <input
-                            required
-                            type="password"
-                            inputMode="numeric"
-                            maxLength={6}
-                            value={settingsForm.parentPinValidation}
-                            onChange={(event) => updateSettingsValue('parentPinValidation', event.target.value)}
-                            placeholder="Entrez le PIN parent actuel"
-                          />
-                        </label>
-                        <label>
-                          Nouveau PIN parent (optionnel)
-                          <input
-                            type="password"
-                            inputMode="numeric"
-                            maxLength={6}
-                            value={settingsForm.newParentPin}
-                            onChange={(event) => updateSettingsValue('newParentPin', event.target.value)}
-                            placeholder="4 à 6 chiffres"
-                          />
-                        </label>
-                        <label>
-                          Confirmer le nouveau PIN parent
-                          <input
-                            type="password"
-                            inputMode="numeric"
-                            maxLength={6}
-                            value={settingsForm.confirmNewParentPin}
-                            onChange={(event) => updateSettingsValue('confirmNewParentPin', event.target.value)}
-                            placeholder="Retapez le nouveau PIN parent"
-                          />
-                        </label>
-                        <button type="submit">Mettre à jour le PIN</button>
-                      </form>
-                    </article>
-
-                    <article className="glass-card settings-section-card pin-log-zone">
-                      <h3>Journal local des changements PIN</h3>
-                      {pinLogs.length === 0 ? (
-                        <p className="auth-note">Aucun changement PIN enregistré pour le moment.</p>
-                      ) : (
-                        <ul>
-                          {pinLogs.slice(0, 8).map((entry) => (
-                            <li key={entry.id}>
-                              <span>
-                                {new Date(entry.at).toLocaleString('fr-FR')} - {entry.actor}
-                              </span>
-                              <small>{entry.parentPinChanged ? 'PIN parent' : 'Mise à jour sécurité'}</small>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </article>
-                  </div>
-                ) : null}
 
                 {settingsSection === 'backup' ? (
                   <div className="settings-section-grid">
@@ -6358,10 +6208,10 @@ Réponse attendue:
                     <article className="glass-card settings-section-card form-panel">
                       <div className="panel-title">
                         <h2>
-                          Sauvegarde chiffrée
-                          <InfoHint text="Le fichier exporté est chiffré avec votre PIN : vous pouvez le déplacer d'un appareil à l'autre en toute sécurité." />
+                          Sauvegarde de vos données
+                          <InfoHint text="Le fichier exporté contient toutes vos données : gardez-le en lieu sûr, il permet de tout restaurer sur n'importe quel appareil." />
                         </h2>
-                        <p>Exporte ou restaure les données locales avec le PIN parent.</p>
+                        <p>Exportez ou restaurez toutes vos données en un fichier.</p>
                       </div>
                       <div className="backup-zone backup-zone--standalone">
                         <div className="settings-inline-actions">
@@ -6481,27 +6331,26 @@ Réponse attendue:
                 {settingsSection === 'reset' ? (
                   <div className="settings-section-grid">
                     <article className="glass-card settings-section-card form-panel danger-zone danger-zone--standalone">
-                      <h3>Zone de réinitialisation</h3>
+                      <h3>⚠️ Tout remettre à zéro</h3>
                       <p className="auth-note">
-                        Cette action supprime les transactions locales, les PIN personnalisés et les sessions mémorisées.
+                        Efface toutes les données enregistrées sur cet appareil : opérations,
+                        profils, poches, objectifs et réglages. L'application repart comme au
+                        premier jour.
                       </p>
-                      <form onSubmit={(event) => void handleResetLocalData(event)}>
-                        <label>
-                          PIN parent pour confirmer
-                          <input
-                            required
-                            type="password"
-                            inputMode="numeric"
-                            maxLength={6}
-                            value={settingsForm.resetPinValidation}
-                            onChange={(event) => updateSettingsValue('resetPinValidation', event.target.value)}
-                            placeholder="Entrez le PIN parent"
-                          />
-                        </label>
-                        <button type="submit" className="danger-button">
-                          Réinitialiser les données locales
-                        </button>
-                      </form>
+                      <p className="auth-note">
+                        💡 Pensez à exporter une sauvegarde avant (Paramètres → Sauvegarde) si
+                        vous voulez pouvoir revenir en arrière.
+                      </p>
+                      <button
+                        type="button"
+                        className="danger-button"
+                        onClick={() => {
+                          if (blockInDemo('la réinitialisation')) return
+                          setShowResetConfirmModal(true)
+                        }}
+                      >
+                        Réinitialiser les données locales
+                      </button>
                     </article>
                   </div>
                 ) : null}

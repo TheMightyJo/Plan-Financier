@@ -11168,3 +11168,409 @@ button.envelope-card:hover .envelope-card__body {
 .ops-rail__week-head strong {
   font-size: var(--text-2xs);
 }
+
+/* ── Lien retour au site sur l'écran de connexion ─────────────────── */
+.auth-back-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  cursor: pointer;
+  justify-self: start;
+  align-self: flex-start;
+  padding: 0;
+  margin-bottom: 0.6rem;
+}
+
+.auth-back-link:hover {
+  color: var(--text-1);
+}
+
+/* ══ Site vitrine (landing) ═══════════════════════════════════════ */
+.landing {
+  min-height: 100vh;
+  background: var(--bg-1, #2A1810);
+  color: var(--text-1);
+}
+
+.landing-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  padding: 0.85rem clamp(1rem, 4vw, 2.5rem);
+  background: color-mix(in srgb, var(--bg-2) 88%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.landing-brand {
+  font-weight: 800;
+  font-size: var(--text-base);
+  white-space: nowrap;
+}
+
+.landing-nav-links {
+  display: flex;
+  gap: 1.1rem;
+  margin-left: auto;
+}
+
+.landing-nav-links a {
+  color: var(--text-2);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+
+.landing-nav-links a:hover {
+  color: var(--text-1);
+}
+
+.landing-nav-actions {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.landing-login-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-1);
+  border-radius: 0.7rem;
+  padding: 0.5rem 0.9rem;
+  font-weight: 700;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.landing-login-btn:hover {
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+.landing-hero {
+  max-width: 62rem;
+  margin: 0 auto;
+  padding: clamp(2.5rem, 8vw, 5rem) 1.2rem 2rem;
+  text-align: center;
+}
+
+.landing-hero h1 {
+  font-size: clamp(2rem, 6vw, 3.4rem);
+  line-height: 1.12;
+  margin: 0 0 1rem;
+  letter-spacing: -0.02em;
+}
+
+.landing-hero h1 em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+.landing-hero-sub {
+  font-size: clamp(1rem, 2.4vw, 1.2rem);
+  color: var(--text-2);
+  max-width: 40rem;
+  margin: 0 auto 1.6rem;
+  line-height: 1.55;
+}
+
+.landing-hero-ctas {
+  display: flex;
+  gap: 0.8rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.landing-cta-main {
+  font-size: var(--text-base);
+  padding: 0.85rem 1.6rem;
+}
+
+.landing-cta-demo {
+  font-size: var(--text-base);
+  padding: 0.85rem 1.3rem;
+}
+
+.landing-hero-note {
+  margin: 0.9rem 0 0;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+
+.landing-preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 1rem;
+  max-width: 46rem;
+  margin: 2.6rem auto 0;
+}
+
+.landing-preview-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1.1rem;
+  border-radius: 1rem;
+  border: 1.5px solid var(--border);
+  background: var(--surface-soft);
+  text-align: left;
+  animation: fade-up 700ms ease both;
+}
+
+.landing-preview-card:nth-child(2) { animation-delay: 120ms; }
+.landing-preview-card:nth-child(3) { animation-delay: 240ms; }
+
+.landing-preview-label {
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 800;
+  color: var(--text-2);
+}
+
+.landing-preview-card strong {
+  font-size: 1.35rem;
+}
+
+.landing-preview-card small {
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+
+.landing-preview-bar {
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--border-soft);
+  overflow: hidden;
+}
+
+.landing-preview-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2, var(--accent)));
+}
+
+.landing-section {
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: clamp(2.2rem, 6vw, 4rem) 1.2rem;
+}
+
+.landing-section h2 {
+  text-align: center;
+  font-size: clamp(1.5rem, 4vw, 2.2rem);
+  margin: 0 0 0.6rem;
+}
+
+.landing-section-sub {
+  text-align: center;
+  color: var(--text-2);
+  margin: 0 0 2rem;
+}
+
+.landing-section--alt {
+  max-width: none;
+  background: var(--surface-soft);
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.landing-section--alt > * {
+  max-width: 68rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.landing-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(270px, 100%), 1fr));
+  gap: 1.1rem;
+  margin-top: 1.8rem;
+}
+
+.landing-feature {
+  padding: 1.3rem;
+  border-radius: 1rem;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+}
+
+.landing-feature-icon {
+  font-size: 1.8rem;
+}
+
+.landing-feature h3 {
+  margin: 0;
+  font-size: var(--text-base);
+}
+
+.landing-feature p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.landing-plans {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 1.2rem;
+  margin-top: 2rem;
+  align-items: start;
+}
+
+.landing-plan {
+  position: relative;
+  padding: 1.6rem 1.4rem;
+  border-radius: 1.1rem;
+  border: 1.5px solid var(--border);
+  background: var(--bg-2);
+  display: grid;
+  gap: 0.9rem;
+}
+
+.landing-plan--highlight {
+  border-color: rgba(var(--accent-rgb), 0.7);
+  box-shadow: 0 14px 40px rgba(var(--accent-rgb), 0.18);
+}
+
+.landing-plan-badge {
+  position: absolute;
+  top: -0.8rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(130deg, var(--accent), var(--accent-2, var(--accent)));
+  color: var(--accent-contrast, #fff);
+  font-size: var(--text-2xs);
+  font-weight: 800;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.landing-plan h3 {
+  margin: 0;
+  font-size: var(--text-base);
+}
+
+.landing-plan-price {
+  margin: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.landing-plan-price strong {
+  font-size: 2rem;
+}
+
+.landing-plan-price small {
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+
+.landing-plan ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+  color: var(--text-1);
+  font-size: var(--text-sm);
+}
+
+.landing-plans-note {
+  text-align: center;
+  margin: 1.6rem auto 0;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  max-width: 34rem;
+}
+
+.landing-faq {
+  max-width: 44rem;
+  margin: 1.8rem auto 0;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.landing-faq-item {
+  border: 1px solid var(--border-soft);
+  border-radius: 0.9rem;
+  background: var(--surface-soft);
+  overflow: hidden;
+}
+
+.landing-faq-item > button {
+  appearance: none;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-weight: 700;
+  font-size: var(--text-sm);
+  text-align: left;
+  padding: 0.9rem 1.1rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  cursor: pointer;
+}
+
+.landing-faq-item > p {
+  margin: 0;
+  padding: 0 1.1rem 1rem;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.landing-final-cta {
+  text-align: center;
+  padding: clamp(2.5rem, 7vw, 4.5rem) 1.2rem;
+}
+
+.landing-final-cta h2 {
+  font-size: clamp(1.4rem, 4vw, 2rem);
+  margin: 0 0 1.4rem;
+}
+
+.landing-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.4rem clamp(1rem, 4vw, 2.5rem);
+  border-top: 1px solid var(--border-soft);
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 640px) {
+  .landing-nav-links { display: none; }
+  .landing-signup-btn { display: none; }
+}
+
+/* La vitrine impose ses couleurs de texte (les styles globaux de titres
+   de l'app supposent le fond café). */
+.landing h1,
+.landing h2,
+.landing h3,
+.landing strong,
+.landing .landing-brand {
+  color: var(--text-1);
+}
+
+.landing .landing-hero h1 em {
+  color: var(--accent);
+}

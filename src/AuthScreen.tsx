@@ -179,9 +179,11 @@ const supabaseAuthErrorMessage = (rawMessage: string): string => {
 type AuthScreenProps = {
   /** Si fourni : bouton « Essayer sans compte » qui lance le mode démo. */
   onTryDemo?: () => void
+  /** Optionnel : retour au site vitrine. */
+  onBackToSite?: () => void
 }
 
-export default function AuthScreen({ onTryDemo }: AuthScreenProps = {}) {
+export default function AuthScreen({ onTryDemo, onBackToSite }: AuthScreenProps = {}) {
   const [mode, setMode] = useState<Mode>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -321,6 +323,12 @@ export default function AuthScreen({ onTryDemo }: AuthScreenProps = {}) {
     <main className="auth-shell">
       <FloatingBg />
       <section className="glass-card auth-card">
+
+        {onBackToSite ? (
+          <button type="button" className="auth-back-link" onClick={onBackToSite}>
+            ← Retour au site
+          </button>
+        ) : null}
 
         {!supabaseReady ? (
           <div className="auth-config-banner" role="alert">
