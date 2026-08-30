@@ -9768,12 +9768,15 @@ h1 {
   display: grid;
   gap: 0.45rem;
   margin-top: 0.2rem;
+  /* Même précaution Safari que .budget-advice-rail : colonne bornée. */
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .advice-chat-row {
   display: flex;
   gap: 0.4rem;
   align-items: center;
+  min-width: 0;
 }
 
 .advice-icon-btn {
@@ -9824,7 +9827,9 @@ h1 {
 }
 
 .advice-chat-form input {
-  flex: 1 1 auto;
+  /* Base 0 : le champ se partage l'espace restant au lieu d'imposer sa
+     largeur intrinsèque (Safari poussait le bouton ➤ hors de la carte). */
+  flex: 1 1 0%;
   min-width: 0;
   border-radius: 0.7rem;
   border: 1px solid var(--border);
