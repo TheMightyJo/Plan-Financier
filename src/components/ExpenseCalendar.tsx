@@ -26,14 +26,8 @@ type Props = {
 const WEEKDAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
 const MONTH_LABELS = ['Janv', 'Févr', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc']
 
-/** Format compact pour les cases (« 42 € », « 1,2k € »). */
-const compactEuro = (value: number): string => {
-  if (value >= 1000) {
-    const k = value / 1000
-    return `${k.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}k €`
-  }
-  return `${Math.round(value)} €`
-}
+/** Montants des cases en entiers pleins (« 42 € », « 2 900 € ») — jamais de « k ». */
+const compactEuro = (value: number): string => `${Math.round(value).toLocaleString('fr-FR')} €`
 
 const formatMonthTitle = (month: string): string => {
   const [year, monthIndex] = month.split('-').map(Number)

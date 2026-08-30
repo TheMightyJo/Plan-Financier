@@ -624,11 +624,15 @@ const normalizeTransaction = (value: unknown, knownProfileIds?: Set<string>): Tr
   const rawEnvelope = typeof rawEnvelopeValue === 'string' ? rawEnvelopeValue.trim() : ''
   const normalizedEnvelope = rawEnvelope === 'Fille' ? '' : rawEnvelope
   const envelope = normalizedEnvelope ? normalizedEnvelope.slice(0, 60) : inferEnvelope(category)
+  const rawBudgetMonth = (value as { budgetMonth?: unknown }).budgetMonth
+  const budgetMonth =
+    typeof rawBudgetMonth === 'string' && /^\d{4}-\d{2}$/.test(rawBudgetMonth) ? rawBudgetMonth : undefined
 
   return {
     id: candidate.id,
     label: candidate.label,
     amount: candidate.amount,
+    ...(budgetMonth ? { budgetMonth } : {}),
     category,
     member: member || defaultProfile.id,
     date: candidate.date,
@@ -2743,7 +2747,9 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   )
 
   const activeMonthTransactions = useMemo(
-    () => filteredTransactions.filter((item) => item.date.startsWith(selectedMonth)),
+    // Le mois de budget prime sur le mois de la date : une dépense imputée
+    // à septembre compte dans les stats de septembre, même payée en août.
+    () => filteredTransactions.filter((item) => (item.budgetMonth ?? item.date.slice(0, 7)) === selectedMonth),
     [filteredTransactions, selectedMonth],
   )
 
@@ -3381,6 +3387,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     envelope: 'Maison' as Envelope,
     tags: '',
     recurrence: 'none' as 'none' | RecurringFrequency,
+    /** '' = compte sur le mois de la date ; sinon YYYY-MM choisi. */
+    budgetMonth: '',
   })
 
   // Null = création ; sinon id de la transaction en cours de modification.
@@ -3458,7 +3466,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }
 
   const openQuickAdd = (date: string) => {
-    setQuickAddForm({ label: '', amount: '', kind: 'depense', category: 'Courses', envelope: 'Maison', tags: '', recurrence: 'none' })
+    setQuickAddForm({ label: '', amount: '', kind: 'depense', category: 'Courses', envelope: 'Maison', tags: '', recurrence: 'none', budgetMonth: '' })
     setQuickAddEditingId(null)
     quickAddTouchedRef.current = { category: false, tags: false }
     quickAddAiIconRef.current = null
@@ -3475,6 +3483,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       envelope: tx.envelope,
       tags: (tx.tags ?? []).join(', '),
       recurrence: 'none',
+      budgetMonth: tx.budgetMonth ?? '',
     })
     setQuickAddEditingId(tx.id)
     setQuickAddDate(tx.date)
@@ -3514,6 +3523,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
                 envelope: quickAddForm.envelope,
                 date: quickAddDate,
                 ...(parsedTags.length > 0 ? { tags: parsedTags } : { tags: undefined }),
+                budgetMonth: quickAddForm.budgetMonth || undefined,
               }
             : tx,
         ),
@@ -3571,6 +3581,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       ...(icon ? { icon } : {}),
       ...(parsedTags.length > 0 ? { tags: parsedTags } : {}),
       ...(createdRuleId ? { recurringRuleId: createdRuleId } : {}),
+      ...(quickAddForm.budgetMonth ? { budgetMonth: quickAddForm.budgetMonth } : {}),
       accountId: resolvedAccountId,
     }
     setTransactions((previous) => [...previous, newTransaction])
@@ -8152,6 +8163,23 @@ Réponse attendue:
                 />
               </label>
             </div>
+            {quickAddForm.kind === 'depense' &&
+            (Number(quickAddForm.amount.replace(',', '.')) >= 150 || quickAddForm.budgetMonth) ? (
+              <label className="quick-add-budget-month">
+                💡 Grosse dépense — la compter sur le budget d'un autre mois ?
+                <select
+                  value={quickAddForm.budgetMonth}
+                  onChange={(event) =>
+                    setQuickAddForm((previous) => ({ ...previous, budgetMonth: event.target.value }))
+                  }
+                >
+                  <option value="">Non — sur le mois de la dépense</option>
+                  {[shiftMonth(quickAddDate.slice(0, 7), 1), shiftMonth(quickAddDate.slice(0, 7), 2), shiftMonth(quickAddDate.slice(0, 7), -1)].map((m) => (
+                    <option key={m} value={m}>Oui — budget de {formatMonth(m)}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <div className="quick-add-selects">
               <label>
                 Catégorie

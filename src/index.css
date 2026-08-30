@@ -9965,3 +9965,16 @@ h1 {
   color: var(--text-2);
   font-size: var(--text-2xs);
 }
+
+/* ── Modale : imputation d'une grosse dépense sur un autre mois ──── */
+.quick-add-budget-month {
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.7rem;
+  border: 1px dashed rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.06);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-1);
+  display: grid;
+  gap: 0.4rem;
+}

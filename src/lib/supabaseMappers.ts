@@ -154,6 +154,8 @@ type TransactionMeta = {
   rec?: string
   tags?: string[]
   icon?: string
+  /** Mois de budget YYYY-MM quand différent du mois de la date. */
+  bm?: string
 }
 
 const encodeTransactionMeta = (transaction: Transaction): string =>
@@ -166,6 +168,7 @@ const encodeTransactionMeta = (transaction: Transaction): string =>
     ...(transaction.recurringRuleId ? { rec: transaction.recurringRuleId } : {}),
     ...(transaction.tags && transaction.tags.length > 0 ? { tags: transaction.tags } : {}),
     ...(transaction.icon ? { icon: transaction.icon } : {}),
+    ...(transaction.budgetMonth ? { bm: transaction.budgetMonth } : {}),
   } satisfies TransactionMeta)
 
 const decodeTransactionMeta = (notes: string | null): Partial<TransactionMeta> => {
@@ -229,6 +232,7 @@ export const transactionFromRow = (row: TransactionRow): Transaction => {
     ...(meta.rec ? { recurringRuleId: meta.rec } : {}),
     ...(Array.isArray(meta.tags) && meta.tags.length > 0 ? { tags: meta.tags } : {}),
     ...(typeof meta.icon === 'string' && meta.icon ? { icon: meta.icon } : {}),
+    ...(typeof meta.bm === 'string' && /^\d{4}-\d{2}$/.test(meta.bm) ? { budgetMonth: meta.bm } : {}),
     accountId: row.account_id,
   }
 }
