@@ -84,10 +84,10 @@ import {
   readAndResizeImage,
 } from './lib/avatar'
 import { isValidTxIcon, suggestMerchantIcon } from './lib/merchantIcons'
-import { generateDueTransactions } from './lib/recurring'
+import { generateDueTransactions, getOccurrencesBetween } from './lib/recurring'
 import { loadRecurringRules, saveRecurringRules } from './repos/recurringRulesRepo'
 import { RecurringRulesPanel } from './components/RecurringRulesPanel'
-import { FirstTransactionTour } from './components/FirstTransactionTour'
+import { FirstBudgetTour } from './components/FirstBudgetTour'
 import { AccountsPanel } from './components/AccountsPanel'
 import { TransactionHistoryPanel } from './components/TransactionHistoryPanel'
 import { ExpenseCalendar } from './components/ExpenseCalendar'
@@ -118,7 +118,7 @@ import {
   sendTestReport,
   type ReportPrefs,
 } from './repos/reportPrefsRepo'
-import { shiftMonth } from './lib/calendar'
+import { shiftDay, shiftMonth } from './lib/calendar'
 import {
   computeConsolidatedBalance,
   balanceByAccountType,
@@ -1650,9 +1650,14 @@ Règles :
     }
   }, [isAuthenticated])
 
-  const completeFirstTxTour = (transaction?: Transaction) => {
-    if (transaction) {
-      setTransactions((previous) => [...previous, transaction])
+  const completeFirstTxTour = (budgetValue?: number) => {
+    if (budgetValue) {
+      setProfiles((previous) =>
+        previous.map((profile) =>
+          profile.id === selectedProfileId ? { ...profile, monthlyBudget: budgetValue } : profile,
+        ),
+      )
+      showToast(`🎯 Budget mensuel défini : ${budgetValue.toLocaleString('fr-FR')} €`)
     }
     window.localStorage.setItem(FIRST_TX_TOUR_DONE_KEY, '1')
     setShowFirstTxTour(false)
@@ -3261,6 +3266,41 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     return tips.slice(0, 3)
   }, [budget, envelopeBreakdown, goalProgress, monthlyNet])
 
+  // ── Rail latéral de la vue Dépenses (échéances, top dépenses, tags) ──
+  const upcomingCharges = useMemo(() => {
+    const from = shiftDay(todayIso, 1)
+    const to = shiftDay(todayIso, 30)
+    const materialized = new Set(
+      activeTransactions.filter((t) => t.recurringRuleId).map((t) => `${t.recurringRuleId}|${t.date}`),
+    )
+    const items: Array<{ date: string; label: string; amount: number; kind: TransactionKind }> = []
+    for (const rule of recurringRules) {
+      if (rule.pausedAt !== null || rule.member !== selectedProfileId) continue
+      for (const date of getOccurrencesBetween(rule, from, to)) {
+        if (materialized.has(`${rule.id}|${date}`)) continue
+        items.push({ date, label: rule.label, amount: rule.amount, kind: rule.kind })
+      }
+    }
+    return items.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6)
+  }, [recurringRules, activeTransactions, selectedProfileId, todayIso])
+
+  const topExpensesMonth = useMemo(
+    () =>
+      activeMonthTransactions
+        .filter((t) => t.kind === 'depense')
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 5),
+    [activeMonthTransactions],
+  )
+
+  const topTags = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const tx of activeMonthTransactions) {
+      for (const tag of tx.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
+  }, [activeMonthTransactions])
+
   const recurringItems = useMemo(() => {
     type RecurringEntry = { label: string; avgAmount: number; monthCount: number }
     const labelMap = new Map<string, { amounts: number[]; months: Set<string>; originalLabel: string }>()
@@ -4219,7 +4259,7 @@ Réponse attendue:
   useEffect(() => {
     // L'analyse IA alimente le rail Conseils du Budget, de l'Accueil,
     // des Opérations et de la Famille.
-    if (!['budget', 'overview', 'operations', 'family'].includes(activeSectionId)) {
+    if (!['budget', 'overview', 'family'].includes(activeSectionId)) {
       return
     }
 
@@ -6189,7 +6229,11 @@ Réponse attendue:
           <ul className="operations-category-list">
             {pieData.map((entry) => (
               <li key={entry.name} className="operations-category-item">
+                <span className="recent-tx-dot" style={{ background: colorForCategory(entry.name) }} aria-hidden="true" />
                 <span className="operations-category-name">{entry.name}</span>
+                <small className="operations-category-share">
+                  {monthlyExpense > 0 ? `${Math.round((entry.value / monthlyExpense) * 100)}%` : ''}
+                </small>
                 <span className="operations-category-amount">{euroFormatter.format(entry.value)}</span>
               </li>
             ))}
@@ -7620,7 +7664,64 @@ Réponse attendue:
 
       </div>
 
-      {isActiveView('overview') || isActiveView('operations') || isActiveView('family') ? (
+      {isActiveView('operations') ? (
+      <aside className="glass-card budget-advice-rail dashboard-right-rail ops-rail" aria-label="Repères dépenses">
+        <div className="ops-rail__section">
+          <p className="eyebrow">⏳ À venir sous 30 jours</p>
+          {upcomingCharges.length === 0 ? (
+            <p className="ops-rail__empty">Aucune échéance programmée.</p>
+          ) : (
+            <ul className="ops-rail__list">
+              {upcomingCharges.map((item) => (
+                <li key={`${item.date}-${item.label}-${item.amount}`}>
+                  <span className="ops-rail__date">
+                    {new Date(`${item.date}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                  </span>
+                  <span className="ops-rail__label">{item.label}</span>
+                  <strong className={item.kind === 'revenu' ? 'income' : 'expense'}>
+                    {item.kind === 'revenu' ? '+' : '−'}{euroFormatter.format(item.amount)}
+                  </strong>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="ops-rail__section">
+          <p className="eyebrow">🔝 Plus grosses dépenses du mois</p>
+          {topExpensesMonth.length === 0 ? (
+            <p className="ops-rail__empty">Aucune dépense ce mois-ci.</p>
+          ) : (
+            <ul className="ops-rail__list">
+              {topExpensesMonth.map((tx) => (
+                <li key={tx.id}>
+                  <span className="ops-rail__icon" aria-hidden="true">{tx.icon ?? '💳'}</span>
+                  <span className="ops-rail__label">
+                    {tx.label}
+                    <small>{tx.category}</small>
+                  </span>
+                  <strong className="expense">−{euroFormatter.format(tx.amount)}</strong>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {topTags.length > 0 ? (
+          <div className="ops-rail__section">
+            <p className="eyebrow">🏷️ Tags du mois</p>
+            <div className="ops-rail__tags">
+              {topTags.map(([tag, count]) => (
+                <button key={tag} type="button" onClick={() => setTxSearch(tag)} title={`Filtrer les transactions « ${tag} »`}>
+                  #{tag} <small>{count}</small>
+                </button>
+              ))}
+            </div>
+            <small className="ops-rail__hint">Un clic filtre la liste des transactions.</small>
+          </div>
+        ) : null}
+      </aside>
+      ) : null}
+
+      {isActiveView('overview') || isActiveView('family') ? (
       <aside className="glass-card budget-advice-rail dashboard-right-rail overview-coaching-rail" aria-label="Assistant">
         {!isBudgetAiConfigured ? (
           <>
@@ -8033,11 +8134,11 @@ Réponse attendue:
       />
     ) : null}
 
-    {/* ── Tour de première transaction (onboarding final) ───────── */}
+    {/* ── Tour de bienvenue : définir le budget mensuel ──────────── */}
     {showFirstTxTour && !showOnboarding ? (
-      <FirstTransactionTour
-        member={selectedProfileId}
-        onSubmit={(tx) => completeFirstTxTour(tx)}
+      <FirstBudgetTour
+        currentBudget={selectedProfile.monthlyBudget}
+        onSubmit={(value) => completeFirstTxTour(value)}
         onSkip={() => completeFirstTxTour()}
       />
     ) : null}
