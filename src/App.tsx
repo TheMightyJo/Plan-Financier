@@ -3314,6 +3314,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   // Mois affiché dans la vue Statistiques (YYYY-MM) + semaine dépliée.
   const [statsMonth, setStatsMonth] = useState(todayIso.slice(0, 7))
   const [statsSelectedWeek, setStatsSelectedWeek] = useState<string | null>(null)
+  const [statsPickerOpen, setStatsPickerOpen] = useState(false)
+  const [statsPickerYear, setStatsPickerYear] = useState(() => Number(todayIso.slice(0, 4)))
   const statsMonthEnd = useMemo(() => shiftDay(`${shiftMonth(statsMonth, 1)}-01`, -1), [statsMonth])
   const statsViewData = useMemo(
     () => weeklyStats(activeTransactions, statsMonthEnd, 12),
@@ -6850,23 +6852,54 @@ Réponse attendue:
                 onClick={() => { setStatsMonth(shiftMonth(statsMonth, -1)); setStatsSelectedWeek(null) }}
                 aria-label="Mois précédent"
               >‹</button>
-              <label className="month-picker-label stats-month-title" title="Choisir le mois et l'année">
-                <span>
-                  {formatMonth(statsMonth).charAt(0).toUpperCase() + formatMonth(statsMonth).slice(1)}
-                </span>
-                <input
-                  type="month"
-                  value={statsMonth}
-                  max={todayIso.slice(0, 7)}
-                  onChange={(event) => {
-                    if (!event.target.value) return
-                    setStatsMonth(event.target.value > todayIso.slice(0, 7) ? todayIso.slice(0, 7) : event.target.value)
-                    setStatsSelectedWeek(null)
+              <span className="stats-month-picker-wrap">
+                <button
+                  type="button"
+                  className="stats-month-title"
+                  onClick={() => {
+                    setStatsPickerYear(Number(statsMonth.slice(0, 4)))
+                    setStatsPickerOpen((previous) => !previous)
                   }}
-                  className="month-picker-input"
-                  aria-label="Sélecteur de mois des statistiques"
-                />
-              </label>
+                  aria-expanded={statsPickerOpen}
+                  title="Choisir le mois et l'année"
+                >
+                  {formatMonth(statsMonth).charAt(0).toUpperCase() + formatMonth(statsMonth).slice(1)} ▾
+                </button>
+                {statsPickerOpen ? (
+                  <div className="stats-month-popover" role="dialog" aria-label="Choisir le mois et l'année">
+                    <div className="stats-month-popover__year">
+                      <button type="button" onClick={() => setStatsPickerYear((y) => y - 1)} aria-label="Année précédente">‹</button>
+                      <strong>{statsPickerYear}</strong>
+                      <button
+                        type="button"
+                        onClick={() => setStatsPickerYear((y) => y + 1)}
+                        aria-label="Année suivante"
+                        disabled={statsPickerYear >= Number(todayIso.slice(0, 4))}
+                      >›</button>
+                    </div>
+                    <div className="stats-month-popover__grid">
+                      {['Janv', 'Févr', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc'].map((name, index) => {
+                        const value = `${statsPickerYear}-${String(index + 1).padStart(2, '0')}`
+                        return (
+                          <button
+                            key={name}
+                            type="button"
+                            className={value === statsMonth ? 'active' : ''}
+                            disabled={value > todayIso.slice(0, 7)}
+                            onClick={() => {
+                              setStatsMonth(value)
+                              setStatsSelectedWeek(null)
+                              setStatsPickerOpen(false)
+                            }}
+                          >
+                            {name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </span>
               <button
                 type="button"
                 onClick={() => { setStatsMonth(shiftMonth(statsMonth, 1)); setStatsSelectedWeek(null) }}

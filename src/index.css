@@ -10424,8 +10424,91 @@ h1 {
   font-size: var(--text-sm);
 }
 
-/* Le titre de mois des Statistiques garde sa taille malgré le style picker. */
-.stats-month-title span {
+/* ── Statistiques : popover mois + année (fiable partout, Safari inclus) ── */
+.stats-month-picker-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+button.stats-month-title {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
   font-size: var(--text-base);
   font-weight: 800;
+  color: var(--text-1);
+  padding: 0 0.25rem;
+}
+
+.stats-month-popover {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  width: 15rem;
+  padding: 0.7rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3);
+  display: grid;
+  gap: 0.55rem;
+}
+
+.stats-month-popover__year {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stats-month-popover__year strong {
+  font-size: var(--text-base);
+  color: var(--text-1);
+}
+
+.stats-month-popover__year button {
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text-1);
+  border-radius: 0.5rem;
+  padding: 0.2rem 0.6rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.stats-month-popover__year button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.stats-month-popover__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.35rem;
+}
+
+.stats-month-popover__grid button {
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-1);
+  border-radius: 0.55rem;
+  padding: 0.4rem 0.2rem;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.stats-month-popover__grid button:hover:not(:disabled) {
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+.stats-month-popover__grid button.active {
+  border-color: rgba(var(--accent-rgb), 0.7);
+  background: rgba(var(--accent-rgb), 0.14);
+}
+
+.stats-month-popover__grid button:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
