@@ -1055,6 +1055,8 @@ function App() {
   const [widgetSizeMenuFor, setWidgetSizeMenuFor] = useState<DashboardWidgetId | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('profiles')
+  // Sélecteur photo/avatar du profil : s'ouvre en touchant la photo.
+  const [avatarPickerOpen, setAvatarPickerOpen] = useState(false)
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false)
   const [settingsError, setSettingsError] = useState('')
   const [settingsSuccess, setSettingsSuccess] = useState('')
@@ -5854,45 +5856,73 @@ Réponse attendue:
                         <div className="avatar-editor">
                           <span className="avatar-editor__label">Photo du profil</span>
                           <div className="avatar-editor__row">
-                            {profileAvatarNode(managedProfile)}
-                            <label className="ghost-button avatar-upload-btn">
-                              📷 Importer une photo
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(event) => {
-                                  void handleAvatarUpload(event.target.files?.[0])
-                                  event.target.value = ''
-                                }}
-                              />
-                            </label>
-                            {managedProfile.avatar ? (
+                            <div className="avatar-editor__current">
                               <button
                                 type="button"
-                                className="ghost-button"
-                                onClick={() => setProfileAvatar(managedProfile.id, undefined)}
+                                className="avatar-editor__avatar-btn"
+                                onClick={() => setAvatarPickerOpen((open) => !open)}
+                                aria-expanded={avatarPickerOpen}
+                                aria-label="Changer la photo ou l'avatar du profil"
                               >
-                                Revenir aux initiales
+                                {profileAvatarNode(managedProfile)}
+                                <span className="avatar-editor__edit-badge" aria-hidden="true">📷</span>
                               </button>
-                            ) : null}
+                              {managedProfile.avatar ? (
+                                <button
+                                  type="button"
+                                  className="avatar-editor__remove"
+                                  onClick={() => {
+                                    setProfileAvatar(managedProfile.id, undefined)
+                                    setAvatarPickerOpen(false)
+                                  }}
+                                  aria-label="Retirer la photo et revenir aux initiales"
+                                  title="Revenir aux initiales"
+                                >
+                                  <X size={12} />
+                                </button>
+                              ) : null}
+                            </div>
+                            <span className="avatar-editor__hint">
+                              Touchez la photo pour la changer
+                              {managedProfile.avatar ? ' — la croix la retire.' : '.'}
+                            </span>
                           </div>
-                          <span className="avatar-editor__label avatar-editor__label--sub">
-                            … ou choisissez un avatar (libres de droit)
-                          </span>
-                          <div className="avatar-preset-grid" role="listbox" aria-label="Avatars proposés">
-                            {MONEY_AVATAR_PRESETS.map((emoji) => (
-                              <button
-                                key={emoji}
-                                type="button"
-                                role="option"
-                                aria-selected={managedProfile.avatar === `emoji:${emoji}`}
-                                className={`avatar-preset${managedProfile.avatar === `emoji:${emoji}` ? ' avatar-preset--active' : ''}`}
-                                onClick={() => setProfileAvatar(managedProfile.id, `emoji:${emoji}`)}
-                              >
-                                {emoji}
-                              </button>
-                            ))}
-                          </div>
+                          {avatarPickerOpen ? (
+                            <div className="avatar-editor__picker">
+                              <label className="ghost-button avatar-upload-btn">
+                                📷 Importer une photo
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(event) => {
+                                    void handleAvatarUpload(event.target.files?.[0])
+                                    event.target.value = ''
+                                    setAvatarPickerOpen(false)
+                                  }}
+                                />
+                              </label>
+                              <span className="avatar-editor__label avatar-editor__label--sub">
+                                … ou choisissez un avatar (libres de droit)
+                              </span>
+                              <div className="avatar-preset-grid" role="listbox" aria-label="Avatars proposés">
+                                {MONEY_AVATAR_PRESETS.map((emoji) => (
+                                  <button
+                                    key={emoji}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={managedProfile.avatar === `emoji:${emoji}`}
+                                    className={`avatar-preset${managedProfile.avatar === `emoji:${emoji}` ? ' avatar-preset--active' : ''}`}
+                                    onClick={() => {
+                                      setProfileAvatar(managedProfile.id, `emoji:${emoji}`)
+                                      setAvatarPickerOpen(false)
+                                    }}
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                         <label>
                           Nom du profil

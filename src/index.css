@@ -11749,3 +11749,81 @@ button.envelope-card:hover .envelope-card__body {
 .subscription-plan__actions button {
   width: 100%;
 }
+
+/* ── Éditeur d'avatar : photo cliquable + croix de retrait ────────────── */
+
+.avatar-editor__current {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.avatar-editor__avatar-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 50%;
+  position: relative;
+  display: inline-flex;
+}
+
+.avatar-editor__avatar-btn:hover .member-avatar,
+.avatar-editor__avatar-btn:focus-visible .member-avatar {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.avatar-editor__edit-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  pointer-events: none;
+}
+
+.avatar-editor__remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  background: var(--danger);
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.avatar-editor__remove:hover {
+  filter: brightness(1.1);
+}
+
+.avatar-editor__hint {
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  min-width: 0;
+}
+
+.avatar-editor__picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+  padding: 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+}
