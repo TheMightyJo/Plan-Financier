@@ -3522,12 +3522,12 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     const materialized = new Set(
       activeTransactions.filter((t) => t.recurringRuleId).map((t) => `${t.recurringRuleId}|${t.date}`),
     )
-    const items: Array<{ date: string; label: string; amount: number; kind: TransactionKind }> = []
+    const items: Array<{ date: string; label: string; amount: number; kind: TransactionKind; category: Category }> = []
     for (const rule of recurringRules) {
       if (rule.pausedAt !== null || rule.member !== selectedProfileId) continue
       for (const date of getOccurrencesBetween(rule, nextMonday, nextSunday)) {
         if (materialized.has(`${rule.id}|${date}`)) continue
-        items.push({ date, label: rule.label, amount: rule.amount, kind: rule.kind })
+        items.push({ date, label: rule.label, amount: rule.amount, kind: rule.kind, category: rule.category })
       }
     }
     items.sort((a, b) => a.date.localeCompare(b.date))
@@ -8280,6 +8280,7 @@ Réponse attendue:
                   <span className="ops-rail__date">
                     {new Date(`${item.date}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' })}
                   </span>
+                  <MerchantLogo label={item.label} fallbackIcon={categoryEmoji(item.category)} className="ops-rail__icon" />
                   <span className="ops-rail__label">{item.label}</span>
                   <strong className={item.kind === 'revenu' ? 'income' : 'expense'}>
                     {item.kind === 'revenu' ? '+' : '−'}{euroFormatter.format(item.amount)}
