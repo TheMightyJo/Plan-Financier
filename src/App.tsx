@@ -275,7 +275,6 @@ type PaletteId = (typeof COLOR_PALETTES)[number]['id']
 const isPaletteId = (value: unknown): value is PaletteId =>
   COLOR_PALETTES.some((entry) => entry.id === value)
 const DASHBOARD_WIDGETS_STORAGE_KEY = 'plan-financier-dashboard-widgets-v1'
-const AI_PROVIDER_STORAGE_KEY = 'plan-financier-ai-provider-v1'
 const AI_PROVIDER_KEYS_STORAGE_KEY = 'plan-financier-ai-provider-keys-v1'
 const DEFAULT_CHAT_THREAD: ChatThread = { id: 'general', label: 'Général', lastActivityAt: 0 }
 
@@ -1188,9 +1187,6 @@ function App() {
 
   // ── Claude AI ──────────────────────────────────────────────────────────
   type ChatMessage = { role: 'user' | 'assistant'; content: string }
-  const [aiProvider, setAiProvider] = useState<AIProviderId>(
-    () => (window.localStorage.getItem(AI_PROVIDER_STORAGE_KEY) as AIProviderId) ?? 'anthropic',
-  )
   const [aiProviderKeys, setAiProviderKeys] = useState<Record<AIProviderId, string>>(() => {
     const fallbackAnthropicKey = window.localStorage.getItem(ANTHROPIC_KEY_STORAGE) ?? ''
     const initial: Record<AIProviderId, string> = {
@@ -1508,63 +1504,12 @@ function App() {
       legalNote: 'Vos prompts transitent par Anthropic. Vérifiez vos réglages de conservation et vos engagements contractuels.',
       supported: true,
     },
-    {
-      id: 'openai',
-      name: 'OpenAI',
-      modelLabel: 'GPT',
-      badge: 'GPT',
-      tone: 'green',
-      logoSrc: '/ai-logos/openai.svg',
-      helpUrl: 'https://platform.openai.com/docs/quickstart',
-      consoleUrl: 'https://platform.openai.com/api-keys',
-      keyPlaceholder: 'sk-...',
-      legalNote: 'Les traitements dépendent des conditions OpenAI et peuvent impliquer un hébergement hors UE selon votre configuration.',
-      supported: false,
-    },
-    {
-      id: 'mistral',
-      name: 'Mistral',
-      modelLabel: 'Le Chat · API',
-      badge: 'MI',
-      tone: 'orange',
-      logoSrc: '/ai-logos/mistral-boxed-rainbow.png',
-      helpUrl: 'https://docs.mistral.ai/getting-started/quickstart/',
-      consoleUrl: 'https://console.mistral.ai/api-keys/',
-      keyPlaceholder: 'mst-...',
-      legalNote: 'Mistral est un acteur français. Contrôlez tout de même vos clauses de confidentialité et de rétention.',
-      supported: false,
-    },
-    {
-      id: 'google',
-      name: 'Gemini',
-      modelLabel: 'Gemini',
-      badge: 'GE',
-      tone: 'blue',
-      logoSrc: '/ai-logos/gemini.svg',
-      helpUrl: 'https://ai.google.dev/gemini-api/docs/api-key',
-      consoleUrl: 'https://aistudio.google.com/app/apikey',
-      keyPlaceholder: 'AIza...',
-      legalNote: 'Les usages Gemini relèvent des conditions Google Cloud / AI Studio. Vérifiez la zone et la politique données.',
-      supported: false,
-    },
-    {
-      id: 'openrouter',
-      name: 'OpenRouter',
-      modelLabel: 'Multi-modèles',
-      badge: 'OR',
-      tone: 'slate',
-      logoSrc: '/ai-logos/openrouter.ico',
-      helpUrl: 'https://openrouter.ai/docs/quickstart',
-      consoleUrl: 'https://openrouter.ai/keys',
-      keyPlaceholder: 'sk-or-...',
-      legalNote: 'OpenRouter peut router vers plusieurs fournisseurs. Vous devez vérifier les conditions du routeur et du modèle final.',
-      supported: false,
-    },
   ]
 
-  const selectedAiProvider = ONBOARDING_PROVIDERS.find((provider) => provider.id === aiProvider) ?? ONBOARDING_PROVIDERS[0]
-  const activeAiKey = aiProviderKeys[aiProvider] ?? ''
-  const isCurrentAiProviderOperational = selectedAiProvider.id === 'anthropic'
+  // Un seul fournisseur assumé : Claude (Anthropic) — c'est lui qui motorise
+  // l'IA incluse côté serveur et la clé personnelle optionnelle.
+  const selectedAiProvider = ONBOARDING_PROVIDERS[0]
+  const activeAiKey = aiProviderKeys.anthropic
 
   // Affiché piloté par le compte (cf. effet plus bas qui lit
   // profiles.onboarding_completed_at à la connexion), pas par l'appareil.
@@ -1575,7 +1520,7 @@ function App() {
   const [manualGenerating, setManualGenerating] = useState(false)
   const [manualPhase, setManualPhase] = useState(0)
   const [onboardingStep, setOnboardingStep] = useState<1 | 2 | 3 | 4>(1)
-  const [onboardingProvider, setOnboardingProvider] = useState<OnboardingProviderId | null>(null)
+  const [onboardingProvider, setOnboardingProvider] = useState<OnboardingProviderId | null>('anthropic')
   const [onboardingKeyDraft, setOnboardingKeyDraft] = useState('')
   const [onboardingMessages, setOnboardingMessages] = useState<OnboardingMsg[]>([])
   const [onboardingInput, setOnboardingInput] = useState('')
@@ -1850,13 +1795,6 @@ Règles :
     }
     window.localStorage.setItem(FIRST_TX_TOUR_DONE_KEY, '1')
     setShowFirstTxTour(false)
-  }
-
-  const saveAiProvider = (provider: AIProviderId) => {
-    setAiProvider(provider)
-    if (!demoMode) window.localStorage.setItem(AI_PROVIDER_STORAGE_KEY, provider)
-    setClaudeTestState('idle')
-    setClaudeTestMessage('')
   }
 
   const saveAiProviderKey = (provider: AIProviderId, key: string) => {
@@ -4599,8 +4537,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     setBudgetQuickEditOpen(true)
   }
 
-  const isBudgetAiConfigured =
-    (isCurrentAiProviderOperational && activeAiKey.trim().length > 0) || canUseIncludedAi
+  const isBudgetAiConfigured = activeAiKey.trim().length > 0 || canUseIncludedAi
 
   const requestBudgetAssistantAdvice = async () => {
     if (!isBudgetAiConfigured || budgetAssistantLoading) {
@@ -5118,7 +5055,7 @@ Réponse attendue:
                 >
                   <span className="onboarding-choice-icon">✦</span>
                   <strong>Configurer avec l'IA</strong>
-                  <p>Choisissez ensuite votre fournisseur IA, ajoutez votre clé API puis laissez l'assistant vous aider à paramétrer le budget.</p>
+                  <p>L'IA est incluse avec votre compte : laissez l'assistant vous poser 3 questions et paramétrer le budget pour vous.</p>
                   <span className="onboarding-choice-badge">Recommandé</span>
                 </button>
 
@@ -5192,7 +5129,7 @@ Réponse attendue:
                       <div>
                         <h3>{selectedProvider.name}</h3>
                         <p>
-                          Récupérez votre clé API puis conservez-la sur cet appareil. FP ne l'envoie nulle part sauf vers le fournisseur choisi au moment des appels IA.
+                          L'IA est incluse avec votre compte. Si vous préférez utiliser votre propre clé API, elle reste sur cet appareil et n'est envoyée qu'à Anthropic au moment des appels IA.
                         </p>
                       </div>
                       <div className="onboarding-provider-help__actions">
@@ -5996,62 +5933,34 @@ Réponse attendue:
                       </div>
 
                       <div
-                        className={`ai-status ai-status--${
-                          isCurrentAiProviderOperational
-                            ? (activeAiKey || canUseIncludedAi ? 'ready' : 'off')
-                            : 'soon'
-                        }`}
+                        className={`ai-status ai-status--${activeAiKey || canUseIncludedAi ? 'ready' : 'off'}`}
                         role="status"
                       >
                         <span className="ai-status__dot" aria-hidden="true" />
                         <div>
                           <strong>
-                            {isCurrentAiProviderOperational
-                              ? (activeAiKey
-                                ? 'Prêt à l\'emploi — clé personnelle'
-                                : canUseIncludedAi
-                                  ? 'Prêt à l\'emploi — IA incluse'
-                                  : 'Non configuré')
-                              : 'Bientôt disponible'}
+                            {activeAiKey
+                              ? 'Prêt à l\'emploi — clé personnelle'
+                              : canUseIncludedAi
+                                ? 'Prêt à l\'emploi — IA incluse'
+                                : 'Non configuré'}
                           </strong>
                           <small>
-                            {isCurrentAiProviderOperational
-                              ? (activeAiKey
-                                ? 'Votre clé est enregistrée sur cet appareil (aucun quota). Testez-la ci-dessous.'
-                                : canUseIncludedAi
-                                  ? `L'IA est incluse avec votre compte${aiQuota ? ` : ${aiQuota.used} / ${aiQuota.limit} messages utilisés ce mois-ci` : ''}. Une clé personnelle (facultative) lève le quota.`
-                                  : 'Ajoutez votre clé pour débloquer l\'assistant.')
-                              : `${selectedAiProvider.name} arrive prochainement — seul Anthropic est actif aujourd'hui.`}
+                            {activeAiKey
+                              ? 'Votre clé est enregistrée sur cet appareil (aucun quota). Testez-la ci-dessous.'
+                              : canUseIncludedAi
+                                ? `Cash est propulsé par Claude (Anthropic), inclus avec votre compte${aiQuota ? ` : ${aiQuota.used} / ${aiQuota.limit} messages utilisés ce mois-ci` : ''}. Une clé personnelle (facultative) lève le quota.`
+                                : 'Ajoutez votre clé pour débloquer l\'assistant.'}
                           </small>
                         </div>
                       </div>
 
-                      <span className="ai-provider-label">Fournisseur</span>
-                      <div className="ai-provider-grid" role="listbox" aria-label="Fournisseurs IA">
-                        {ONBOARDING_PROVIDERS.map((provider) => (
-                          <button
-                            key={provider.id}
-                            type="button"
-                            role="option"
-                            aria-selected={aiProvider === provider.id}
-                            className={`ai-provider-chip${aiProvider === provider.id ? ' ai-provider-chip--active' : ''}${provider.supported ? '' : ' ai-provider-chip--soon'}`}
-                            onClick={() => saveAiProvider(provider.id)}
-                          >
-                            {provider.logoSrc ? (
-                              <img src={provider.logoSrc} alt="" className="ai-provider-chip__logo" />
-                            ) : null}
-                            <span>{provider.name}</span>
-                            {!provider.supported ? <small>Bientôt</small> : null}
-                          </button>
-                        ))}
-                      </div>
-
                       <label>
-                        Clé API {selectedAiProvider.name}
+                        Clé API Anthropic (Claude) — facultative
                         <input
                           type="password"
                           value={activeAiKey}
-                          onChange={(event) => saveAiProviderKey(aiProvider, event.target.value)}
+                          onChange={(event) => saveAiProviderKey('anthropic', event.target.value)}
                           placeholder={selectedAiProvider.keyPlaceholder}
                           autoComplete="off"
                         />
@@ -6071,7 +5980,7 @@ Réponse attendue:
                         <button
                           type="button"
                           onClick={() => void testClaudeKey()}
-                          disabled={claudeTestState === 'testing' || !isCurrentAiProviderOperational || !activeAiKey}
+                          disabled={claudeTestState === 'testing' || !activeAiKey}
                         >
                           {claudeTestState === 'testing' ? (
                             <span className="inline-loading-label"><span className="inline-loader" aria-hidden="true" />Test en cours...</span>
