@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from './supabase'
+import { AiQuotaExceededError, callCashModel, fetchAiQuota, type AiQuota } from './lib/aiClient'
+import {
+  fetchSubscription,
+  openBillingPortal,
+  startCheckout,
+  type PlanId,
+  type SubscriptionInfo,
+} from './repos/billingRepo'
 import AuthScreen from './AuthScreen'
 import {
   Area,
@@ -839,7 +847,7 @@ function InfoHint({ text }: { text: string }) {
 }
 
 function App() {
-  type SettingsSection = 'profiles' | 'ai' | 'security' | 'backup' | 'reset' | 'theme' | 'rgpd' | 'account' | 'report' | 'a11y'
+  type SettingsSection = 'profiles' | 'ai' | 'security' | 'backup' | 'reset' | 'theme' | 'rgpd' | 'account' | 'report' | 'a11y' | 'subscription'
   const currentMonth = new Date().toISOString().slice(0, 7)
   const todayIso = new Date().toISOString().slice(0, 10)
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
@@ -1210,7 +1218,88 @@ function App() {
     }
   })
   const anthropicKey = aiProviderKeys.anthropic
+  // IA incluse dans le compte : sans clé personnelle, les appels passent par
+  // la fonction Edge ai-chat (quota mensuel selon le plan d'abonnement).
+  // La clé perso reste prioritaire et sans quota. Pas d'IA incluse en démo.
+  const canUseIncludedAi = isAuthenticated && !demoMode
+  const cashAiReady = Boolean(anthropicKey) || canUseIncludedAi
   const [chatOpen, setChatOpen] = useState(false)
+
+  // ── Abonnement (Stripe) + quota IA ─────────────────────────────────────
+  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null)
+  const [aiQuota, setAiQuota] = useState<AiQuota | null>(null)
+  const [checkoutBusy, setCheckoutBusy] = useState<string | null>(null)
+  const userPlan: PlanId = subscription?.plan ?? 'free'
+
+  // Charge le plan d'abonnement à la connexion (table subscriptions).
+  useEffect(() => {
+    if (!canUseIncludedAi) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSubscription(null)
+      setAiQuota(null)
+      return
+    }
+    let cancelled = false
+    void fetchSubscription().then((info) => {
+      if (!cancelled) setSubscription(info)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [canUseIncludedAi])
+
+  // Quota IA du mois : rafraîchi à l'ouverture des sections concernées.
+  useEffect(() => {
+    if (!showSettings || !canUseIncludedAi) return
+    if (settingsSection !== 'ai' && settingsSection !== 'subscription') return
+    let cancelled = false
+    void fetchAiQuota().then((quota) => {
+      if (!cancelled && quota) setAiQuota(quota)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [showSettings, settingsSection, canUseIncludedAi])
+
+  // Retour de Stripe Checkout (…?checkout=success) : confirmation + refresh.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const checkout = params.get('checkout')
+    if (!checkout) return
+    params.delete('checkout')
+    const query = params.toString()
+    window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
+    if (checkout === 'success') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      showToast('🎉 Merci ! Votre abonnement sera actif d\'ici quelques secondes.')
+      window.setTimeout(() => {
+        void fetchSubscription().then(setSubscription)
+      }, 4000)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleStartCheckout = async (plan: 'premium' | 'family', interval: 'monthly' | 'yearly') => {
+    if (blockInDemo("l'abonnement")) return
+    setCheckoutBusy(`${plan}-${interval}`)
+    try {
+      window.location.href = await startCheckout(plan, interval)
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Impossible d'ouvrir le paiement.", 'warning')
+      setCheckoutBusy(null)
+    }
+  }
+
+  const handleOpenBillingPortal = async () => {
+    if (blockInDemo("l'abonnement")) return
+    setCheckoutBusy('portal')
+    try {
+      window.location.href = await openBillingPortal()
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Impossible d'ouvrir la facturation.", 'warning')
+      setCheckoutBusy(null)
+    }
+  }
 
   // /demo lance le mode démo directement ; navigation arrière/avant du
   // navigateur synchronisée avec l'état de l'app.
@@ -1248,7 +1337,7 @@ function App() {
 
   // Invitation discrète : 3 s après l'arrivée, 1× par 24 h, disparaît en 9 s.
   useEffect(() => {
-    if (!isAuthenticated || !anthropicKey || chatOpen) return
+    if (!isAuthenticated || !cashAiReady || chatOpen) return
     const KEY = 'plan-financier-cash-nudge-at'
     const last = Number(window.localStorage.getItem(KEY) ?? 0)
     if (Date.now() - last < 24 * 3600 * 1000) return
@@ -1261,7 +1350,7 @@ function App() {
       window.clearTimeout(showTimer)
       window.clearTimeout(hideTimer)
     }
-  }, [isAuthenticated, anthropicKey, chatOpen])
+  }, [isAuthenticated, cashAiReady, chatOpen])
   const [chatThreads, setChatThreads] = useState<ChatThread[]>([DEFAULT_CHAT_THREAD])
   const [chatThreadId, setChatThreadId] = useState(DEFAULT_CHAT_THREAD.id)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
@@ -1530,26 +1619,13 @@ Règles :
 - Réponds toujours en français
 - Si l'utilisateur fournit son profil en préambule, exploite ces données pour personnaliser directement la configuration et évite de reposer des questions déjà couvertes`
 
-  const callClaudeOnboarding = async (messages: OnboardingMsg[], key: string): Promise<string> => {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        system: ONBOARDING_SYSTEM,
-        messages,
-      }),
+  const callClaudeOnboarding = async (messages: OnboardingMsg[], key: string): Promise<string> =>
+    callCashModel({
+      apiKey: key || undefined,
+      system: ONBOARDING_SYSTEM,
+      maxTokens: 1024,
+      messages,
     })
-    if (!response.ok) throw new Error(`API ${response.status}`)
-    const data = (await response.json()) as { content: Array<{ type: string; text: string }> }
-    return data.content.find((c) => c.type === 'text')?.text ?? ''
-  }
 
   const handleOnboardingStart = async () => {
     if (!onboardingProvider || onboardingProvider !== 'anthropic') {
@@ -1557,7 +1633,7 @@ Règles :
       return
     }
     const key = onboardingKeyDraft.trim()
-    if (!key) { setOnboardingError('Veuillez entrer votre clé API Anthropic.'); return }
+    if (!key && !canUseIncludedAi) { setOnboardingError('Veuillez entrer votre clé API Anthropic.'); return }
     setOnboardingError('')
     setOnboardingLoading(true)
     try {
@@ -1574,7 +1650,7 @@ Règles :
         ? `Bonjour, je viens de lancer Plan Financier pour la première fois.\n\nMon profil :\n${profileLines.join('\n')}`
         : `Bonjour, je viens de lancer Plan Financier pour la première fois.`
       const greeting = await callClaudeOnboarding([{ role: 'user', content: firstMsg }], key)
-      saveAnthropicKey(key)
+      if (key) saveAnthropicKey(key)
       setOnboardingMessages([
         { role: 'user', content: firstMsg },
         { role: 'assistant', content: greeting },
@@ -1880,7 +1956,7 @@ Réponds en français, de façon concise et bienveillante, en vouvoyant l'utilis
   }
 
   const handlePredictMonth = async () => {
-    if (!anthropicKey || predictionLoading) return
+    if (!cashAiReady || predictionLoading) return
     setPredictionLoading(true)
     setPredictionResult('')
 
@@ -1899,33 +1975,18 @@ Réponds en français, de façon concise et bienveillante, en vouvoyant l'utilis
 Sur la base de ces données, estime le solde net probable à la fin du mois. Donne une prédiction chiffrée avec les hypothèses (dépenses journalières moyennes) et 2 recommandations concrètes. Sois bref (5-8 lignes max).`
 
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 400,
-          messages: [{ role: 'user', content: prompt }],
-        }),
+      const text = await callCashModel({
+        apiKey: anthropicKey || undefined,
+        maxTokens: 400,
+        messages: [{ role: 'user', content: prompt }],
       })
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        const msg = (err as { error?: { message?: string } }).error?.message ?? `Erreur ${response.status}`
-        setPredictionResult(`⚠️ ${msg}`)
-        return
-      }
-
-      type AnthropicResponse = { content: Array<{ type: string; text: string }> }
-      const data = (await response.json()) as AnthropicResponse
-      setPredictionResult(data.content.find((c) => c.type === 'text')?.text ?? '…')
-    } catch {
-      setPredictionResult('⚠️ Impossible de contacter Claude. Vérifie ta connexion.')
+      setPredictionResult(text || '…')
+    } catch (error) {
+      const msg =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Impossible de contacter Claude. Vérifiez votre connexion.'
+      setPredictionResult(`⚠️ ${msg}`)
     } finally {
       setPredictionLoading(false)
     }
@@ -1936,7 +1997,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     attachment?: { name: string; mediaType: string; data: string } | null,
   ) => {
     const message = (presetMessage ?? chatInput).trim()
-    if (!message || !anthropicKey || chatLoading) return
+    if (!message || !cashAiReady || chatLoading) return
 
     // Historique affiché/stocké : texte seul (la pièce jointe est signalée par
     // son nom). Elle n'est transmise au modèle que pour ce tour-ci.
@@ -1962,38 +2023,19 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     setChatLoading(true)
 
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1024,
-          system: buildFinancialContext(),
-          messages: apiMessages,
-        }),
+      const reply = await callCashModel({
+        apiKey: anthropicKey || undefined,
+        system: buildFinancialContext(),
+        maxTokens: 1024,
+        messages: apiMessages as Array<{ role: 'user' | 'assistant'; content: unknown }>,
       })
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        const msg = (err as { error?: { message?: string } }).error?.message ?? `Erreur ${response.status}`
-        setChatMessages((prev) => [...prev, { role: 'assistant', content: `⚠️ ${msg}` }])
-        return
-      }
-
-      type AnthropicResponse = { content: Array<{ type: string; text: string }> }
-      const data = (await response.json()) as AnthropicResponse
-      const reply = data.content.find((c) => c.type === 'text')?.text ?? '…'
-      setChatMessages((prev) => [...prev, { role: 'assistant', content: reply }])
-    } catch {
-      setChatMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: '⚠️ Impossible de contacter Cash. Vérifiez votre connexion et votre clé API.' },
-      ])
+      setChatMessages((prev) => [...prev, { role: 'assistant', content: reply || '…' }])
+    } catch (error) {
+      const msg =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Impossible de contacter Cash. Vérifiez votre connexion.'
+      setChatMessages((prev) => [...prev, { role: 'assistant', content: `⚠️ ${msg}` }])
     } finally {
       setChatLoading(false)
     }
@@ -2177,7 +2219,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       return
     }
 
-    if (!isAuthenticated || !anthropicKey) {
+    if (!isAuthenticated || !cashAiReady) {
       // Chargement/purge de l'historique de chat depuis localStorage.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setChatMessages([])
@@ -2206,14 +2248,14 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
 
     chatHistoryReadyKeyRef.current = chatHistoryStorageKey
-  }, [anthropicKey, chatHistoryStorageKey, isAuthenticated])
+  }, [cashAiReady, chatHistoryStorageKey, isAuthenticated])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
       return
     }
 
-    if (!isAuthenticated || !anthropicKey) {
+    if (!isAuthenticated || !cashAiReady) {
       return
     }
 
@@ -2222,7 +2264,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
 
     window.localStorage.setItem(chatHistoryStorageKey, JSON.stringify(chatMessages))
-  }, [anthropicKey, chatHistoryStorageKey, chatMessages, isAuthenticated])
+  }, [cashAiReady, chatHistoryStorageKey, chatMessages, isAuthenticated])
 
   useEffect(() => {
     const initializeSecurity = async () => {
@@ -3863,28 +3905,16 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const quickAddAiIconRef = useRef<string | null>(null)
 
   const runQuickAddAi = async (label: string) => {
-    if (!anthropicKey) return
+    if (!cashAiReady) return
     setQuickAddAiBusy(true)
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 120,
-          system:
-            'Tu classes une dépense de budget familial français. Réponds UNIQUEMENT un objet JSON de la forme {"category": "...", "tags": ["..."], "icon": "🛒"} sans autre texte. category doit être exactement une valeur parmi: ' + allExpenseCategories.join(', ') + '. tags: 0 à 3 étiquettes courtes en minuscules, utiles et non redondantes avec la catégorie, sinon tableau vide. icon: UN SEUL emoji représentant au mieux le marchand ou la dépense (jamais de texte).',
-          messages: [{ role: 'user', content: label }],
-        }),
+      const text = await callCashModel({
+        apiKey: anthropicKey || undefined,
+        maxTokens: 120,
+        system:
+          'Tu classes une dépense de budget familial français. Réponds UNIQUEMENT un objet JSON de la forme {"category": "...", "tags": ["..."], "icon": "🛒"} sans autre texte. category doit être exactement une valeur parmi: ' + allExpenseCategories.join(', ') + '. tags: 0 à 3 étiquettes courtes en minuscules, utiles et non redondantes avec la catégorie, sinon tableau vide. icon: UN SEUL emoji représentant au mieux le marchand ou la dépense (jamais de texte).',
+        messages: [{ role: 'user', content: label }],
       })
-      if (!response.ok) return
-      const data = (await response.json()) as { content: Array<{ type: string; text: string }> }
-      const text = data.content.find((c) => c.type === 'text')?.text ?? ''
       const match = /\{[\s\S]*\}/.exec(text)
       if (!match) return
       const parsed = JSON.parse(match[0]) as { category?: string; tags?: unknown; icon?: unknown }
@@ -4569,7 +4599,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     setBudgetQuickEditOpen(true)
   }
 
-  const isBudgetAiConfigured = isCurrentAiProviderOperational && activeAiKey.trim().length > 0
+  const isBudgetAiConfigured =
+    (isCurrentAiProviderOperational && activeAiKey.trim().length > 0) || canUseIncludedAi
 
   const requestBudgetAssistantAdvice = async () => {
     if (!isBudgetAiConfigured || budgetAssistantLoading) {
@@ -4612,39 +4643,21 @@ Réponse attendue:
     const abort = new AbortController()
     const abortTimer = window.setTimeout(() => abort.abort(), 20_000)
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
+      const text = await callCashModel({
+        apiKey: anthropicKey || undefined,
+        maxTokens: 160,
+        messages: [{ role: 'user', content: prompt }],
         signal: abort.signal,
-        headers: {
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 160,
-          messages: [{ role: 'user', content: prompt }],
-        }),
       })
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        const msg = (err as { error?: { message?: string } }).error?.message ?? `Erreur ${response.status}`
-        setBudgetAssistantError(msg)
-        return
-      }
-
-      type AnthropicResponse = { content: Array<{ type: string; text: string }> }
-      const data = (await response.json()) as AnthropicResponse
-      const text = data.content.find((c) => c.type === 'text')?.text?.trim() ?? ''
-      setBudgetAssistantAdvice(text || 'Conseil IA indisponible pour le moment.')
+      setBudgetAssistantAdvice(text.trim() || 'Conseil IA indisponible pour le moment.')
     } catch (error) {
-      setBudgetAssistantError(
-        error instanceof DOMException && error.name === 'AbortError'
-          ? "L'analyse a pris trop de temps — réessayez dans un instant."
-          : 'Impossible de contacter Cash pour le moment.',
-      )
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        setBudgetAssistantError("L'analyse a pris trop de temps — réessayez dans un instant.")
+      } else if (error instanceof AiQuotaExceededError) {
+        setBudgetAssistantError(error.message)
+      } else {
+        setBudgetAssistantError('Impossible de contacter Cash pour le moment.')
+      }
     } finally {
       window.clearTimeout(abortTimer)
       // Succès OU échec : le contexte est marqué traité, sinon l'effet
@@ -5200,7 +5213,9 @@ Réponse attendue:
                       />
                       <span className="onboarding-key-hint">
                         {selectedProvider.supported
-                          ? 'La clé reste stockée uniquement sur cet appareil. Vous pourrez la modifier plus tard dans les paramètres.'
+                          ? (canUseIncludedAi
+                            ? 'Facultative : l\'IA est déjà incluse avec votre compte. Une clé personnelle (stockée uniquement sur cet appareil) lève le quota mensuel.'
+                            : 'La clé reste stockée uniquement sur cet appareil. Vous pourrez la modifier plus tard dans les paramètres.')
                           : 'Vous pouvez préparer votre clé dès maintenant, mais FP ne sait pas encore utiliser ce fournisseur pendant l’onboarding.'}
                       </span>
                     </label>
@@ -5218,7 +5233,7 @@ Réponse attendue:
                         className="hero-cta-button"
                         onClick={() => {
                           const key = onboardingKeyDraft.trim()
-                          if (!key) { setOnboardingError('Veuillez entrer votre clé API.'); return }
+                          if (!key && !canUseIncludedAi) { setOnboardingError('Veuillez entrer votre clé API.'); return }
                           setOnboardingError('')
                           setOnboardingStep(3)
                         }}
@@ -5739,6 +5754,7 @@ Réponse attendue:
                   {
                     group: 'Compte',
                     items: [
+                      ['subscription', '⭐', 'Abonnement'],
                       ['account', '👤', 'Mon compte'],
                       ['rgpd', '🔏', 'Mes données RGPD'],
                       ['reset', '⚠️', 'Réinitialiser'],
@@ -5981,7 +5997,9 @@ Réponse attendue:
 
                       <div
                         className={`ai-status ai-status--${
-                          isCurrentAiProviderOperational ? (activeAiKey ? 'ready' : 'off') : 'soon'
+                          isCurrentAiProviderOperational
+                            ? (activeAiKey || canUseIncludedAi ? 'ready' : 'off')
+                            : 'soon'
                         }`}
                         role="status"
                       >
@@ -5989,14 +6007,20 @@ Réponse attendue:
                         <div>
                           <strong>
                             {isCurrentAiProviderOperational
-                              ? (activeAiKey ? 'Prêt à l\'emploi' : 'Non configuré')
+                              ? (activeAiKey
+                                ? 'Prêt à l\'emploi — clé personnelle'
+                                : canUseIncludedAi
+                                  ? 'Prêt à l\'emploi — IA incluse'
+                                  : 'Non configuré')
                               : 'Bientôt disponible'}
                           </strong>
                           <small>
                             {isCurrentAiProviderOperational
                               ? (activeAiKey
-                                ? 'Votre clé est enregistrée sur cet appareil. Testez-la ci-dessous.'
-                                : 'Ajoutez votre clé pour débloquer l\'assistant.')
+                                ? 'Votre clé est enregistrée sur cet appareil (aucun quota). Testez-la ci-dessous.'
+                                : canUseIncludedAi
+                                  ? `L'IA est incluse avec votre compte${aiQuota ? ` : ${aiQuota.used} / ${aiQuota.limit} messages utilisés ce mois-ci` : ''}. Une clé personnelle (facultative) lève le quota.`
+                                  : 'Ajoutez votre clé pour débloquer l\'assistant.')
                               : `${selectedAiProvider.name} arrive prochainement — seul Anthropic est actif aujourd'hui.`}
                           </small>
                         </div>
@@ -6057,7 +6081,7 @@ Réponse attendue:
                           type="button"
                           className="ghost-button"
                           onClick={() => setChatOpen(true)}
-                          disabled={!isCurrentAiProviderOperational || !anthropicKey}
+                          disabled={!isBudgetAiConfigured}
                         >
                           Ouvrir le chat
                         </button>
@@ -6384,6 +6408,108 @@ Réponse attendue:
                     </article>
                   </div>
                 ) : null}
+
+                {settingsSection === 'subscription' ? (() => {
+                  const renewDate = subscription?.currentPeriodEnd
+                    ? new Date(subscription.currentPeriodEnd).toLocaleDateString('fr-FR', {
+                        day: 'numeric', month: 'long', year: 'numeric',
+                      })
+                    : null
+                  const quotaPct = aiQuota && aiQuota.limit > 0
+                    ? Math.min(100, Math.round((aiQuota.used / aiQuota.limit) * 100))
+                    : 0
+                  const busyLabel = (key: string, label: string) =>
+                    checkoutBusy === key ? (
+                      <span className="inline-loading-label"><span className="inline-loader" aria-hidden="true" />Ouverture…</span>
+                    ) : label
+                  return (
+                    <div className="settings-section-grid settings-section-grid--single">
+                      <article className="glass-card settings-section-card form-panel">
+                        <div className="panel-title">
+                          <h2>Abonnement</h2>
+                          <p>Votre formule actuelle, votre quota IA inclus et les options pour évoluer.</p>
+                        </div>
+
+                        <div className={`subscription-current subscription-current--${userPlan}`}>
+                          <strong>
+                            {userPlan === 'premium' ? '⭐ Premium' : userPlan === 'family' ? '👨‍👩‍👧 Famille' : '🌱 Découverte — gratuit'}
+                          </strong>
+                          <small>
+                            {userPlan === 'free'
+                              ? 'Vous profitez de la période de lancement : toutes les fonctionnalités sont offertes aux premiers inscrits.'
+                              : subscription?.cancelAtPeriodEnd
+                                ? `Résiliation programmée — accès jusqu'au ${renewDate ?? 'terme en cours'}.`
+                                : renewDate
+                                  ? `Abonnement actif — renouvellement le ${renewDate}.`
+                                  : 'Abonnement actif.'}
+                          </small>
+                        </div>
+
+                        {canUseIncludedAi ? (
+                          <div className="ai-quota-box">
+                            <div className="ai-quota-box__head">
+                              <strong>🤖 IA incluse (Cash)</strong>
+                              <span>{aiQuota ? `${aiQuota.used} / ${aiQuota.limit} messages ce mois-ci` : 'Chargement…'}</span>
+                            </div>
+                            <div className="ai-quota-bar" role="progressbar" aria-valuenow={quotaPct} aria-valuemin={0} aria-valuemax={100}>
+                              <span style={{ width: `${quotaPct}%` }} />
+                            </div>
+                            <small>Votre clé API personnelle (Paramètres → Assistant IA) reste utilisable sans quota.</small>
+                          </div>
+                        ) : null}
+
+                        {userPlan !== 'family' ? (
+                          <div className="subscription-plans">
+                            {userPlan === 'free' ? (
+                              <div className="subscription-plan subscription-plan--highlight">
+                                <div className="subscription-plan__head">
+                                  <strong>⭐ Premium</strong>
+                                  <span>3,99 €/mois</span>
+                                </div>
+                                <p>IA complète (300 messages/mois), poches et profils illimités, rapports email automatiques.</p>
+                                <div className="subscription-plan__actions">
+                                  <button type="button" className="hero-cta-button" disabled={checkoutBusy !== null} onClick={() => void handleStartCheckout('premium', 'monthly')}>
+                                    {busyLabel('premium-monthly', 'Passer Premium — 3,99 €/mois')}
+                                  </button>
+                                  <button type="button" className="ghost-button" disabled={checkoutBusy !== null} onClick={() => void handleStartCheckout('premium', 'yearly')}>
+                                    {busyLabel('premium-yearly', '29,99 €/an (−37 %)')}
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
+                            <div className="subscription-plan">
+                              <div className="subscription-plan__head">
+                                <strong>👨‍👩‍👧 Famille</strong>
+                                <span>5,99 €/mois</span>
+                              </div>
+                              <p>Tout Premium, jusqu'à 5 membres du foyer, vue famille fusionnée, 500 messages IA/mois.</p>
+                              <div className="subscription-plan__actions">
+                                <button type="button" className="hero-cta-button" disabled={checkoutBusy !== null} onClick={() => void handleStartCheckout('family', 'monthly')}>
+                                  {busyLabel('family-monthly', 'Choisir Famille — 5,99 €/mois')}
+                                </button>
+                                <button type="button" className="ghost-button" disabled={checkoutBusy !== null} onClick={() => void handleStartCheckout('family', 'yearly')}>
+                                  {busyLabel('family-yearly', '44,99 €/an')}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {userPlan !== 'free' ? (
+                          <div className="settings-inline-actions">
+                            <button type="button" className="ghost-button" disabled={checkoutBusy !== null} onClick={() => void handleOpenBillingPortal()}>
+                              {busyLabel('portal', '🧾 Gérer mon abonnement (factures, résiliation)')}
+                            </button>
+                          </div>
+                        ) : null}
+
+                        <p className="auth-note">
+                          Paiement sécurisé par Stripe. Résiliable en un clic, sans engagement — vos données restent à vous, quel que soit le plan.
+                        </p>
+                      </article>
+                    </div>
+                  )
+                })() : null}
 
                 {settingsSection === 'rgpd' ? (
                   <div className="settings-section-grid">
@@ -7911,7 +8037,7 @@ Réponse attendue:
               <span>Solde projete: {euroFormatter.format(monthlyNet)}</span>
             </div>
           </div>
-          {anthropicKey ? (
+          {cashAiReady ? (
             <div className="predict-zone">
               <button
                 type="button"
@@ -8304,7 +8430,7 @@ Réponse attendue:
     </main>
 
     {/* ── Claude AI Chat ─────────────────────────────────────────── */}
-    {isAuthenticated && isCurrentAiProviderOperational && anthropicKey ? (
+    {isAuthenticated && isBudgetAiConfigured ? (
       <>
         {chatNudgeVisible && !chatOpen ? (
           <button

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { callCashModel } from '../lib/aiClient'
 import { categories } from '../lib/categories'
 import { euroFormatter } from '../lib/format'
 import type { Category, TransactionKind } from '../types'
@@ -68,28 +69,13 @@ export function NotesView({ notes, onChange, aiEnabled, anthropicKey, onImportTr
     setAiError('')
     setExtracted(null)
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1500,
-          system: `Tu extrais des opérations financières d'un texte libre en français (relevé bancaire collé, ticket, liste, SMS…). Réponds UNIQUEMENT un JSON de la forme {"transactions":[{"label":"…","amount":12.5,"kind":"depense","date":"2026-08-30","category":"Courses","tags":["…"]}]}.
+      const raw = await callCashModel({
+        apiKey: anthropicKey || undefined,
+        maxTokens: 1500,
+        system: `Tu extrais des opérations financières d'un texte libre en français (relevé bancaire collé, ticket, liste, SMS…). Réponds UNIQUEMENT un JSON de la forme {"transactions":[{"label":"…","amount":12.5,"kind":"depense","date":"2026-08-30","category":"Courses","tags":["…"]}]}.
 Règles : amount toujours positif (le signe est porté par kind: "depense" ou "revenu") ; date au format YYYY-MM-DD ou null si inconnue ; category exactement parmi ${categories.join(', ')} ; tags 0-2 étiquettes courtes en minuscules ; libellés courts et propres. Si aucune opération détectable, {"transactions":[]}.`,
-          messages: [{ role: 'user', content: text.slice(0, 6000) }],
-        }),
+        messages: [{ role: 'user', content: text.slice(0, 6000) }],
       })
-      if (!response.ok) {
-        setAiError(`L'analyse a échoué (erreur ${response.status}). Vérifiez votre clé IA.`)
-        return
-      }
-      const data = (await response.json()) as { content: Array<{ type: string; text: string }> }
-      const raw = data.content.find((c) => c.type === 'text')?.text ?? ''
       const match = /\{[\s\S]*\}/.exec(raw)
       const parsed = match ? (JSON.parse(match[0]) as { transactions?: unknown[] }) : null
       const rows: ExtractedTx[] = (parsed?.transactions ?? [])
@@ -115,8 +101,10 @@ Règles : amount toujours positif (le signe est porté par kind: "depense" ou "r
       }
       setExtracted(rows)
       setChecked(new Set(rows.map((_, index) => index)))
-    } catch {
-      setAiError("L'analyse a échoué — réessayez.")
+    } catch (error) {
+      setAiError(
+        error instanceof Error && error.message ? error.message : "L'analyse a échoué — réessayez.",
+      )
     } finally {
       setAiBusy(false)
     }
