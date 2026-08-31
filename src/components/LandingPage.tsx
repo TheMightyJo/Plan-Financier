@@ -98,7 +98,7 @@ const FAQ = [
   },
   {
     q: 'L’assistant IA lit-il mes données ?',
-    a: 'Cash n’analyse que les chiffres nécessaires à votre demande, avec votre propre clé IA. Rien n’est utilisé pour entraîner des modèles.',
+    a: 'Cash n’analyse que les chiffres nécessaires à votre demande. L’IA est incluse avec votre compte (quota mensuel selon la formule) et rien n’est utilisé pour entraîner des modèles.',
   },
   {
     q: 'Puis-je essayer sans créer de compte ?',
