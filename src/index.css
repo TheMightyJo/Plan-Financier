@@ -11838,9 +11838,10 @@ button.envelope-card:hover .envelope-card__body {
   display: none;
 }
 
-/* ── Mobile : bandeau profil compact + barre d'onglets fixe en bas ──── */
+/* ── Mobile / fenêtres étroites (≤ 760 px) : en-tête compact + barre
+   d'onglets fixe en bas ─────────────────────────────────────────────── */
 
-@media (max-width: 640px) {
+@media (max-width: 760px) {
   .dashboard-shell {
     grid-template-columns: minmax(0, 1fr);
     padding-bottom: calc(4.8rem + env(safe-area-inset-bottom, 0px));
@@ -12120,5 +12121,73 @@ button.envelope-card:hover .envelope-card__body {
 
   .landing-showcase-item:nth-child(even) .landing-showcase-art {
     order: 2;
+  }
+}
+
+/* ── Mobile : plus d'air et contenu centré ─────────────────────────────── */
+
+@media (max-width: 760px) {
+  .dashboard-shell {
+    width: min(760px, 100% - 1.2rem);
+  }
+
+  .dashboard-main {
+    gap: 1.3rem;
+  }
+
+  .dashboard-main > .glass-card,
+  .dashboard-main .panel-grid > .glass-card,
+  .dashboard-right-rail {
+    padding: 1.35rem 1.15rem;
+  }
+
+  /* Titres de cartes : empilés et centrés */
+  .panel-title {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.35rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .panel-title h2 {
+    justify-content: center;
+  }
+
+  .panel-title p {
+    max-width: 34ch;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* Accueil : hero centré */
+  .hero-header {
+    padding: 1.6rem 1.2rem;
+  }
+
+  .hero-main {
+    align-items: center;
+    text-align: center;
+  }
+
+  .hero-priority-bar,
+  .hero-secondary-actions,
+  .settings-inline-actions,
+  .notes-toolbar,
+  .notes-ai-actions {
+    justify-content: center;
+  }
+
+  /* Notes : encart IA et messages centrés, bouton pleine largeur */
+  .quick-add-ai-nudge,
+  .notes-ai-box__hint,
+  .notes-view .auth-note,
+  .notes-view .auth-error {
+    text-align: center;
+  }
+
+  .notes-view > .hero-cta-button,
+  .notes-toolbar > .hero-cta-button {
+    width: 100%;
   }
 }
