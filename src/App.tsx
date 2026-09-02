@@ -13,6 +13,8 @@ import { StatsView } from './components/StatsView'
 import { EnvelopeModal } from './components/EnvelopeModal'
 import { PremiumGateModal } from './components/PremiumGateModal'
 import { StartChecklist } from './components/StartChecklist'
+import { CashChatPanel } from './components/CashChatPanel'
+import { QuickAddModal } from './components/QuickAddModal'
 import {
   Area,
   AreaChart,
@@ -38,8 +40,6 @@ import {
   BellRing,
   Upload,
   FileSpreadsheet,
-  ChevronDown,
-  ChevronUp,
   Download,
   Layers3,
   Brain,
@@ -47,9 +47,6 @@ import {
   Pencil,
   Trash2,
   X,
-  Mic,
-  Paperclip,
-  Send,
   Bot,
   Repeat2,
   Target,
@@ -118,7 +115,6 @@ import {
   type SentInvite,
 } from './repos/familyRepo'
 import { FamilyView } from './components/FamilyView'
-import { GroupedSearchSelect } from './components/GroupedSearchSelect'
 import { MerchantLogo } from './components/MerchantLogo'
 import { NotesView, type ExtractedTx, type NoteItem } from './components/NotesView'
 import {
@@ -144,8 +140,6 @@ import {
 import { ACCOUNT_TYPE_LABELS } from './types'
 import type { Account, RecurringFrequency, RecurringRule } from './types'
 import {
-  EXPENSE_CATEGORY_GROUPS,
-  INCOME_CATEGORY_GROUPS,
   allExpenseCategories,
   categories,
   categoryEmoji,
@@ -1712,6 +1706,14 @@ Règles :
         // Email de bienvenue (une seule fois par compte, côté serveur) —
         // en arrière-plan : un échec n'empêche jamais l'entrée dans l'app.
         void supabase.functions.invoke('lifecycle-emails', { body: { event: 'welcome' } }).catch(() => {})
+        // Bilan hebdomadaire activé par défaut (désactivable dans Paramètres →
+        // Rapport par email) : le rappel du dimanche est le premier levier de
+        // rétention. Uniquement si aucune préférence n'existe encore.
+        const current = await getReportPrefs()
+        if (current.frequency === 'none' && !current.lastSentAt) {
+          const saved = await saveReportPrefs({ frequency: 'weekly', format: 'summary', attachment: 'none', ccEmails: [] })
+          if (saved) setReportPrefs((previous) => ({ ...previous, frequency: 'weekly' }))
+        }
       }
     } catch {
       // Hors-ligne : le drapeau localStorage suffit pour cet appareil.
@@ -8373,220 +8375,38 @@ Réponse attendue:
 
     </main>
 
-    {/* ── Claude AI Chat ─────────────────────────────────────────── */}
+    {/* ── Cash, l'assistant (chat) ───────────────────────────────── */}
     {isAuthenticated && isBudgetAiConfigured ? (
-      <>
-        {chatNudgeVisible && !chatOpen ? (
-          <button
-            type="button"
-            className="chat-fab-nudge"
-            onClick={() => {
-              setChatNudgeVisible(false)
-              setChatOpen(true)
-            }}
-          >
-            👋 Je suis Cash, votre assistant budget. Une question sur vos finances ? Demandez-moi !
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className={`chat-fab${chatOpen ? ' chat-fab--open' : ''}`}
-          onClick={() => setChatOpen((prev) => !prev)}
-          title="Cash, votre assistant budget"
-          aria-label="Ouvrir Cash, votre assistant budget"
-        >
-          {chatOpen ? <X size={22} /> : <Bot size={24} />}
-          {!chatOpen && chatMessages.length > 0 && (
-            <span className="chat-fab-badge">{chatMessages.filter((m) => m.role === 'assistant').length}</span>
-          )}
-        </button>
-
-        {chatOpen ? (
-          <div className="chat-panel glass-card" role="dialog" aria-label="Cash, votre assistant budget">
-            <div className="chat-header">
-              <Bot size={18} />
-              <span className="chat-header-title">
-                Cash 💰 <small>· votre assistant virtuel</small>
-              </span>
-              {chatMessages.length > 0 ? (
-                <button
-                  type="button"
-                  className="chat-clear-btn"
-                  onClick={() => setChatClearConfirmOpen((prev) => !prev)}
-                  title="Effacer la conversation"
-                  aria-label="Effacer la conversation"
-                  disabled={chatLoading}
-                >
-                  <Trash2 size={14} />
-                  <span>Effacer</span>
-                </button>
-              ) : null}
-            </div>
-
-            {chatClearConfirmOpen ? (
-              <div className="chat-clear-confirm" role="status" aria-live="polite">
-                <span>
-                  Effacer cette conversation ?
-                </span>
-                <div className="chat-clear-confirm-actions">
-                  <button type="button" className="chat-clear-confirm-yes" onClick={clearChatConversation}>
-                    Effacer
-                  </button>
-                  <button
-                    type="button"
-                    className="chat-clear-confirm-no"
-                    onClick={() => setChatClearConfirmOpen(false)}
-                  >
-                    Annuler
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-            {chatUndoToastOpen && lastDeletedChat?.storageKey === chatHistoryStorageKey ? (
-              <div className="chat-undo-toast" role="status" aria-live="polite">
-                <span>Conversation supprimée sur {lastDeletedChat.threadLabel}.</span>
-                <button type="button" onClick={restoreLastDeletedChat} disabled={chatLoading}>
-                  Restaurer
-                </button>
-              </div>
-            ) : null}
-
-            <div className="chat-messages-wrap">
-              {chatScrollHints.up ? (
-                <button
-                  type="button"
-                  className="chat-scroll-hint chat-scroll-hint--up"
-                  onClick={() => chatScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-                  aria-label="Remonter la conversation"
-                >
-                  <ChevronUp size={18} />
-                </button>
-              ) : null}
-              {chatScrollHints.down ? (
-                <button
-                  type="button"
-                  className="chat-scroll-hint chat-scroll-hint--down"
-                  onClick={() => {
-                    const el = chatScrollRef.current
-                    el?.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-                  }}
-                  aria-label="Descendre en bas de la conversation"
-                >
-                  <ChevronDown size={18} />
-                </button>
-              ) : null}
-            <div
-              className="chat-messages"
-              ref={chatScrollRef}
-              onScroll={updateChatScrollHints}
-              aria-live="polite"
-              aria-relevant="additions text"
-            >
-              {chatMessages.length === 0 ? (
-                <div className="chat-empty">
-                  <Bot size={32} />
-                  <p>
-                    Bonjour, moi c'est <strong>Cash</strong> 💰 Je compte vos sous plus vite que
-                    votre banquier — et sans commission. Une question sur vos finances ?
-                  </p>
-                  <div className="chat-suggestions">
-                    {[
-                      'Résume mon mois',
-                      'Où puis-je économiser ?',
-                      'Mon budget tient-il ?',
-                      'Quelle est ma plus grosse dépense ?',
-                      'Analyse mes abonnements',
-                      'Prépare mon budget du mois prochain',
-                    ].map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        disabled={chatLoading}
-                        onClick={() => {
-                          setChatInput('')
-                          void sendChatMessage(s)
-                        }}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                chatMessages.map((msg, index) => (
-                  <div key={index} className={`chat-bubble chat-bubble--${msg.role}`}>
-                    <p>{msg.content}</p>
-                  </div>
-                ))
-              )}
-              {chatLoading ? (
-                <div className="chat-bubble chat-bubble--assistant chat-bubble--loading">
-                  <span /><span /><span />
-                </div>
-              ) : null}
-              <div ref={chatEndRef} />
-            </div>
-            </div>
-
-            {chatAttachment ? (
-              <span className="advice-attachment-chip chat-attachment-chip">
-                📎 {chatAttachment.name}
-                <button type="button" onClick={() => setChatAttachment(null)} aria-label="Retirer la pièce jointe">✕</button>
-              </span>
-            ) : null}
-            <form
-              className="chat-input-row"
-              onSubmit={(event) => {
-                event.preventDefault()
-                void sendChatMessage(undefined, chatAttachment)
-                setChatAttachment(null)
-              }}
-            >
-              <button
-                type="button"
-                className="advice-icon-btn"
-                onClick={() => chatFileInputRef.current?.click()}
-                title="Joindre une image ou un PDF (ticket, facture…)"
-                aria-label="Joindre une pièce jointe"
-                disabled={chatLoading}
-              >
-                <Paperclip size={16} />
-              </button>
-              {speechRecognitionCtor ? (
-                <button
-                  type="button"
-                  className={`advice-icon-btn${chatListening ? ' advice-icon-btn--live' : ''}`}
-                  onClick={toggleChatDictation}
-                  title={chatListening ? 'Arrêter la dictée' : 'Dicter la question'}
-                  aria-label={chatListening ? 'Arrêter la dictée' : 'Dicter la question'}
-                  disabled={chatLoading}
-                >
-                  <Mic size={16} />
-                </button>
-              ) : null}
-              <input
-                ref={chatInputRef}
-                value={chatInput}
-                onChange={(event) => setChatInput(event.target.value)}
-                placeholder={chatListening ? 'Cash vous écoute…' : 'Posez une question…'}
-                disabled={chatLoading}
-                autoFocus
-              />
-              <button type="submit" disabled={!chatInput.trim() || chatLoading}>
-                {chatLoading ? <span className="inline-loader" aria-hidden="true" /> : <Send size={16} />}
-              </button>
-              <input
-                type="file"
-                hidden
-                ref={chatFileInputRef}
-                accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
-                onChange={handleChatFile}
-              />
-            </form>
-          </div>
-        ) : null}
-      </>
+      <CashChatPanel
+        chatOpen={chatOpen}
+        setChatOpen={setChatOpen}
+        chatNudgeVisible={chatNudgeVisible}
+        setChatNudgeVisible={setChatNudgeVisible}
+        chatMessages={chatMessages}
+        chatLoading={chatLoading}
+        chatInput={chatInput}
+        setChatInput={setChatInput}
+        chatInputRef={chatInputRef}
+        chatEndRef={chatEndRef}
+        chatScrollRef={chatScrollRef}
+        chatScrollHints={chatScrollHints}
+        updateChatScrollHints={updateChatScrollHints}
+        chatClearConfirmOpen={chatClearConfirmOpen}
+        setChatClearConfirmOpen={setChatClearConfirmOpen}
+        clearChatConversation={clearChatConversation}
+        chatUndoToastOpen={chatUndoToastOpen}
+        lastDeletedChat={lastDeletedChat}
+        chatHistoryStorageKey={chatHistoryStorageKey}
+        restoreLastDeletedChat={restoreLastDeletedChat}
+        chatAttachment={chatAttachment}
+        setChatAttachment={setChatAttachment}
+        chatFileInputRef={chatFileInputRef}
+        handleChatFile={handleChatFile}
+        dictationAvailable={Boolean(speechRecognitionCtor)}
+        chatListening={chatListening}
+        toggleChatDictation={toggleChatDictation}
+        sendChatMessage={sendChatMessage}
+      />
     ) : null}
 
     {/* ── Modale de gestion d'une poche ──────────────────────────── */}
@@ -8664,238 +8484,32 @@ Réponse attendue:
     {/* ── Panneau RGPD : export + suppression compte ─────────────── */}
     {/* ── Ajout rapide de dépense depuis le calendrier ────────────── */}
     {quickAddDate ? (
-      <div className="budget-actions-modal-overlay" onClick={closeQuickAdd}>
-        <div
-          className={`budget-actions-modal quick-add-modal quick-add-modal--${quickAddForm.kind}`}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <button
-            type="button"
-            className="budget-actions-modal-close"
-            onClick={closeQuickAdd}
-            aria-label="Fermer"
-          >
-            ✕
-          </button>
-          <h3>
-            {quickAddEditingId !== null
-              ? (quickAddForm.kind === 'revenu' ? 'Modifier le revenu' : 'Modifier la dépense')
-              : (quickAddForm.kind === 'revenu' ? 'Ajouter un revenu' : 'Ajouter une dépense')}{' '}
-            — {new Date(`${quickAddDate}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </h3>
-          <form onSubmit={handleQuickAddSubmit} className="quick-add-form">
-            <div className="quick-add-kind" role="radiogroup" aria-label="Type d'opération">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={quickAddForm.kind === 'depense'}
-                className={`quick-add-kind__option${quickAddForm.kind === 'depense' ? ' quick-add-kind__option--active' : ''}`}
-                onClick={() =>
-                  setQuickAddForm((previous) => ({
-                    ...previous,
-                    kind: 'depense',
-                    category: quickAddTouchedRef.current.category ? previous.category : 'Courses',
-                  }))
-                }
-              >
-                💸 Dépense
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={quickAddForm.kind === 'revenu'}
-                className={`quick-add-kind__option${quickAddForm.kind === 'revenu' ? ' quick-add-kind__option--active' : ''}`}
-                onClick={() =>
-                  setQuickAddForm((previous) => ({
-                    ...previous,
-                    kind: 'revenu',
-                    category: quickAddTouchedRef.current.category ? previous.category : 'Salaire',
-                  }))
-                }
-              >
-                💰 Revenu
-              </button>
-            </div>
-            <label>
-              <span>Libellé <span className="required-star" aria-hidden="true">*</span></span>
-              <input
-                value={quickAddForm.label}
-                onChange={(event) => {
-                  const label = event.target.value
-                  setQuickAddForm((previous) => ({
-                    ...previous,
-                    label,
-                    category: quickAddTouchedRef.current.category
-                      ? previous.category
-                      : suggestCategoryFromLabel(label) ?? previous.category,
-                  }))
-                  scheduleQuickAddAi(label)
-                }}
-                placeholder="Ex: Courses Carrefour"
-                autoFocus
-                required
-              />
-            </label>
-            <div className="quick-add-selects">
-              <label>
-                <span>Montant (€) <span className="required-star" aria-hidden="true">*</span></span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={quickAddForm.amount}
-                  onChange={(event) => setQuickAddForm((previous) => ({ ...previous, amount: event.target.value }))}
-                  placeholder="Ex: 42,50"
-                  required
-                />
-              </label>
-              <label>
-                <span>Date <span className="required-star" aria-hidden="true">*</span></span>
-                <input
-                  type="date"
-                  value={quickAddDate}
-                  onChange={(event) => {
-                    if (event.target.value) setQuickAddDate(event.target.value)
-                  }}
-                  required
-                />
-              </label>
-            </div>
-            {quickAddForm.kind === 'depense' &&
-            (Number(quickAddForm.amount.replace(',', '.')) >= 150 || quickAddForm.budgetMonth) ? (
-              <label className="quick-add-budget-month">
-                💡 Grosse dépense — la compter sur le budget d'un autre mois ?
-                <select
-                  value={quickAddForm.budgetMonth}
-                  onChange={(event) =>
-                    setQuickAddForm((previous) => ({ ...previous, budgetMonth: event.target.value }))
-                  }
-                >
-                  <option value="">Non — sur le mois de la dépense</option>
-                  {[shiftMonth(quickAddDate.slice(0, 7), 1), shiftMonth(quickAddDate.slice(0, 7), 2), shiftMonth(quickAddDate.slice(0, 7), -1)].map((m) => (
-                    <option key={m} value={m}>Oui — budget de {formatMonth(m)}</option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            <div className="quick-add-selects">
-              <label>
-                Catégorie
-                {quickAddAiBusy ? (
-                  <small className="quick-add-hint"> ✨ analyse…</small>
-                ) : quickAddAiApplied ? (
-                  <small className="quick-add-hint"> ✨ suggéré par l'IA — modifiable</small>
-                ) : null}
-                <GroupedSearchSelect
-                  value={quickAddForm.category}
-                  groups={quickAddForm.kind === 'revenu' ? INCOME_CATEGORY_GROUPS : EXPENSE_CATEGORY_GROUPS}
-                  onChange={(category) => {
-                    quickAddTouchedRef.current.category = true
-                    setQuickAddForm((previous) => ({ ...previous, category }))
-                  }}
-                  selectAriaLabel="Catégorie"
-                  customPlaceholder="Votre catégorie…"
-                />
-              </label>
-              <label>
-                Poche
-                <GroupedSearchSelect
-                  value={quickAddForm.envelope}
-                  groups={envelopeGroupsWithCustom}
-                  onChange={(envelope) => setQuickAddForm((previous) => ({ ...previous, envelope }))}
-                  selectAriaLabel="Poche"
-                  customPlaceholder="Votre poche…"
-                />
-              </label>
-            </div>
-            <label>
-              Tags <small className="quick-add-hint">(optionnel, séparés par des virgules)</small>
-              <input
-                value={quickAddForm.tags}
-                onChange={(event) => {
-                  quickAddTouchedRef.current.tags = true
-                  setQuickAddForm((previous) => ({ ...previous, tags: event.target.value }))
-                }}
-                placeholder="Ex: vacances, remboursable"
-              />
-            </label>
-            {!isBudgetAiConfigured ? (
-              <button
-                type="button"
-                className="quick-add-ai-nudge"
-                onClick={() => {
-                  closeQuickAdd()
-                  openSettingsPanel('ai')
-                }}
-              >
-                ✨ Besoin d'aller plus vite ? Configurez votre assistant IA pour trouver
-                automatiquement la catégorie et les tags de vos dépenses.
-              </button>
-            ) : null}
-            <label>
-                Répéter
-                <select
-                  value={quickAddForm.recurrence}
-                  onChange={(event) =>
-                    setQuickAddForm((previous) => ({
-                      ...previous,
-                      recurrence: event.target.value as 'none' | RecurringFrequency,
-                    }))
-                  }
-                >
-                  <option value="none">
-                    {quickAddEditingId !== null && activeRuleOf(transactions.find((tx) => tx.id === quickAddEditingId))
-                      ? 'Ne plus répéter'
-                      : 'Jamais (opération unique)'}
-                  </option>
-                  <option value="weekly">Chaque semaine</option>
-                  <option value="monthly">Chaque mois</option>
-                  <option value="quarterly">Chaque trimestre</option>
-                  <option value="yearly">Chaque année</option>
-                </select>
-              </label>
-            <p className="quick-add-required-note">
-              <span className="required-star" aria-hidden="true">*</span> Champs obligatoires pour enregistrer.
-            </p>
-            {quickAddEditingId !== null && quickAddDeleteAsk ? (
-              <div className="quick-add-delete-confirm" role="alertdialog" aria-label="Confirmer la suppression">
-                <span>Supprimer définitivement cette opération ?</span>
-                <div>
-                  <button
-                    type="button"
-                    className="quick-add-delete-yes"
-                    onClick={() => {
-                      deleteTransaction(quickAddEditingId)
-                      closeQuickAdd()
-                    }}
-                  >
-                    Oui, supprimer
-                  </button>
-                  <button type="button" className="ghost-button" onClick={() => setQuickAddDeleteAsk(false)}>
-                    Non, garder
-                  </button>
-                </div>
-              </div>
-            ) : null}
-            <div className="quick-add-actions">
-              {quickAddEditingId !== null && !quickAddDeleteAsk ? (
-                <button
-                  type="button"
-                  className="quick-add-delete-btn"
-                  onClick={() => setQuickAddDeleteAsk(true)}
-                >
-                  🗑️ Supprimer
-                </button>
-              ) : null}
-              <button type="button" className="ghost-button" onClick={closeQuickAdd}>
-                Annuler
-              </button>
-              <button type="submit" className="hero-cta-button">
-                {quickAddEditingId !== null ? 'Enregistrer' : 'Ajouter la dépense'}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
+      <QuickAddModal
+        quickAddDate={quickAddDate}
+        setQuickAddDate={setQuickAddDate}
+        closeQuickAdd={closeQuickAdd}
+        quickAddForm={quickAddForm}
+        setQuickAddForm={setQuickAddForm}
+        quickAddEditingId={quickAddEditingId}
+        editingHasActiveRule={
+          quickAddEditingId !== null && Boolean(activeRuleOf(transactions.find((tx) => tx.id === quickAddEditingId)))
+        }
+        handleQuickAddSubmit={handleQuickAddSubmit}
+        quickAddTouchedRef={quickAddTouchedRef}
+        scheduleQuickAddAi={scheduleQuickAddAi}
+        quickAddAiBusy={quickAddAiBusy}
+        quickAddAiApplied={quickAddAiApplied}
+        envelopeGroupsWithCustom={envelopeGroupsWithCustom}
+        isBudgetAiConfigured={isBudgetAiConfigured}
+        onConfigureAi={() => {
+          closeQuickAdd()
+          openSettingsPanel('ai')
+        }}
+        quickAddDeleteAsk={quickAddDeleteAsk}
+        setQuickAddDeleteAsk={setQuickAddDeleteAsk}
+        deleteTransaction={deleteTransaction}
+        formatMonth={formatMonth}
+      />
     ) : null}
 
     {showPrivacyPanel ? (
