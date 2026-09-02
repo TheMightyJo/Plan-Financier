@@ -9,6 +9,10 @@ import {
   type SubscriptionInfo,
 } from './repos/billingRepo'
 import AuthScreen from './AuthScreen'
+import { StatsView } from './components/StatsView'
+import { EnvelopeModal } from './components/EnvelopeModal'
+import { PremiumGateModal } from './components/PremiumGateModal'
+import { StartChecklist } from './components/StartChecklist'
 import {
   Area,
   AreaChart,
@@ -3324,6 +3328,23 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     closeEnvelopeModal()
   }
 
+  /** Modale poche (édition) : enregistre objectif, disponible et renommage. */
+  const saveEnvelopeModal = () => {
+    if (!envelopeModal) return
+    const target = Number(envModalTarget)
+    saveEnvelopeBudget(envelopeModal.name, Number.isNaN(target) ? 0 : target)
+    const available = Number(envModalAdd.replace(',', '.'))
+    if (!Number.isNaN(available)) {
+      setEnvelopeAvailable(envelopeModal.name, available)
+    }
+    if (envModalName.trim() && envModalName.trim() !== envelopeModal.name) {
+      renameEnvelope(envelopeModal.name, envModalName)
+    } else {
+      showToast(`✉️ Poche ${envelopeModal.name} mise à jour`)
+      closeEnvelopeModal()
+    }
+  }
+
   const renameEnvelope = (oldName: string, rawNext: string) => {
     const next = rawNext.trim().slice(0, 40)
     if (!next || next === oldName) return
@@ -3695,8 +3716,6 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   // Mois affiché dans la vue Statistiques (YYYY-MM) + semaine dépliée.
   const [statsMonth, setStatsMonth] = useState(todayIso.slice(0, 7))
   const [statsSelectedWeek, setStatsSelectedWeek] = useState<string | null>(null)
-  const [statsPickerOpen, setStatsPickerOpen] = useState(false)
-  const [statsPickerYear, setStatsPickerYear] = useState(() => Number(todayIso.slice(0, 4)))
   const statsMonthEnd = useMemo(() => shiftDay(`${shiftMonth(statsMonth, 1)}-01`, -1), [statsMonth])
   const statsViewData = useMemo(
     () => weeklyStats(activeTransactions, statsMonthEnd, 12),
@@ -5610,31 +5629,7 @@ Réponse attendue:
         ) : null}
 
         {isActiveView('overview') && startChecklist.visible ? (
-          <section className="glass-card start-checklist" aria-label="Premiers pas">
-            <div className="start-checklist__head">
-              <div>
-                <p className="eyebrow">Premiers pas</p>
-                <h2>Votre budget en 3 gestes · {startChecklist.done}/3</h2>
-              </div>
-              <button type="button" className="start-checklist__dismiss" onClick={dismissStartChecklist} aria-label="Masquer les premiers pas">
-                ✕
-              </button>
-            </div>
-            <ul>
-              {startChecklist.items.map((item) => (
-                <li key={item.id} className={item.done ? 'start-checklist__item start-checklist__item--done' : 'start-checklist__item'}>
-                  <button type="button" onClick={item.action} disabled={item.done}>
-                    <span className="start-checklist__check" aria-hidden="true">{item.done ? '✓' : ''}</span>
-                    <span className="start-checklist__text">
-                      <strong>{item.title}</strong>
-                      <small>{item.hint}</small>
-                    </span>
-                    {!item.done ? <span className="start-checklist__go" aria-hidden="true">→</span> : null}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
+          <StartChecklist items={startChecklist.items} done={startChecklist.done} onDismiss={dismissStartChecklist} />
         ) : null}
 
         {isActiveView('overview') ? (
@@ -5817,38 +5812,14 @@ Réponse attendue:
 
 
       {premiumGate ? (
-      <div
-        className="modal-backdrop"
-        role="presentation"
-        onClick={(event) => {
-          if (event.target === event.currentTarget) setPremiumGate(null)
+      <PremiumGateModal
+        feature={premiumGate}
+        onClose={() => setPremiumGate(null)}
+        onSeePlans={() => {
+          setPremiumGate(null)
+          openSettingsPanel('subscription')
         }}
-      >
-        <section className="glass-card premium-gate-card" role="dialog" aria-modal="true" aria-labelledby="premium-gate-title">
-          <span className="premium-gate-badge">⭐ Premium</span>
-          <h2 id="premium-gate-title">Passez à la vitesse supérieure</h2>
-          <p>
-            {premiumGate.charAt(0).toUpperCase() + premiumGate.slice(1)} font partie de Plan Financier Premium :
-            poches et profils illimités, rapports email automatiques, Cash sans compter.
-            <strong> 3,99 €/mois</strong>, résiliable en un clic.
-          </p>
-          <div className="premium-gate-actions">
-            <button
-              type="button"
-              className="hero-cta-button"
-              onClick={() => {
-                setPremiumGate(null)
-                openSettingsPanel('subscription')
-              }}
-            >
-              Voir les formules
-            </button>
-            <button type="button" className="ghost-button" onClick={() => setPremiumGate(null)}>
-              Plus tard
-            </button>
-          </div>
-        </section>
-      </div>
+      />
     ) : null}
 
     {showSettings ? (
@@ -7178,191 +7149,19 @@ Réponse attendue:
       ) : null}
 
       {isActiveView('stats') ? (
-      <section id="stats" className="panel-grid">
-        <article className="glass-card chart-card wide-card">
-          <div className="panel-title">
-            <div>
-              <h2>Dépenses vs Revenus par semaine</h2>
-              <p>Semaines du lundi au dimanche · 12 semaines affichées sur le graphique.</p>
-            </div>
-            <div className="stats-toolbar">
-              <button
-                type="button"
-                onClick={() => { setStatsMonth(shiftMonth(statsMonth, -1)); setStatsSelectedWeek(null) }}
-                aria-label="Mois précédent"
-              >‹</button>
-              <span className="stats-month-picker-wrap">
-                <button
-                  type="button"
-                  className="stats-month-title"
-                  onClick={() => {
-                    setStatsPickerYear(Number(statsMonth.slice(0, 4)))
-                    setStatsPickerOpen((previous) => !previous)
-                  }}
-                  aria-expanded={statsPickerOpen}
-                  title="Choisir le mois et l'année"
-                >
-                  {formatMonth(statsMonth).charAt(0).toUpperCase() + formatMonth(statsMonth).slice(1)} ▾
-                </button>
-                {statsPickerOpen ? (
-                  <div className="stats-month-popover" role="dialog" aria-label="Choisir le mois et l'année">
-                    <div className="stats-month-popover__year">
-                      <button type="button" onClick={() => setStatsPickerYear((y) => y - 1)} aria-label="Année précédente">‹</button>
-                      <strong>{statsPickerYear}</strong>
-                      <button
-                        type="button"
-                        onClick={() => setStatsPickerYear((y) => y + 1)}
-                        aria-label="Année suivante"
-                        disabled={statsPickerYear >= Number(todayIso.slice(0, 4))}
-                      >›</button>
-                    </div>
-                    <div className="stats-month-popover__grid">
-                      {['Janv', 'Févr', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc'].map((name, index) => {
-                        const value = `${statsPickerYear}-${String(index + 1).padStart(2, '0')}`
-                        return (
-                          <button
-                            key={name}
-                            type="button"
-                            className={value === statsMonth ? 'active' : ''}
-                            disabled={value > todayIso.slice(0, 7)}
-                            onClick={() => {
-                              setStatsMonth(value)
-                              setStatsSelectedWeek(null)
-                              setStatsPickerOpen(false)
-                            }}
-                          >
-                            {name}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-              </span>
-              <button
-                type="button"
-                onClick={() => { setStatsMonth(shiftMonth(statsMonth, 1)); setStatsSelectedWeek(null) }}
-                aria-label="Mois suivant"
-                disabled={statsMonth >= todayIso.slice(0, 7)}
-              >›</button>
-              {statsMonth !== todayIso.slice(0, 7) ? (
-                <button type="button" onClick={() => { setStatsMonth(todayIso.slice(0, 7)); setStatsSelectedWeek(null) }}>
-                  Aujourd&apos;hui
-                </button>
-              ) : null}
-              <button type="button" className="hero-cta-button stats-export-btn" onClick={() => void exportWeeklyStatsPdf()}>
-                📄 Exporter
-              </button>
-            </div>
-          </div>
-          {statsSelectedWeek && statsWeekDaily ? (
-            <div className="stats-week-detail-bar">
-              <strong>
-                Détail de la semaine du{' '}
-                {statsMonthWeeks.find((w) => w.weekStart === statsSelectedWeek)?.label ?? statsSelectedWeek}
-              </strong>
-              <button type="button" className="ghost-button" onClick={() => setStatsSelectedWeek(null)}>
-                ← Retour aux 12 semaines
-              </button>
-            </div>
-          ) : null}
-          <div className="stats-chart-wrap" ref={statsChartRef}>
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={statsSelectedWeek && statsWeekDaily ? statsWeekDaily : statsViewData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(160, 128, 96, 0.2)" />
-                <XAxis dataKey="label" stroke="#a1a1aa" fontSize={11} interval="preserveStartEnd" />
-                <YAxis stroke="#a1a1aa" fontSize={11} />
-                <Tooltip
-                  formatter={(value, name) => [
-                    euroFormatter.format(Number(value)),
-                    name === 'income' ? 'Revenus' : 'Dépenses',
-                  ]}
-                  labelFormatter={(label) => (statsSelectedWeek ? String(label) : `Semaine du ${label}`)}
-                  contentStyle={{
-                    background: 'var(--bg-2)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 10,
-                    color: 'var(--text-1)',
-                  }}
-                  labelStyle={{ color: 'var(--text-1)', fontWeight: 700 }}
-                />
-                <Line
-                  type="linear"
-                  dataKey="income"
-                  name="income"
-                  stroke="#3A7D44"
-                  strokeWidth={2.5}
-                  dot={{ r: 3, fill: '#3A7D44' }}
-                  activeDot={{ r: 5 }}
-                  isAnimationActive={false}
-                />
-                <Line
-                  type="linear"
-                  dataKey="spent"
-                  name="spent"
-                  stroke="#C05C2A"
-                  strokeWidth={2.5}
-                  dot={{ r: 3, fill: '#C05C2A' }}
-                  activeDot={{ r: 5 }}
-                  isAnimationActive={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="stats-legend">
-            <span><i className="stats-legend__dot" style={{ background: '#3A7D44' }} /> Revenus</span>
-            <span><i className="stats-legend__dot" style={{ background: '#C05C2A' }} /> Dépenses</span>
-          </div>
-        </article>
-
-        <article className="glass-card chart-card wide-card">
-          <div className="panel-title">
-            <div>
-              <h2>Semaine par semaine</h2>
-              <p>
-                Les semaines de {formatMonth(statsMonth)} — appuyez sur une semaine pour voir son
-                détail jour par jour sur le graphique.
-              </p>
-            </div>
-          </div>
-          <ul className="stats-week-list">
-            {[...statsMonthWeeks].reverse().map((week) => (
-              <li key={week.weekStart} className={statsSelectedWeek === week.weekStart ? 'stats-week-row--active' : ''}>
-                <button
-                  type="button"
-                  className="stats-week-main"
-                  onClick={() => setStatsSelectedWeek((previous) => (previous === week.weekStart ? null : week.weekStart))}
-                  aria-label={`Voir le détail de la semaine du ${week.label}`}
-                >
-                  <span className="stats-week-label">{week.label}</span>
-                  <span className="stats-week-amounts">
-                    <span className="income">+{euroFormatter.format(week.income)}</span>
-                    <span className="expense">−{euroFormatter.format(week.spent)}</span>
-                  </span>
-                  <strong className={`stats-week-net ${week.net < 0 ? 'expense' : 'income'}`}>
-                    {week.net >= 0 ? '+' : ''}{euroFormatter.format(week.net)}
-                  </strong>
-                  <span className={`stats-week-type stats-week-type--${week.type}`}>
-                    {week.type === 'danger' ? '⚠️ Danger'
-                      : week.type === 'highest' ? '🏆 Highest ever'
-                      : week.type === 'up' ? '📈 Up'
-                      : 'Normal'}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="stats-week-export"
-                  onClick={() => void exportWeeklyStatsPdf(week)}
-                  aria-label={`Exporter la semaine du ${week.label} en PDF`}
-                  title="Exporter cette semaine en PDF"
-                >
-                  📄
-                </button>
-              </li>
-            ))}
-          </ul>
-        </article>
-      </section>
+        <StatsView
+          statsMonth={statsMonth}
+          setStatsMonth={setStatsMonth}
+          statsSelectedWeek={statsSelectedWeek}
+          setStatsSelectedWeek={setStatsSelectedWeek}
+          todayIso={todayIso}
+          formatMonth={formatMonth}
+          statsViewData={statsViewData}
+          statsMonthWeeks={statsMonthWeeks}
+          statsWeekDaily={statsWeekDaily}
+          statsChartRef={statsChartRef}
+          exportWeeklyStatsPdf={exportWeeklyStatsPdf}
+        />
       ) : null}
 
       {isActiveView('operations') || isActiveView('budget') ? (
@@ -8792,135 +8591,21 @@ Réponse attendue:
 
     {/* ── Modale de gestion d'une poche ──────────────────────────── */}
     {envelopeModal ? (
-      <div className="budget-actions-modal-overlay" onClick={closeEnvelopeModal}>
-        <div className="budget-actions-modal envelope-modal" onClick={(event) => event.stopPropagation()}>
-          <button type="button" className="budget-actions-modal-close" onClick={closeEnvelopeModal} aria-label="Fermer">
-            ✕
-          </button>
-          {envelopeModal.mode === 'create' ? (
-            <>
-              <h3>✉️ Nouvelle poche</h3>
-              <label>
-                Nom de la poche
-                <input
-                  value={envModalName}
-                  onChange={(event) => setEnvModalName(event.target.value)}
-                  placeholder="Ex : Cadeaux, Voiture, Études…"
-                  maxLength={40}
-                  autoFocus
-                />
-              </label>
-              <label>
-                🎯 Objectif mensuel (€)
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="0"
-                  step="10"
-                  value={envModalTarget}
-                  onChange={(event) => setEnvModalTarget(event.target.value)}
-                  placeholder="0 = pas d'objectif"
-                />
-              </label>
-              <label>
-                💰 Argent disponible dans la poche (€)
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="10"
-                  value={envModalAdd}
-                  onChange={(event) => setEnvModalAdd(event.target.value)}
-                  placeholder="Ex : 100"
-                />
-              </label>
-              <div className="quick-add-actions">
-                <button type="button" className="ghost-button" onClick={closeEnvelopeModal}>Annuler</button>
-                <button type="button" className="hero-cta-button" onClick={() => createEnvelope(envModalName)} disabled={!envModalName.trim()}>
-                  Créer la poche
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <h3>✉️ Poche {envelopeModal.name}</h3>
-              <label>
-                🎯 Objectif mensuel (€)
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="0"
-                  step="10"
-                  value={envModalTarget}
-                  onChange={(event) => setEnvModalTarget(event.target.value)}
-                  placeholder="0 = pas d'objectif"
-                />
-              </label>
-              <label>
-                💰 Argent disponible dans la poche (€)
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  step="10"
-                  value={envModalAdd}
-                  onChange={(event) => setEnvModalAdd(event.target.value)}
-                  placeholder="Ex : 100"
-                />
-                <small className="field-hint">Le montant actuellement utilisable — modifiez-le librement.</small>
-              </label>
-              <label>
-                ✏️ Renommer la poche
-                <input
-                  value={envModalName}
-                  onChange={(event) => setEnvModalName(event.target.value)}
-                  maxLength={40}
-                />
-              </label>
-              {envModalDeleteAsk ? (
-                <div className="quick-add-delete-confirm" role="alertdialog" aria-label="Confirmer la suppression">
-                  <span>Supprimer la poche « {envelopeModal.name} » ? Ses opérations passeront dans Perso.</span>
-                  <div>
-                    <button type="button" className="quick-add-delete-yes" onClick={() => deleteEnvelope(envelopeModal.name)}>
-                      Oui, supprimer
-                    </button>
-                    <button type="button" className="ghost-button" onClick={() => setEnvModalDeleteAsk(false)}>
-                      Non, garder
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-              <div className="quick-add-actions">
-                {envelopeModal.name !== 'Perso' && !envModalDeleteAsk ? (
-                  <button type="button" className="quick-add-delete-btn" onClick={() => setEnvModalDeleteAsk(true)}>
-                    🗑️ Supprimer
-                  </button>
-                ) : null}
-                <button type="button" className="ghost-button" onClick={closeEnvelopeModal}>Annuler</button>
-                <button
-                  type="button"
-                  className="hero-cta-button"
-                  onClick={() => {
-                    const target = Number(envModalTarget)
-                    saveEnvelopeBudget(envelopeModal.name, Number.isNaN(target) ? 0 : target)
-                    const available = Number(envModalAdd.replace(',', '.'))
-                    if (!Number.isNaN(available)) {
-                      setEnvelopeAvailable(envelopeModal.name, available)
-                    }
-                    if (envModalName.trim() && envModalName.trim() !== envelopeModal.name) {
-                      renameEnvelope(envelopeModal.name, envModalName)
-                    } else {
-                      showToast(`✉️ Poche ${envelopeModal.name} mise à jour`)
-                      closeEnvelopeModal()
-                    }
-                  }}
-                >
-                  Enregistrer
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+      <EnvelopeModal
+        envelopeModal={envelopeModal}
+        envModalName={envModalName}
+        setEnvModalName={setEnvModalName}
+        envModalTarget={envModalTarget}
+        setEnvModalTarget={setEnvModalTarget}
+        envModalAdd={envModalAdd}
+        setEnvModalAdd={setEnvModalAdd}
+        envModalDeleteAsk={envModalDeleteAsk}
+        setEnvModalDeleteAsk={setEnvModalDeleteAsk}
+        closeEnvelopeModal={closeEnvelopeModal}
+        createEnvelope={createEnvelope}
+        deleteEnvelope={deleteEnvelope}
+        onSave={saveEnvelopeModal}
+      />
     ) : null}
 
     {/* ── Toast notifications ───────────────────────────────────── */}
