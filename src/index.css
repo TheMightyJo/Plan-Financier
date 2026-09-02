@@ -12193,3 +12193,172 @@ button.envelope-card:hover .envelope-card__body {
     width: 100%;
   }
 }
+
+/* ── Bandeau démo : CTA compte ─────────────────────────────────────────── */
+
+.demo-banner__actions {
+  display: inline-flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.demo-banner button.demo-banner__cta {
+  background: #FFF8F0;
+  color: #C05C2A;
+  border-color: transparent;
+}
+
+/* ── Premiers pas (Accueil) ────────────────────────────────────────────── */
+
+.start-checklist {
+  padding: 1.1rem 1.2rem;
+  display: grid;
+  gap: 0.8rem;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.start-checklist__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.start-checklist__head h2 {
+  margin: 0.15rem 0 0;
+  font-size: var(--text-base);
+  font-weight: 800;
+  color: var(--text-1);
+}
+
+.start-checklist__dismiss {
+  appearance: none;
+  border: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--text-2);
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.start-checklist ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.start-checklist__item button {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-align: left;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-1);
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.start-checklist__item button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  transform: translateY(-1px);
+}
+
+.start-checklist__item button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.start-checklist__check {
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  font-weight: 900;
+  color: #fff;
+}
+
+.start-checklist__item--done .start-checklist__check {
+  background: var(--positive, #3A7D44);
+  border-color: var(--positive, #3A7D44);
+}
+
+.start-checklist__item--done .start-checklist__text strong {
+  text-decoration: line-through;
+}
+
+.start-checklist__text {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.start-checklist__text strong {
+  font-size: var(--text-sm);
+}
+
+.start-checklist__text small {
+  color: var(--text-2);
+  line-height: 1.4;
+}
+
+.start-checklist__go {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-weight: 800;
+}
+
+/* ── Modale Premium (gating doux) ──────────────────────────────────────── */
+
+.premium-gate-card {
+  width: min(26rem, calc(100% - 1.5rem));
+  padding: 1.5rem 1.4rem;
+  display: grid;
+  gap: 0.7rem;
+  text-align: center;
+  justify-items: center;
+}
+
+.premium-gate-badge {
+  display: inline-block;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface-soft));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text-1);
+  font-weight: 800;
+  font-size: var(--text-xs);
+}
+
+.premium-gate-card h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--text-1);
+}
+
+.premium-gate-card p {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.premium-gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+}
