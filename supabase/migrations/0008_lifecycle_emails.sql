@@ -19,6 +19,8 @@ create policy "lifecycle_emails_select_own"
   on public.lifecycle_emails for select
   using (auth.uid() = user_id);
 -- Pas de policy d'écriture : service_role uniquement (fonction Edge).
+grant select on public.lifecycle_emails to authenticated;
+grant all on public.lifecycle_emails to service_role;
 
 -- Index pour la relance J+3 (parcours des profils récemment onboardés).
 create index if not exists profiles_onboarding_completed_at_idx

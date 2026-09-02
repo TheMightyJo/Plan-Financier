@@ -7,8 +7,8 @@ configuration des services (à faire une fois, ~1 h au total).
 
 Dashboard Supabase → projet `lgcprvjpemvphjicubaf`.
 
-1. **SQL Editor** → exécuter `supabase/migrations/0007_billing_and_ai_quota.sql`
-   puis `0008_lifecycle_emails.sql` (après 0004 → 0006 si pas déjà fait).
+1. **SQL Editor** → exécuter `supabase/migrations/0008_lifecycle_emails.sql`
+   puis `0009_billing_grants.sql` (0007 est déjà appliquée en prod).
 2. **Edge Functions → Secrets** → `ANTHROPIC_API_KEY` = clé `sk-ant-…`
    (console.anthropic.com → API Keys ; une clé dédiée « serveur » facilite
    le suivi des coûts).
