@@ -98,6 +98,10 @@ const callIncluded = async (options: CallOptions): Promise<string> => {
     | null
 
   if (response.status === 429) {
+    const code = (payload?.error as { code?: string } | undefined)?.code
+    if (code === 'rate_limited') {
+      throw new Error(payload?.error?.message ?? "Trop de messages d'un coup — patientez une minute.")
+    }
     throw new AiQuotaExceededError(payload?.quota ?? null)
   }
   if (!response.ok) {
