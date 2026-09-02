@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { reportError } from './lib/errorReporter'
 import { supabase } from './supabase'
 
 type AppErrorBoundaryProps = {
@@ -34,6 +35,7 @@ class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundary
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Erreur interface capturée:', error, errorInfo)
+    reportError(error, 'render')
   }
 
   handleRetry = () => {

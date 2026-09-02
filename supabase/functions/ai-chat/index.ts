@@ -27,6 +27,9 @@ const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? ''
 
 const MODEL = 'claude-haiku-4-5-20251001'
 
+/** Messages max par minute et par utilisateur (anti-abus). */
+const RATE_LIMIT_PER_MINUTE = 10
+
 /** Messages IA inclus par mois selon le plan. */
 const PLAN_LIMITS: Record<string, number> = {
   free: 15,
@@ -132,6 +135,28 @@ Deno.serve(async (req) => {
   }
   const system = typeof body.system === 'string' ? body.system.slice(0, 12_000) : undefined
   const maxTokens = Math.min(Math.max(Number(body.max_tokens) || 400, 1), 2000)
+
+  // Rate limiting : fenêtre glissante d'une minute par utilisateur (en plus
+  // du quota mensuel) — un script ne peut pas brûler le quota en un instant.
+  const { data: rate } = await admin
+    .from('ai_rate_limits')
+    .select('window_start, count')
+    .eq('user_id', userId)
+    .maybeSingle()
+  const windowStartMs = rate ? new Date(rate.window_start as string).getTime() : 0
+  const inWindow = Date.now() - windowStartMs < 60_000
+  const currentCount = inWindow ? Number(rate?.count ?? 0) : 0
+  if (currentCount >= RATE_LIMIT_PER_MINUTE) {
+    return json(429, {
+      error: { code: 'rate_limited', message: "Trop de messages d'un coup — patientez une minute avant de réessayer." },
+      quota: { plan, used, limit },
+    })
+  }
+  await admin.from('ai_rate_limits').upsert({
+    user_id: userId,
+    window_start: inWindow ? (rate!.window_start as string) : new Date().toISOString(),
+    count: currentCount + 1,
+  })
 
   const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
