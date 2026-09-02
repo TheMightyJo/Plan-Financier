@@ -11587,7 +11587,8 @@ button.envelope-card:hover .envelope-card__body {
   flex-wrap: wrap;
 }
 
-.landing-footer-links button {
+.landing-footer-links button,
+.landing-footer-links a {
   appearance: none;
   border: 0;
   background: transparent;
@@ -11600,7 +11601,8 @@ button.envelope-card:hover .envelope-card__body {
   text-underline-offset: 3px;
 }
 
-.landing-footer-links button:hover {
+.landing-footer-links button:hover,
+.landing-footer-links a:hover {
   color: var(--text-1);
 }
 

@@ -139,6 +139,7 @@ export function LandingPage({ onLogin, onTryDemo }: Props) {
           <a href="#apercu">Aperçu</a>
           <a href="#tarifs">Tarifs</a>
           <a href="#faq">Questions</a>
+          <a href="/blog/">Blog</a>
         </nav>
         <div className="landing-nav-actions">
           <button type="button" className="landing-login-btn" onClick={onLogin}>
@@ -292,6 +293,7 @@ export function LandingPage({ onLogin, onTryDemo }: Props) {
           <span>Fait en France 🇫🇷 par <strong>ProtoJo Digital</strong></span>
         </div>
         <nav className="landing-footer-links" aria-label="Liens légaux">
+          <a href="/blog/">Blog</a>
           <button type="button" onClick={() => setLegalDoc('terms')}>Conditions d'utilisation</button>
           <button type="button" onClick={() => setLegalDoc('privacy')}>
             Mentions légales · Confidentialité · Cookies

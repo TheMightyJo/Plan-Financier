@@ -8,7 +8,7 @@
  *     réseau (les assets Vite sont fingerprintés, donc immuables).
  * Jamais de cache pour les appels cross-origin (Supabase, IA…).
  */
-const CACHE_NAME = 'plan-financier-v1'
+const CACHE_NAME = 'plan-financier-v2'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -30,6 +30,10 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return
   const url = new URL(request.url)
   if (url.origin !== self.location.origin) return
+
+  // Blog statique (SEO) : pages HTML servies par Apache, jamais mises en
+  // cache à la place de l'app (sinon « / » hors-ligne deviendrait un article).
+  if (url.pathname.startsWith('/blog')) return
 
   if (request.mode === 'navigate') {
     event.respondWith(
