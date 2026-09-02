@@ -11864,9 +11864,10 @@ button.envelope-card:hover .envelope-card__body {
     border-radius: 0;
     box-shadow: none;
     /* Sans flou : un backdrop-filter ferait de la carte le conteneur de la
-       barre d'onglets en position: fixed (elle doit se caler sur l'écran). */
+       barre d'onglets en position: fixed (elle doit se caler sur l'écran).
+       Une seule déclaration : le minifieur (lightningcss) supprimait la
+       version standard quand la version -webkit- était écrite à la main. */
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 
   .side-menu-profiles__row .member-avatar {
@@ -12361,4 +12362,11 @@ button.envelope-card:hover .envelope-card__body {
   justify-content: center;
   gap: 0.5rem;
   margin-top: 0.3rem;
+}
+
+/* Android Chrome : pas de gonflement automatique du texte (sinon les
+   bandeaux passent sur deux lignes et recouvrent les boutons). */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
