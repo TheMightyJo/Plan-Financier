@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { PrivacyPolicyModal } from './PrivacyPolicyModal'
+import { CalendarIllustration, EnvelopesIllustration, WeeklyChartIllustration } from './LandingIllustrations'
 
 type Props = {
   /** Ouvre l'écran de connexion / inscription. */
@@ -87,6 +88,24 @@ const PLANS = [
   },
 ]
 
+const SHOWCASE = [
+  {
+    title: 'Chaque jour, vous savez où vous en êtes',
+    text: 'Le calendrier affiche vos dépenses et revenus jour par jour, et vos échéances récurrentes avant qu’elles ne tombent. Le mois entier tient dans un seul écran.',
+    art: <CalendarIllustration />,
+  },
+  {
+    title: 'Des poches qui ont leur météo',
+    text: 'Mettez de l’argent dans chaque poche — Courses, Maison, Vacances — et voyez d’un coup d’œil si le ciel est dégagé ☀️ ou si l’orage gronde ⛈️.',
+    art: <EnvelopesIllustration />,
+  },
+  {
+    title: 'Vos semaines, notées comme un bulletin',
+    text: 'Dépenses contre revenus, du lundi au dimanche. Danger, Normal, Up ou Record : le verdict arrive assez tôt pour corriger le tir avant la fin du mois.',
+    art: <WeeklyChartIllustration />,
+  },
+]
+
 const FAQ = [
   {
     q: 'Mes données bancaires sont-elles connectées ?',
@@ -117,6 +136,7 @@ export function LandingPage({ onLogin, onTryDemo }: Props) {
         <span className="landing-brand">💰 Plan Financier</span>
         <nav className="landing-nav-links" aria-label="Navigation du site">
           <a href="#fonctionnalites">Fonctionnalités</a>
+          <a href="#apercu">Aperçu</a>
           <a href="#tarifs">Tarifs</a>
           <a href="#faq">Questions</a>
         </nav>
@@ -178,6 +198,25 @@ export function LandingPage({ onLogin, onTryDemo }: Props) {
               <span className="landing-feature-icon" aria-hidden="true">{feature.icon}</span>
               <h3>{feature.title}</h3>
               <p>{feature.text}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Aperçu illustré (SVG maison, libres de droit) ── */}
+      <section className="landing-section" id="apercu">
+        <h2>À quoi ça ressemble</h2>
+        <p className="landing-section-sub">
+          Trois écrans du quotidien — dessinés pour Plan Financier, comme tout le reste.
+        </p>
+        <div className="landing-showcase">
+          {SHOWCASE.map((item) => (
+            <article key={item.title} className="landing-showcase-item">
+              <div className="landing-showcase-art">{item.art}</div>
+              <div className="landing-showcase-text">
+                <h3>{item.title}</h3>
+                <p>{item.text}</p>
+              </div>
             </article>
           ))}
         </div>

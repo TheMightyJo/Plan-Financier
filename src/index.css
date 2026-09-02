@@ -12043,3 +12043,61 @@ button.envelope-card:hover .envelope-card__body {
     white-space: nowrap;
   }
 }
+
+/* ── Vitrine : aperçu illustré (SVG maison) ───────────────────────────── */
+
+.landing-showcase {
+  display: grid;
+  gap: 1.2rem;
+  max-width: 62rem;
+  margin: 0 auto;
+}
+
+.landing-showcase-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  align-items: center;
+  padding: 1.1rem;
+  border-radius: 1.2rem;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+}
+
+.landing-showcase-art svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 0.9rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+}
+
+.landing-showcase-text {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.landing-showcase-text h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--text-1);
+}
+
+.landing-showcase-text p {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+@media (min-width: 760px) {
+  .landing-showcase-item {
+    grid-template-columns: 1.15fr 1fr;
+    gap: 1.8rem;
+    padding: 1.4rem;
+  }
+
+  .landing-showcase-item:nth-child(even) .landing-showcase-art {
+    order: 2;
+  }
+}
