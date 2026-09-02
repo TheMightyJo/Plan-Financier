@@ -1671,6 +1671,9 @@ Règles :
           .from('profiles')
           .update({ onboarding_completed_at: new Date().toISOString() })
           .eq('user_id', userId)
+        // Email de bienvenue (une seule fois par compte, côté serveur) —
+        // en arrière-plan : un échec n'empêche jamais l'entrée dans l'app.
+        void supabase.functions.invoke('lifecycle-emails', { body: { event: 'welcome' } }).catch(() => {})
       }
     } catch {
       // Hors-ligne : le drapeau localStorage suffit pour cet appareil.
