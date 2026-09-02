@@ -198,6 +198,19 @@ const MANUAL_ONBOARDING_PHASES = [
   'Finalisation de votre plan…',
 ]
 const FIRST_TX_TOUR_DONE_KEY = 'plan-financier-first-tx-tour-done-v1'
+const START_CHECKLIST_DONE_KEY = 'plan-financier-start-checklist-done-v1'
+/** Opérations saisies pendant la démo, reprises à la création du compte. */
+const DEMO_CARRY_OVER_KEY = 'plan-financier-demo-carry-over-v1'
+/** Ids des opérations du jeu de démo (les autres viennent de l'utilisateur). */
+const DEMO_SEED_MAX_ID = 12
+// ── Gating doux Premium ────────────────────────────────────────────────
+// Promesse de la vitrine : tout est offert aux premiers inscrits — les
+// comptes créés avant cette date gardent l'accès complet. Ensuite, chaque
+// nouveau compte a 30 jours d'essai complet, puis le plan Découverte
+// s'applique (3 poches, 1 profil, pas de rapport email ; l'IA est déjà
+// limitée par quota côté serveur).
+const EARLY_ADOPTER_UNTIL = '2026-10-01'
+const TRIAL_DAYS = 30
 
 // ── URLs propres (routage SPA léger, sans dépendance) ───────────────────────
 // / (vitrine) · /login · /demo · /app, /app/depenses, /app/budget,
@@ -1229,6 +1242,27 @@ function App() {
   const [aiQuota, setAiQuota] = useState<AiQuota | null>(null)
   const [checkoutBusy, setCheckoutBusy] = useState<string | null>(null)
   const userPlan: PlanId = subscription?.plan ?? 'free'
+  const [accountCreatedAt, setAccountCreatedAt] = useState<string | null>(null)
+  // Fonctionnalité Premium demandée sans accès : nom affiché dans la modale.
+  const [premiumGate, setPremiumGate] = useState<string | null>(null)
+  const premiumAccess = useMemo(() => {
+    if (demoMode) return { unlocked: true, reason: 'demo' as const, trialEndsAt: null }
+    if (userPlan !== 'free') return { unlocked: true, reason: 'plan' as const, trialEndsAt: null }
+    // Session pas encore lue : ne jamais bloquer par précaution.
+    if (!accountCreatedAt) return { unlocked: true, reason: 'unknown' as const, trialEndsAt: null }
+    const created = new Date(accountCreatedAt)
+    if (created < new Date(`${EARLY_ADOPTER_UNTIL}T00:00:00`)) {
+      return { unlocked: true, reason: 'early' as const, trialEndsAt: null }
+    }
+    const trialEndsAt = new Date(created.getTime() + TRIAL_DAYS * 86_400_000)
+    return { unlocked: Date.now() < trialEndsAt.getTime(), reason: 'trial' as const, trialEndsAt }
+  }, [demoMode, userPlan, accountCreatedAt])
+  /** Bloque une action Premium (et explique) si le compte n'y a pas accès. */
+  const requirePremium = (feature: string): boolean => {
+    if (premiumAccess.unlocked) return false
+    setPremiumGate(feature)
+    return true
+  }
 
   // Charge le plan d'abonnement à la connexion (table subscriptions).
   useEffect(() => {
@@ -1682,11 +1716,48 @@ Règles :
 
   // Après l'onboarding : atterrir sur l'Accueil (le « cockpit ») et, si le
   // compte est encore vide, enchaîner le guide « première transaction ».
+  /** Reprend les opérations saisies pendant la démo (une seule fois). */
+  const importDemoCarryOver = (): number => {
+    try {
+      const raw = window.localStorage.getItem(DEMO_CARRY_OVER_KEY)
+      if (!raw) return 0
+      window.localStorage.removeItem(DEMO_CARRY_OVER_KEY)
+      const rows = JSON.parse(raw) as Transaction[]
+      if (!Array.isArray(rows) || rows.length === 0) return 0
+      let counter = Date.now()
+      const imported = rows
+        .filter((tx) => tx && typeof tx.label === 'string' && typeof tx.amount === 'number')
+        .map((tx) => ({ ...tx, id: counter++, member: selectedProfileId }))
+      if (imported.length === 0) return 0
+      setTransactions((previous) => [...previous, ...imported])
+      return imported.length
+    } catch {
+      return 0
+    }
+  }
+
   const landAfterOnboarding = () => {
     setActiveSectionId('overview')
+    const imported = importDemoCarryOver()
+    if (imported > 0) {
+      showToast(`🎬 ${imported} opération${imported > 1 ? 's' : ''} de votre démo importée${imported > 1 ? 's' : ''} — bienvenue !`)
+      return
+    }
     if (transactions.length === 0) {
       setShowFirstTxTour(true)
     }
+  }
+
+  /** Démo → inscription : garde ce que l'utilisateur a saisi lui-même. */
+  const leaveDemoForSignup = () => {
+    const own = transactions.filter((tx) => tx.member === 'demo' && tx.id > DEMO_SEED_MAX_ID)
+    try {
+      if (own.length > 0) window.localStorage.setItem(DEMO_CARRY_OVER_KEY, JSON.stringify(own))
+      else window.localStorage.removeItem(DEMO_CARRY_OVER_KEY)
+    } catch {
+      /* stockage indisponible : on part sans reprise */
+    }
+    window.location.href = '/login'
   }
 
   // Entrée en mode démo : jeu de données réaliste, en mémoire seulement.
@@ -2391,6 +2462,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     patch: Partial<Pick<ReportPrefs, 'frequency' | 'format' | 'attachment' | 'ccEmails'>>,
   ) => {
     if (blockInDemo('les rapports par email')) return
+    if ((patch.frequency ?? reportPrefs.frequency) !== 'none' && requirePremium('les rapports par email')) return
     const next = {
       frequency: reportPrefs.frequency,
       format: reportPrefs.format,
@@ -2536,12 +2608,14 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     supabase.auth.getSession().then(({ data }) => {
       setIsAuthenticated(!!data.session)
       setUserEmail(data.session?.user.email ?? '')
+      setAccountCreatedAt(data.session?.user.created_at ?? null)
       setAuthProviderReady(true)
     })
     // Puis écoute les changements (signin/signout/refresh)
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsAuthenticated(!!session)
       setUserEmail(session?.user.email ?? '')
+      setAccountCreatedAt(session?.user.created_at ?? null)
       setAuthProviderReady(true)
     })
     return () => subscription.subscription.unsubscribe()
@@ -3224,6 +3298,8 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   const createEnvelope = (rawName: string) => {
     const name = rawName.trim().slice(0, 40)
     if (!name) return
+    // Plan Découverte : les 3 poches de base seulement.
+    if (requirePremium('les poches personnalisées')) return
     const exists = [...envelopes, ...profileCustomEnvelopes].some(
       (existing) => existing.toLowerCase() === name.toLowerCase(),
     )
@@ -3559,6 +3635,47 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
         .slice(0, 5),
     [activeMonthTransactions],
   )
+
+  // ── Premiers pas (Accueil) : 3 gestes qui rendent l'app utile ─────────
+  const [startChecklistDismissed, setStartChecklistDismissed] = useState(
+    () => window.localStorage.getItem(START_CHECKLIST_DONE_KEY) === '1',
+  )
+  const dismissStartChecklist = () => {
+    setStartChecklistDismissed(true)
+    if (!demoMode) window.localStorage.setItem(START_CHECKLIST_DONE_KEY, '1')
+  }
+  const startChecklist = useMemo(() => {
+    const hasFixedCharge = recurringRules.some((rule) => rule.member === selectedProfileId && rule.pausedAt === null)
+    const funds = envelopeFunds[selectedProfileId] ?? {}
+    const targets = envelopeBudgets[selectedProfileId] ?? {}
+    const hasPocket = Object.values(funds).some((v) => v > 0) || Object.values(targets).some((v) => v > 0)
+    const hasGoal = savingsTargets.some((target) => (target.member ?? selectedProfileId) === selectedProfileId)
+    const items = [
+      {
+        id: 'fixed',
+        done: hasFixedCharge,
+        title: 'Ajoutez une charge fixe',
+        hint: 'Loyer, énergie, abonnement… choisissez « Mensuel » dans Répéter : elle apparaîtra sur le calendrier avant de tomber.',
+        action: () => openQuickAdd(todayIso),
+      },
+      {
+        id: 'pocket',
+        done: hasPocket,
+        title: 'Remplissez une poche',
+        hint: 'Mettez un montant dans Courses, Maison ou Vacances : sa météo vous dira où vous en êtes.',
+        action: () => navigateToSection('budget'),
+      },
+      {
+        id: 'goal',
+        done: hasGoal,
+        title: "Fixez un objectif d'épargne",
+        hint: 'Même 30 € par mois — c’est le réflexe qui compte, pas le montant.',
+        action: () => setShowGoalsPanel(true),
+      },
+    ]
+    const done = items.filter((item) => item.done).length
+    return { items, done, visible: !startChecklistDismissed && done < items.length }
+  }, [recurringRules, envelopeFunds, envelopeBudgets, savingsTargets, selectedProfileId, startChecklistDismissed, todayIso])
 
   const topTags = useMemo(() => {
     const counts = new Map<string, number>()
@@ -4853,7 +4970,8 @@ Réponse attendue:
   const handleAddProfile = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (blockInDemo('la cr\u00e9ation de profils')) return
-    event.preventDefault()
+    // Plan Découverte : un seul profil.
+    if (profiles.length >= 1 && requirePremium('les profils multiples')) return
     setSettingsError('')
     setSettingsSuccess('')
 
@@ -5022,9 +5140,14 @@ Réponse attendue:
         <span>
           🎬 Mode démo<span className="demo-banner__long"> — explorez librement, rien n'est enregistré.</span>
         </span>
-        <button type="button" onClick={() => window.location.reload()}>
-          Quitter la démo
-        </button>
+        <span className="demo-banner__actions">
+          <button type="button" className="demo-banner__cta" onClick={leaveDemoForSignup}>
+            Créer mon compte
+          </button>
+          <button type="button" onClick={() => window.location.reload()}>
+            Quitter
+          </button>
+        </span>
       </div>
     ) : null}
     {pendingInvites.map((invite) => (
@@ -5486,6 +5609,34 @@ Réponse attendue:
         </header>
         ) : null}
 
+        {isActiveView('overview') && startChecklist.visible ? (
+          <section className="glass-card start-checklist" aria-label="Premiers pas">
+            <div className="start-checklist__head">
+              <div>
+                <p className="eyebrow">Premiers pas</p>
+                <h2>Votre budget en 3 gestes · {startChecklist.done}/3</h2>
+              </div>
+              <button type="button" className="start-checklist__dismiss" onClick={dismissStartChecklist} aria-label="Masquer les premiers pas">
+                ✕
+              </button>
+            </div>
+            <ul>
+              {startChecklist.items.map((item) => (
+                <li key={item.id} className={item.done ? 'start-checklist__item start-checklist__item--done' : 'start-checklist__item'}>
+                  <button type="button" onClick={item.action} disabled={item.done}>
+                    <span className="start-checklist__check" aria-hidden="true">{item.done ? '✓' : ''}</span>
+                    <span className="start-checklist__text">
+                      <strong>{item.title}</strong>
+                      <small>{item.hint}</small>
+                    </span>
+                    {!item.done ? <span className="start-checklist__go" aria-hidden="true">→</span> : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
         {isActiveView('overview') ? (
         <section className="kpi-summary" style={{ margin: '0 0 1rem 0' }}>
           <div className="kpi-card kpi-card--secondary">
@@ -5665,7 +5816,42 @@ Réponse attendue:
       ) : null}
 
 
-      {showSettings ? (
+      {premiumGate ? (
+      <div
+        className="modal-backdrop"
+        role="presentation"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) setPremiumGate(null)
+        }}
+      >
+        <section className="glass-card premium-gate-card" role="dialog" aria-modal="true" aria-labelledby="premium-gate-title">
+          <span className="premium-gate-badge">⭐ Premium</span>
+          <h2 id="premium-gate-title">Passez à la vitesse supérieure</h2>
+          <p>
+            {premiumGate.charAt(0).toUpperCase() + premiumGate.slice(1)} font partie de Plan Financier Premium :
+            poches et profils illimités, rapports email automatiques, Cash sans compter.
+            <strong> 3,99 €/mois</strong>, résiliable en un clic.
+          </p>
+          <div className="premium-gate-actions">
+            <button
+              type="button"
+              className="hero-cta-button"
+              onClick={() => {
+                setPremiumGate(null)
+                openSettingsPanel('subscription')
+              }}
+            >
+              Voir les formules
+            </button>
+            <button type="button" className="ghost-button" onClick={() => setPremiumGate(null)}>
+              Plus tard
+            </button>
+          </div>
+        </section>
+      </div>
+    ) : null}
+
+    {showSettings ? (
         <div
           className="modal-backdrop settings-modal-backdrop"
           role="presentation"
@@ -6390,7 +6576,11 @@ Réponse attendue:
                           </strong>
                           <small>
                             {userPlan === 'free'
-                              ? 'Vous profitez de la période de lancement : toutes les fonctionnalités sont offertes aux premiers inscrits.'
+                              ? premiumAccess.reason === 'trial'
+                                ? premiumAccess.unlocked && premiumAccess.trialEndsAt
+                                  ? `Essai complet jusqu'au ${premiumAccess.trialEndsAt.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}. Ensuite : 3 poches, 1 profil, sans rapport email.`
+                                  : 'Essai terminé — plan Découverte : 3 poches, 1 profil, sans rapport email. Passez Premium pour tout retrouver.'
+                                : 'Vous profitez de la période de lancement : toutes les fonctionnalités sont offertes aux premiers inscrits.'
                               : subscription?.cancelAtPeriodEnd
                                 ? `Résiliation programmée — accès jusqu'au ${renewDate ?? 'terme en cours'}.`
                                 : renewDate
