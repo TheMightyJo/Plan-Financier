@@ -67,10 +67,10 @@ RewriteRule ^ index.html [L]
   Header set Referrer-Policy "strict-origin-when-cross-origin"
   # Permissions-Policy : désactive les API sensibles non utilisées
   Header set Permissions-Policy "camera=(), microphone=(self), geolocation=(), interest-cohort=()"
-  # HSTS : force HTTPS pendant 1 an (à activer SEULEMENT quand le site
-  # est confirmé OK en HTTPS, sinon impossible de revenir en HTTP pour
-  # debug). Décommenter quand prêt :
-  # Header set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+  # HSTS : force HTTPS pendant 1 an. Activé depuis que le certificat
+  # Let's Encrypt est stable (sept. 2026). Sans « preload » pour garder
+  # une porte de sortie ; à ajouter après quelques semaines sans incident.
+  Header set Strict-Transport-Security "max-age=31536000; includeSubDomains"
 </IfModule>
 
 # --- 404 → SPA (au cas où l'utilisateur tape une URL random) ----------------
