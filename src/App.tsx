@@ -1006,12 +1006,13 @@ function App() {
   const [relanceTick, setRelanceTick] = useState(0)
   const navItems = useMemo(
     () => [
-      { id: 'overview',    label: '🏠 Accueil' },
-      { id: 'operations',  label: '💳 Dépenses' },
-      { id: 'budget',      label: '📅 Budget' },
-      { id: 'stats',       label: '📊 Statistiques' },
-      { id: 'notes',       label: '🗒️ Notes' },
-      ...(familyPeers.length >= 2 ? [{ id: 'family', label: '👨‍👩‍👧 Famille' }] : []),
+      { id: 'overview',    icon: '🏠', label: 'Accueil' },
+      { id: 'operations',  icon: '💳', label: 'Dépenses' },
+      { id: 'budget',      icon: '📅', label: 'Budget' },
+      // `short` : libellé de la barre d'onglets mobile (place limitée).
+      { id: 'stats',       icon: '📊', label: 'Statistiques', short: 'Stats' },
+      { id: 'notes',       icon: '🗒️', label: 'Notes' },
+      ...(familyPeers.length >= 2 ? [{ id: 'family', icon: '👨‍👩‍👧', label: 'Famille' }] : []),
     ],
     [familyPeers.length],
   )
@@ -2576,8 +2577,14 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     const result = migrateTransactionsToDefaultAccount(transactions, accounts)
     if (result.changed) {
       // Migration one-shot auto-stabilisante (cf. commentaire ci-dessus).
+      // Mise à jour fonctionnelle : au montage, cet effet s'exécute dans le
+      // même lot qu'enterDemoMode (/demo) ; une valeur brute écraserait les
+      // opérations de démo fraîchement posées avec l'état initial migré.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setTransactions(result.transactions)
+      setTransactions((previous) => {
+        const migrated = migrateTransactionsToDefaultAccount(previous, accounts)
+        return migrated.changed ? migrated.transactions : previous
+      })
       setAccounts(result.accounts)
     }
   }, [transactions, accounts])
@@ -5009,7 +5016,9 @@ Réponse attendue:
     <>
     {demoMode ? (
       <div className="demo-banner" role="status">
-        <span>🎬 Mode démo — explorez librement, rien n'est enregistré.</span>
+        <span>
+          🎬 Mode démo<span className="demo-banner__long"> — explorez librement, rien n'est enregistré.</span>
+        </span>
         <button type="button" onClick={() => window.location.reload()}>
           Quitter la démo
         </button>
@@ -5357,8 +5366,11 @@ Réponse attendue:
               type="button"
               className={activeSectionId === item.id ? 'active' : ''}
               onClick={() => navigateToSection(item.id)}
+              aria-label={item.label}
             >
-              {item.label}
+              <span className="nav-icon" aria-hidden="true">{item.icon}</span>
+              <span className="nav-label">{item.label}</span>
+              <span className="nav-label nav-label--short" aria-hidden="true">{item.short ?? item.label}</span>
             </button>
           ))}
         </nav>
@@ -5369,7 +5381,7 @@ Réponse attendue:
             onClick={() => openSettingsPanel('profiles')}
             aria-label="Ouvrir les paramètres"
           >
-            ⚙️ Paramètres
+            ⚙️<span className="side-menu-btn-label"> Paramètres</span>
           </button>
           <button
             type="button"
@@ -5377,7 +5389,7 @@ Réponse attendue:
             onClick={handleLogout}
             aria-label="Se déconnecter"
           >
-            ⎋ Déconnexion
+            ⎋<span className="side-menu-btn-label"> Déconnexion</span>
           </button>
         </div>
       </aside>
