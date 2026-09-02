@@ -70,6 +70,7 @@ const welcomeEmail = (firstName: string) => ({
        <li><strong>Posez une question à Cash</strong>, votre assistant : « où part mon argent ce mois-ci ? »</li>
      </ol>
      <p style="margin:0 0 18px;">${button(`${APP_URL}/app`, 'Ouvrir Plan Financier')}</p>
+     <p style="margin:0 0 10px;color:#6B5644;">Chaque semaine, vous recevrez un court bilan de vos 7 derniers jours — désactivable en un clic dans Paramètres → Rapport par email.</p>
      <p style="margin:0;color:#6B5644;">Une question ? Répondez simplement à cet email, on lit tout.</p>`,
   ),
 })

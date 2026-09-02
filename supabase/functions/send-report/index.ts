@@ -323,6 +323,30 @@ const sendEmail = async (
   return null
 }
 
+// Miroir du gating doux de l'app : comptes créés avant EARLY_ADOPTER_UNTIL
+// (offerts), sinon plan payant actif ou essai de TRIAL_DAYS jours.
+const EARLY_ADOPTER_UNTIL = Date.UTC(2026, 9, 1) // 1er octobre 2026
+const TRIAL_DAYS = 30
+
+const hasPremiumAccess = async (
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  createdAt: string | undefined,
+): Promise<boolean> => {
+  const { data: sub } = await admin
+    .from('subscriptions')
+    .select('plan, status')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (sub && sub.plan !== 'free' && ['active', 'trialing', 'past_due'].includes(String(sub.status ?? ''))) {
+    return true
+  }
+  if (!createdAt) return true
+  const created = new Date(createdAt).getTime()
+  if (created < EARLY_ADOPTER_UNTIL) return true
+  return Date.now() - created < TRIAL_DAYS * 86_400_000
+}
+
 const isoDaysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
 
 const periodFor = (frequency: 'weekly' | 'monthly') => {
@@ -412,6 +436,8 @@ Deno.serve(async (req) => {
       const { data: userData } = await admin.auth.admin.getUserById(row.user_id)
       const email = userData?.user?.email
       if (!email) continue
+      // Plan Découverte après l'essai : pas de rapport automatique.
+      if (!(await hasPremiumAccess(admin, row.user_id, userData?.user?.created_at))) continue
 
       const failure = await sendReportTo(admin, row.user_id, email, pref.frequency, pref.format, pref.attachment, pref.cc)
       if (failure) {
