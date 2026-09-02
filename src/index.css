@@ -11827,3 +11827,219 @@ button.envelope-card:hover .envelope-card__body {
   border: 1px solid var(--border-soft);
   background: var(--surface-soft);
 }
+
+/* ── Navigation : icône + libellé (desktop inline, mobile empilé) ─────── */
+
+.side-menu nav .nav-icon {
+  margin-right: 0.4rem;
+}
+
+.side-menu nav .nav-label--short {
+  display: none;
+}
+
+/* ── Mobile : bandeau profil compact + barre d'onglets fixe en bas ──── */
+
+@media (max-width: 640px) {
+  .dashboard-shell {
+    grid-template-columns: minmax(0, 1fr);
+    padding-bottom: calc(4.8rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .side-menu {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0.5rem 0.7rem;
+    /* Sans flou : un backdrop-filter ferait de la carte le conteneur de la
+       barre d'onglets en position: fixed (elle doit se caler sur l'écran). */
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .side-menu-profiles {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    border: 0;
+  }
+
+  .side-menu-profiles .eyebrow {
+    display: none;
+  }
+
+  .side-menu-profiles__row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .side-menu-profiles__name {
+    margin: 0;
+    font-weight: 800;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .side-menu-footer {
+    display: flex;
+    gap: 0.35rem;
+    flex-shrink: 0;
+    border: 0;
+    padding: 0;
+    margin: 0;
+  }
+
+  /* Spécificité > `.side-menu button` (largeur 100 %, padding, etc.). */
+  .side-menu .side-menu-settings-btn,
+  .side-menu .side-menu-logout-btn {
+    width: 2.6rem;
+    min-height: 2.6rem;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    font-size: 1.15rem;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .side-menu .side-menu-settings-btn {
+    border-color: var(--border-soft);
+  }
+
+  .side-menu .side-menu-logout-btn {
+    background: transparent;
+    color: var(--text-2);
+    border: 1px solid var(--border-soft);
+    box-shadow: none;
+  }
+
+  .side-menu-btn-label {
+    display: none;
+  }
+
+  /* Barre d'onglets */
+  .side-menu nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 900;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 0.15rem;
+    padding: 0.3rem 0.3rem calc(0.3rem + env(safe-area-inset-bottom, 0px));
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 -6px 22px rgba(0, 0, 0, 0.14);
+  }
+
+  .side-menu nav button,
+  .side-menu nav a {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    width: auto;
+    min-width: 0;
+    min-height: 3.1rem;
+    padding: 0.3rem 0.1rem;
+    border-radius: 0.7rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.1;
+    text-align: center;
+  }
+
+  .side-menu nav .nav-icon {
+    margin: 0;
+    font-size: 1.35rem;
+    line-height: 1;
+  }
+
+  .side-menu nav .nav-label {
+    display: none;
+  }
+
+  .side-menu nav .nav-label--short {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Éléments flottants au-dessus de la barre */
+  .chat-fab {
+    bottom: calc(4.9rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .chat-panel {
+    bottom: calc(8.6rem + env(safe-area-inset-bottom, 0px));
+    max-height: 60vh;
+  }
+
+  .chat-fab-nudge {
+    bottom: calc(8.8rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Bandeau démo : une seule ligne */
+  .demo-banner {
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    padding: 0.35rem 0.6rem;
+    font-size: var(--text-xs);
+  }
+
+  .demo-banner__long {
+    display: none;
+  }
+
+  /* Résumé des transactions : 2 colonnes, contexte en pleine largeur */
+  .tx-summary-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tx-summary-context {
+    grid-column: 1 / -1;
+  }
+
+  /* Paramètres : sections en rangée défilante au-dessus du contenu */
+  .settings-modal-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .settings-nav {
+    display: flex;
+    grid-auto-flow: row;
+    gap: 0.35rem;
+    overflow-x: auto;
+    padding-bottom: 0.35rem;
+    scrollbar-width: none;
+  }
+
+  .settings-nav-group {
+    display: contents;
+  }
+
+  .settings-nav-group__label {
+    display: none;
+  }
+
+  .settings-nav button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+}
