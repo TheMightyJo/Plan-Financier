@@ -11,10 +11,12 @@ type Props = {
   items: StartChecklistItem[]
   done: number
   onDismiss: () => void
+  /** Raccourci facultatif sous la liste (ex. import de relevé bancaire). */
+  secondary?: { label: string; onClick: () => void }
 }
 
 /** Carte « Premiers pas » de l'Accueil : 3 gestes qui rendent l'app utile. */
-export function StartChecklist({ items, done, onDismiss }: Props) {
+export function StartChecklist({ items, done, onDismiss, secondary }: Props) {
   return (
           <section className="glass-card start-checklist" aria-label="Premiers pas">
             <div className="start-checklist__head">
@@ -40,6 +42,11 @@ export function StartChecklist({ items, done, onDismiss }: Props) {
                 </li>
               ))}
             </ul>
+            {secondary ? (
+              <button type="button" className="start-checklist__secondary" onClick={secondary.onClick}>
+                {secondary.label}
+              </button>
+            ) : null}
           </section>
   )
 }
