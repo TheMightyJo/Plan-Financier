@@ -81,3 +81,8 @@ Options -Indexes
 
 # --- Forcer le bon charset par défaut ----------------------------------------
 AddDefaultCharset UTF-8
+
+# --- Types MIME que l'hébergement ne connaît pas ----------------------------
+# Sans ça, le manifest PWA est servi sans Content-Type et Chrome peut l'ignorer.
+AddType application/manifest+json .webmanifest
+AddType image/svg+xml .svg
