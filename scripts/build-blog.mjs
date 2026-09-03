@@ -21,7 +21,8 @@ const CONTENT_DIR = join(ROOT, 'content', 'blog')
 const DIST_DIR = join(ROOT, 'dist')
 const SITE = 'https://planfinancier.app'
 const BRAND = 'Plan Financier'
-const OG_IMAGE = `${SITE}/logo.png`
+const OG_IMAGE = `${SITE}/og-image.png`
+const LOGO_IMAGE = `${SITE}/logo.png`
 /** Symbole de marque inline (traits en currentColor → suit le thème). */
 const BRAND_MARK = (size) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="${size}" height="${size}" aria-hidden="true" style="vertical-align:-0.2em;margin-right:.35em"><line x1="16" y1="12" x2="16" y2="56" stroke="currentColor" stroke-width="9" stroke-linecap="round"/><path d="M16 12 H30 A14 14 0 0 1 44 26" stroke="currentColor" stroke-width="9" stroke-linecap="round" fill="none"/><path d="M44 26 A14 14 0 0 1 30 40 H24" stroke="#B8963E" stroke-width="9" stroke-linecap="round" fill="none"/></svg>`
 
@@ -160,7 +161,8 @@ const layout = ({ title, description, canonical, body, jsonLd, ogType }) => `<!d
   <meta property="og:url" content="${canonical}" />
   <meta property="og:image" content="${OG_IMAGE}" />
   <meta property="og:locale" content="fr_FR" />
-  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="${OG_IMAGE}" />
   <script type="application/ld+json">${JSON.stringify(jsonLd)}</script>
   <style>${STYLES}</style>
 </head>
@@ -248,7 +250,7 @@ ${ctaBlock}
       mainEntityOfPage: url,
       image: OG_IMAGE,
       author: { '@type': 'Organization', name: 'ProtoJo Digital' },
-      publisher: { '@type': 'Organization', name: BRAND, logo: { '@type': 'ImageObject', url: OG_IMAGE } },
+      publisher: { '@type': 'Organization', name: BRAND, logo: { '@type': 'ImageObject', url: LOGO_IMAGE } },
     },
   })
   const dir = join(DIST_DIR, 'blog', post.slug)
