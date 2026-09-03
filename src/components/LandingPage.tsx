@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { PrivacyPolicyModal } from './PrivacyPolicyModal'
 import { CalendarIllustration, EnvelopesIllustration, WeeklyChartIllustration } from './LandingIllustrations'
+import { BrandLogo } from './BrandMark'
 
 type Props = {
   /** Ouvre l'écran de connexion / inscription. */
@@ -133,7 +134,7 @@ export function LandingPage({ onLogin, onTryDemo }: Props) {
     <div className="landing">
       {/* ── Barre de navigation ── */}
       <header className="landing-nav">
-        <span className="landing-brand">💰 Plan Financier</span>
+        <span className="landing-brand"><BrandLogo size={30} /></span>
         <nav className="landing-nav-links" aria-label="Navigation du site">
           <a href="#fonctionnalites">Fonctionnalités</a>
           <a href="#apercu">Aperçu</a>
@@ -289,7 +290,7 @@ export function LandingPage({ onLogin, onTryDemo }: Props) {
 
       <footer className="landing-footer">
         <div className="landing-footer-brand">
-          <span>💰 Plan Financier</span>
+          <span><BrandLogo size={22} /></span>
           <span>Fait en France 🇫🇷 par <strong>ProtoJo Digital</strong></span>
         </div>
         <nav className="landing-footer-links" aria-label="Liens légaux">

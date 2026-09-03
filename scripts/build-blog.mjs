@@ -22,6 +22,8 @@ const DIST_DIR = join(ROOT, 'dist')
 const SITE = 'https://planfinancier.app'
 const BRAND = 'Plan Financier'
 const OG_IMAGE = `${SITE}/logo.png`
+/** Symbole de marque inline (traits en currentColor → suit le thème). */
+const BRAND_MARK = (size) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="${size}" height="${size}" aria-hidden="true" style="vertical-align:-0.2em;margin-right:.35em"><line x1="16" y1="12" x2="16" y2="56" stroke="currentColor" stroke-width="9" stroke-linecap="round"/><path d="M16 12 H30 A14 14 0 0 1 44 26" stroke="currentColor" stroke-width="9" stroke-linecap="round" fill="none"/><path d="M44 26 A14 14 0 0 1 30 40 H24" stroke="#B8963E" stroke-width="9" stroke-linecap="round" fill="none"/></svg>`
 
 // ── Front-matter ──────────────────────────────────────────────────────────
 
@@ -106,7 +108,7 @@ a{color:var(--terracotta)}a:hover{text-decoration-thickness:2px}
 .wrap{max-width:44rem;margin:0 auto;padding:0 1.1rem}
 header.site{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
 header.site .wrap{display:flex;align-items:center;justify-content:space-between;gap:1rem;min-height:3.6rem}
-.brand{font-weight:800;color:var(--text);text-decoration:none;font-size:1.05rem;white-space:nowrap}
+.brand{font-weight:400;color:var(--text);text-decoration:none;font-size:1.05rem;white-space:nowrap;display:inline-flex;align-items:center}.brand strong{font-weight:800;margin-right:.3em}
 nav.site{white-space:nowrap}
 nav.site a{color:var(--text-2);text-decoration:none;font-weight:600;margin-left:1rem;font-size:.95rem}
 @media (max-width:480px){.brand{font-size:.95rem}nav.site a{margin-left:.7rem;font-size:.88rem}nav.site a.hide-sm{display:none}}
@@ -149,6 +151,8 @@ const layout = ({ title, description, canonical, body, jsonLd, ogType }) => `<!d
   <meta name="description" content="${escapeHtml(description)}" />
   <link rel="canonical" href="${canonical}" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="theme-color" content="#8B6C52" />
   <meta property="og:site_name" content="${BRAND}" />
   <meta property="og:type" content="${ogType}" />
   <meta property="og:title" content="${escapeHtml(title)}" />
@@ -163,7 +167,7 @@ const layout = ({ title, description, canonical, body, jsonLd, ogType }) => `<!d
 <body>
   <header class="site">
     <div class="wrap">
-      <a class="brand" href="/">💰 ${BRAND}</a>
+      <a class="brand" href="/">${BRAND_MARK(22)}<strong>Plan</strong> Financier</a>
       <nav class="site" aria-label="Site">
         <a href="/blog/">Blog</a>
         <a href="/#tarifs" class="hide-sm">Tarifs</a>

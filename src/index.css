@@ -12484,3 +12484,26 @@ html {
     flex-shrink: 0;
   }
 }
+
+/* ── Marque (symbole + mot-symbole) ───────────────────────────────────── */
+
+.brand-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.brand-logo svg {
+  flex-shrink: 0;
+}
+
+.brand-logo__word {
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.brand-logo__word strong {
+  font-weight: 800;
+}
