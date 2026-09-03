@@ -15,7 +15,20 @@ installPwaListeners()
 // PWA : service worker en prod uniquement (en dev il interférerait avec HMR).
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
-    void navigator.serviceWorker.register('/sw.js')
+    // updateViaCache: 'none' → le navigateur revérifie sw.js à chaque visite
+    // (sinon il peut garder l'ancien script jusqu'à 24 h).
+    void navigator.serviceWorker
+      .register('/sw.js', { updateViaCache: 'none' })
+      .then((registration) => registration.update())
+      .catch(() => {})
+    // Quand une nouvelle version prend la main, on recharge une fois : évite
+    // un HTML neuf servi avec des assets (CSS/JS) de l'ancienne version.
+    let reloaded = false
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloaded) return
+      reloaded = true
+      window.location.reload()
+    })
   })
 }
 
