@@ -12370,3 +12370,140 @@ html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
+
+/* ── Suggestions de récurrence (Accueil) ──────────────────────────────── */
+
+.recurring-suggestions {
+  padding: 1.1rem 1.2rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.recurring-suggestions__head h2 {
+  margin: 0.15rem 0 0.2rem;
+  font-size: var(--text-base);
+  font-weight: 800;
+  color: var(--text-1);
+}
+
+.recurring-suggestions__head small {
+  color: var(--text-2);
+}
+
+.recurring-suggestions ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.recurring-suggestions li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+}
+
+.recurring-suggestions__text {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1 1 14rem;
+}
+
+.recurring-suggestions__text small {
+  color: var(--text-2);
+}
+
+.recurring-suggestions__actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.start-checklist__secondary {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  padding: 0.2rem 0;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.start-checklist__secondary:hover {
+  color: var(--text-1);
+}
+
+/* ── Installer l'app ──────────────────────────────────────────────────── */
+
+.install-steps {
+  margin: 0;
+  padding-left: 1.3rem;
+  display: grid;
+  gap: 0.4rem;
+  color: var(--text-1);
+  line-height: 1.5;
+}
+
+.side-menu-install-btn {
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 0.9rem;
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  cursor: pointer;
+  font-size: var(--text-base);
+  font-weight: 700;
+  padding: 0.9rem 1rem;
+  min-height: 3.2rem;
+  text-align: left;
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .side-menu .side-menu-install-btn {
+    width: 2.4rem;
+    min-height: 2.4rem;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    font-size: 1.15rem;
+    text-align: center;
+    flex-shrink: 0;
+  }
+}
+
+/* ── Marque (symbole + mot-symbole) ───────────────────────────────────── */
+
+.brand-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.brand-logo svg {
+  flex-shrink: 0;
+}
+
+.brand-logo__word {
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.brand-logo__word strong {
+  font-weight: 800;
+}

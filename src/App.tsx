@@ -13,6 +13,9 @@ import { StatsView } from './components/StatsView'
 import { EnvelopeModal } from './components/EnvelopeModal'
 import { PremiumGateModal } from './components/PremiumGateModal'
 import { StartChecklist } from './components/StartChecklist'
+import { RecurringSuggestions } from './components/RecurringSuggestions'
+import { detectRecurringCandidates, type RecurringCandidate } from './lib/recurringDetection'
+import { canPromptInstall, isIos, isStandalone, onInstallAvailabilityChange, promptInstall } from './lib/pwaInstall'
 import { CashChatPanel } from './components/CashChatPanel'
 import { QuickAddModal } from './components/QuickAddModal'
 import {
@@ -197,6 +200,8 @@ const MANUAL_ONBOARDING_PHASES = [
 ]
 const FIRST_TX_TOUR_DONE_KEY = 'plan-financier-first-tx-tour-done-v1'
 const START_CHECKLIST_DONE_KEY = 'plan-financier-start-checklist-done-v1'
+/** Suggestions de récurrence rejetées (clés libellé+type). */
+const RECURRING_DISMISSED_KEY = 'plan-financier-recurring-dismissed-v1'
 /** Opérations saisies pendant la démo, reprises à la création du compte. */
 const DEMO_CARRY_OVER_KEY = 'plan-financier-demo-carry-over-v1'
 /** Ids des opérations du jeu de démo (les autres viennent de l'utilisateur). */
@@ -857,7 +862,7 @@ function InfoHint({ text }: { text: string }) {
 }
 
 function App() {
-  type SettingsSection = 'profiles' | 'ai' | 'security' | 'backup' | 'reset' | 'theme' | 'rgpd' | 'account' | 'report' | 'a11y' | 'subscription'
+  type SettingsSection = 'profiles' | 'ai' | 'security' | 'backup' | 'reset' | 'theme' | 'rgpd' | 'account' | 'report' | 'a11y' | 'subscription' | 'install'
   const currentMonth = new Date().toISOString().slice(0, 7)
   const todayIso = new Date().toISOString().slice(0, 10)
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
@@ -1069,6 +1074,13 @@ function App() {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('profiles')
   // Sélecteur photo/avatar du profil : s'ouvre en touchant la photo.
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false)
+  // PWA : bouton « Installer » natif disponible (Chrome/Edge/Android).
+  const [installAvailable, setInstallAvailable] = useState(() => canPromptInstall())
+  useEffect(() => onInstallAvailabilityChange(() => setInstallAvailable(canPromptInstall())), [])
+  const handleInstallApp = async () => {
+    const accepted = await promptInstall()
+    showToast(accepted ? '📲 Plan Financier est installée sur cet appareil' : 'Installation annulée')
+  }
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false)
   const [settingsError, setSettingsError] = useState('')
   const [settingsSuccess, setSettingsSuccess] = useState('')
@@ -3700,6 +3712,49 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     return { items, done, visible: !startChecklistDismissed && done < items.length }
   }, [recurringRules, envelopeFunds, envelopeBudgets, savingsTargets, selectedProfileId, startChecklistDismissed, todayIso])
 
+  // ── Récurrences détectées (Accueil) ──────────────────────────────────
+  const [dismissedRecurringKeys, setDismissedRecurringKeys] = useState<string[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(RECURRING_DISMISSED_KEY)
+      return raw ? (JSON.parse(raw) as string[]) : []
+    } catch {
+      return []
+    }
+  })
+  const recurringCandidates = useMemo(
+    () => detectRecurringCandidates(activeTransactions, recurringRules.filter((rule) => rule.member === selectedProfileId), dismissedRecurringKeys),
+    [activeTransactions, recurringRules, selectedProfileId, dismissedRecurringKeys],
+  )
+  const dismissRecurringCandidate = (candidate: RecurringCandidate) => {
+    setDismissedRecurringKeys((previous) => {
+      const next = [...previous, candidate.key]
+      if (!demoMode) window.localStorage.setItem(RECURRING_DISMISSED_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+  const programRecurringCandidate = (candidate: RecurringCandidate) => {
+    const rule: RecurringRule = {
+      id: `rule-${Date.now()}`,
+      member: selectedProfileId,
+      category: candidate.category,
+      envelope: candidate.envelope,
+      label: candidate.label,
+      amount: candidate.amount,
+      kind: candidate.kind,
+      frequency: 'monthly',
+      dayOfPeriod: candidate.dayOfMonth,
+      startDate: candidate.lastDate,
+      endDate: null,
+      // La dernière occurrence existe déjà : la génération démarre le mois suivant.
+      lastGeneratedOn: candidate.lastDate,
+      pausedAt: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }
+    setRecurringRules((previous) => [...previous, rule])
+    showToast(`🔁 « ${candidate.label} » programmé chaque mois — visible sur le calendrier`)
+  }
+
   const topTags = useMemo(() => {
     const counts = new Map<string, number>()
     for (const tx of activeMonthTransactions) {
@@ -5530,6 +5585,17 @@ Réponse attendue:
           >
             ⚙️<span className="side-menu-btn-label"> Paramètres</span>
           </button>
+          {installAvailable && !isStandalone() ? (
+            <button
+              type="button"
+              className="side-menu-install-btn"
+              onClick={() => void handleInstallApp()}
+              aria-label="Installer l'application"
+              title="Installer Plan Financier sur cet appareil"
+            >
+              📲<span className="side-menu-btn-label"> Installer l'app</span>
+            </button>
+          ) : null}
           <button
             type="button"
             className="side-menu-logout-btn"
@@ -5631,7 +5697,31 @@ Réponse attendue:
         ) : null}
 
         {isActiveView('overview') && startChecklist.visible ? (
-          <StartChecklist items={startChecklist.items} done={startChecklist.done} onDismiss={dismissStartChecklist} />
+          <StartChecklist
+            items={startChecklist.items}
+            done={startChecklist.done}
+            onDismiss={dismissStartChecklist}
+            secondary={{
+              label: '📄 Vous avez un relevé bancaire ? Importez-le en CSV, tout se range tout seul →',
+              onClick: () => {
+                setDashboardWidgetState((previous) =>
+                  previous.visibleWidgets.includes('csvImport')
+                    ? previous
+                    : { ...previous, visibleWidgets: [...previous.visibleWidgets, 'csvImport'] },
+                )
+                navigateToSection('operations')
+                window.setTimeout(() => document.getElementById('import-csv')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250)
+              },
+            }}
+          />
+        ) : null}
+
+        {isActiveView('overview') && !startChecklist.visible ? (
+          <RecurringSuggestions
+            candidates={recurringCandidates}
+            onProgram={programRecurringCandidate}
+            onDismiss={dismissRecurringCandidate}
+          />
         ) : null}
 
         {isActiveView('overview') ? (
@@ -5852,6 +5942,7 @@ Réponse attendue:
                     group: 'Personnalisation',
                     items: [
                       ['theme', '🎨', 'Thème'],
+                      ['install', '📲', "Installer l'app"],
                       ['a11y', '♿', 'Accessibilité'],
                       ['profiles', '👥', 'Profils'],
                       ['ai', '✨', 'Assistant IA'],
@@ -6204,6 +6295,36 @@ Réponse attendue:
                           {claudeTestMessage}
                         </p>
                       ) : null}
+                    </article>
+                  </div>
+                ) : null}
+
+                {settingsSection === 'install' ? (
+                  <div className="settings-section-grid settings-section-grid--single">
+                    <article className="glass-card settings-section-card form-panel">
+                      <div className="panel-title">
+                        <h2>Installer Plan Financier</h2>
+                        <p>Une icône sur l'écran d'accueil, un lancement plein écran, et vos données disponibles même hors connexion.</p>
+                      </div>
+                      {isStandalone() ? (
+                        <p className="auth-success">✅ L'app est déjà installée sur cet appareil.</p>
+                      ) : installAvailable ? (
+                        <button type="button" className="hero-cta-button" onClick={() => void handleInstallApp()}>
+                          📲 Installer sur cet appareil
+                        </button>
+                      ) : isIos() ? (
+                        <ol className="install-steps">
+                          <li>Ouvrez planfinancier.app dans <strong>Safari</strong>.</li>
+                          <li>Touchez le bouton <strong>Partager</strong> (le carré avec une flèche vers le haut).</li>
+                          <li>Choisissez <strong>« Sur l'écran d'accueil »</strong>, puis <strong>Ajouter</strong>.</li>
+                        </ol>
+                      ) : (
+                        <ol className="install-steps">
+                          <li>Ouvrez planfinancier.app dans <strong>Chrome</strong> ou <strong>Edge</strong>.</li>
+                          <li>Menu du navigateur (⋮) → <strong>« Installer l'application »</strong> (ou l'icône d'installation dans la barre d'adresse).</li>
+                        </ol>
+                      )}
+                      <p className="auth-note">Gratuit, sans passer par un magasin d'applications. Vous gardez les mêmes données et le même compte.</p>
                     </article>
                   </div>
                 ) : null}
@@ -8008,7 +8129,7 @@ Réponse attendue:
         ) : null}
 
         {isPilotageWidgetVisible('csvImport') && isActiveView('operations') ? (
-        <article className="glass-card form-panel wide-card">
+        <article id="import-csv" className="glass-card form-panel wide-card">
           <div className="panel-title">
             <h2>Importer un relevé bancaire</h2>
             <p>Import premium avec catégorisation automatique et prévisualisation</p>
