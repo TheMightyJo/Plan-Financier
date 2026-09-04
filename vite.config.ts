@@ -10,11 +10,16 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('@supabase/')) return 'supabase'
-            if (id.includes('recharts')) return 'recharts'
-            if (id.includes('jspdf')) return 'jspdf'
-            if (id.includes('lucide-react')) return 'icons'
+          // Correspondances exactes par paquet : une règle trop large
+          // (« includes('jspdf') ») attrapait un module partagé et forçait
+          // le préchargement du PDF sur la vitrine.
+          // recharts / jspdf : pas de chunk forcé — le bundler les isole
+          // naturellement derrière leurs imports dynamiques (un chunk forcé
+          // attirait des helpers partagés et se retrouvait préchargé par la
+          // vitrine).
+          if (id.includes('/node_modules/')) {
+            if (id.includes('/node_modules/@supabase/')) return 'supabase'
+            if (id.includes('/node_modules/lucide-react/')) return 'icons'
           }
           return undefined
         },
