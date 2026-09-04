@@ -8,7 +8,42 @@
  *     réseau (les assets Vite sont fingerprintés, donc immuables).
  * Jamais de cache pour les appels cross-origin (Supabase, IA…).
  */
-const CACHE_NAME = 'plan-financier-v2'
+const CACHE_NAME = 'plan-financier-v3'
+
+// ── Notifications push (Web Push, envoyées par la fonction send-push) ──
+self.addEventListener('push', (event) => {
+  let payload = { title: 'Plan Financier', body: '', url: '/app', tag: 'plan-financier' }
+  try {
+    payload = { ...payload, ...event.data.json() }
+  } catch {
+    if (event.data) payload.body = event.data.text()
+  }
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      tag: payload.tag,
+      data: { url: payload.url },
+      lang: 'fr',
+    }),
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const target = new URL(event.notification.data?.url || '/app', self.location.origin).href
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+      const existing = windows.find((w) => w.url.startsWith(self.location.origin))
+      if (existing) {
+        existing.focus()
+        return existing.navigate ? existing.navigate(target) : undefined
+      }
+      return self.clients.openWindow(target)
+    }),
+  )
+})
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

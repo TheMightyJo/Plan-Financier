@@ -14,6 +14,7 @@ import { EnvelopeModal } from './components/EnvelopeModal'
 import { PremiumGateModal } from './components/PremiumGateModal'
 import { StartChecklist } from './components/StartChecklist'
 import { RecurringSuggestions } from './components/RecurringSuggestions'
+import { NotificationsSettings } from './components/NotificationsSettings'
 import { detectRecurringCandidates, type RecurringCandidate } from './lib/recurringDetection'
 import { canPromptInstall, isIos, isStandalone, onInstallAvailabilityChange, promptInstall } from './lib/pwaInstall'
 import { CashChatPanel } from './components/CashChatPanel'
@@ -862,7 +863,7 @@ function InfoHint({ text }: { text: string }) {
 }
 
 function App() {
-  type SettingsSection = 'profiles' | 'ai' | 'security' | 'backup' | 'reset' | 'theme' | 'rgpd' | 'account' | 'report' | 'a11y' | 'subscription' | 'install'
+  type SettingsSection = 'profiles' | 'ai' | 'security' | 'backup' | 'reset' | 'theme' | 'rgpd' | 'account' | 'report' | 'a11y' | 'subscription' | 'install' | 'notifications'
   const currentMonth = new Date().toISOString().slice(0, 7)
   const todayIso = new Date().toISOString().slice(0, 10)
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
@@ -5953,6 +5954,7 @@ Réponse attendue:
                     items: [
                       ['backup', '💾', 'Sauvegarde'],
                       ['report', '📧', 'Rapport par email'],
+                      ['notifications', '🔔', 'Notifications'],
                     ],
                   },
                   {
@@ -6297,6 +6299,14 @@ Réponse attendue:
                       ) : null}
                     </article>
                   </div>
+                ) : null}
+
+                {settingsSection === 'notifications' ? (
+                  <NotificationsSettings
+                    onBlockedInDemo={() => blockInDemo('les notifications')}
+                    onOpenInstall={() => setSettingsSection('install')}
+                    showToast={showToast}
+                  />
                 ) : null}
 
                 {settingsSection === 'install' ? (

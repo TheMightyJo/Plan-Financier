@@ -21,10 +21,16 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
       .register('/sw.js', { updateViaCache: 'none' })
       .then((registration) => registration.update())
       .catch(() => {})
-    // Quand une nouvelle version prend la main, on recharge une fois : évite
-    // un HTML neuf servi avec des assets (CSS/JS) de l'ancienne version.
+    // Quand une NOUVELLE version prend la main (mise à jour), on recharge une
+    // fois : évite un HTML neuf servi avec les assets de l'ancienne version.
+    // Pas de rechargement à la première installation (aucun contrôleur avant).
+    let hadController = Boolean(navigator.serviceWorker.controller)
     let reloaded = false
     navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) {
+        hadController = true
+        return
+      }
       if (reloaded) return
       reloaded = true
       window.location.reload()
