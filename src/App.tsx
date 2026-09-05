@@ -16,6 +16,7 @@ import { StartChecklist } from './components/StartChecklist'
 import { RecurringSuggestions } from './components/RecurringSuggestions'
 import { NotificationsSettings } from './components/NotificationsSettings'
 import { detectRecurringCandidates, type RecurringCandidate } from './lib/recurringDetection'
+import { addContribution, computeCurrentSaved, computePaceOutlook, recommendedMonthlyAmount } from './lib/savingsGoals'
 import { canPromptInstall, isIos, isStandalone, onInstallAvailabilityChange, promptInstall } from './lib/pwaInstall'
 import { CashChatPanel } from './components/CashChatPanel'
 import { QuickAddModal } from './components/QuickAddModal'
@@ -71,6 +72,7 @@ import {
 } from './security'
 import {
   euroFormatter,
+  formatMonthYear,
   formatTooltipValue,
 } from './lib/format'
 import {
@@ -1518,6 +1520,8 @@ function App() {
   const chatUndoTimerRef = useRef<number | null>(null)
 
   const [savingsTargets, setSavingsTargets] = useState<SavingsTarget[]>(() => loadSavingsTargets())
+  const [quickContributionOpen, setQuickContributionOpen] = useState(false)
+  const [quickContributionAmount, setQuickContributionAmount] = useState('')
   const [savingsTargetDraft, setSavingsTargetDraft] = useState({ label: '', amount: '' })
   const [predictionLoading, setPredictionLoading] = useState(false)
   const [predictionResult, setPredictionResult] = useState('')
@@ -1984,6 +1988,15 @@ Voici les données financières de l'utilisateur pour ${formatMonth(selectedMont
 - Solde net : ${euroFormatter.format(monthlyNet)}
 - Top dépenses : ${topExpenses || 'aucune'}
 - Objectifs d'épargne : ${goalsText || 'aucun'}
+- Projet d'épargne principal : ${
+      primarySavingsTarget
+        ? `${primarySavingsTarget.label} — ${euroFormatter.format(primarySavingsCurrent)} sur ${euroFormatter.format(primarySavingsTarget.targetAmount)} (${primarySavingsProgress}%)${
+            primarySavingsTarget.targetDate ? `, échéance ${primarySavingsTarget.targetDate}` : ''
+          }${primarySavingsMonthly !== null ? `, ≈ ${euroFormatter.format(primarySavingsMonthly)}/mois conseillés` : ''}${
+            primarySavingsOutlook ? `, rythme observé ${euroFormatter.format(primarySavingsOutlook.pace)}/mois` : ''
+          }`
+        : 'aucun'
+    }
 - Alertes actives : ${alertMessages.length > 0 ? alertMessages.map((a) => a.message).join(' | ') : 'aucune'}
 
 Réponds en français, de façon concise et bienveillante, en vouvoyant l'utilisateur. Tu peux analyser les données ci-dessus et répondre à toutes les questions (pas seulement financières).`
@@ -3072,9 +3085,39 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   }, [activeTransactions, selectedMonth])
 
   const primarySavingsTarget = savingsTargets[0] ?? null
-  const primarySavingsProgress = primarySavingsTarget
-    ? Math.min(100, Math.round(((primarySavingsTarget.currentSaved ?? 0) / primarySavingsTarget.targetAmount) * 100))
+  // Objectif principal : progression via compte lié (solde) ou montant manuel.
+  const primarySavingsCurrent = primarySavingsTarget
+    ? computeCurrentSaved(primarySavingsTarget, accounts, transactions)
     : 0
+  const primarySavingsProgress = primarySavingsTarget
+    ? Math.min(100, Math.round((primarySavingsCurrent / primarySavingsTarget.targetAmount) * 100))
+    : 0
+  const primarySavingsRemaining = primarySavingsTarget
+    ? Math.max(0, primarySavingsTarget.targetAmount - primarySavingsCurrent)
+    : 0
+  const primarySavingsMonthly = primarySavingsTarget
+    ? recommendedMonthlyAmount(primarySavingsTarget, primarySavingsCurrent)
+    : null
+  const primarySavingsOutlook = primarySavingsTarget
+    ? computePaceOutlook(primarySavingsTarget, primarySavingsCurrent)
+    : null
+
+  const commitSavingsTargets = (next: SavingsTarget[]) => {
+    setSavingsTargets(next)
+    window.localStorage.setItem(SAVINGS_TARGETS_STORAGE_KEY, JSON.stringify(next))
+  }
+
+  /** Versement rapide depuis l'accueil sur l'objectif principal. */
+  const handleQuickContribution = () => {
+    if (!primarySavingsTarget) return
+    const amount = Number(quickContributionAmount.replace(',', '.'))
+    if (!Number.isFinite(amount) || amount === 0) return
+    commitSavingsTargets(
+      savingsTargets.map((g) => (g.id === primarySavingsTarget.id ? addContribution(g, amount) : g)),
+    )
+    setQuickContributionOpen(false)
+    setQuickContributionAmount('')
+  }
 
   const budgetSeriesColors = {
     revenus: '#22c55e',
@@ -5752,6 +5795,80 @@ Réponse attendue:
                 </span>
                 {primarySavingsProgress}% atteint
               </div>
+              {primarySavingsProgress < 100 ? (
+                <div className="kpi-goal-detail">
+                  <span>
+                    Reste {euroFormatter.format(primarySavingsRemaining)}
+                    {primarySavingsMonthly !== null ? ` · ≈ ${euroFormatter.format(primarySavingsMonthly)}/mois` : ''}
+                  </span>
+                  {primarySavingsOutlook ? (
+                    <span className={primarySavingsOutlook.monthsDelta !== null && primarySavingsOutlook.monthsDelta > 0 ? 'negative' : 'positive'}>
+                      {primarySavingsOutlook.monthsDelta === null
+                        ? `À ce rythme : atteint vers ${formatMonthYear(primarySavingsOutlook.projectedDate)}`
+                        : primarySavingsOutlook.monthsDelta === 0
+                          ? 'À ce rythme : dans les temps'
+                          : primarySavingsOutlook.monthsDelta < 0
+                          ? `À ce rythme : ${Math.abs(primarySavingsOutlook.monthsDelta)} mois d'avance`
+                          : `À ce rythme : ${primarySavingsOutlook.monthsDelta} mois de retard`}
+                    </span>
+                  ) : null}
+                  {quickContributionOpen ? (
+                    <form
+                      className="kpi-goal-contribute"
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        handleQuickContribution()
+                      }}
+                    >
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        placeholder="Montant"
+                        aria-label="Montant mis de côté"
+                        value={quickContributionAmount}
+                        onChange={(event) => setQuickContributionAmount(event.target.value)}
+                        autoFocus
+                      />
+                      <button type="submit">OK</button>
+                      <button
+                        type="button"
+                        className="kpi-goal-cancel"
+                        onClick={() => {
+                          setQuickContributionOpen(false)
+                          setQuickContributionAmount('')
+                        }}
+                        aria-label="Annuler"
+                      >
+                        ✕
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="kpi-goal-actions">
+                      <button
+                        type="button"
+                        className="kpi-goal-action"
+                        onClick={() => setQuickContributionOpen(true)}
+                      >
+                        + Mettre de côté
+                      </button>
+                      <button
+                        type="button"
+                        className="kpi-goal-link"
+                        onClick={() => setShowGoalsPanel(true)}
+                      >
+                        Gérer les objectifs
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="kpi-goal-detail">
+                  <button type="button" className="kpi-goal-link" onClick={() => setShowGoalsPanel(true)}>
+                    Gérer les objectifs
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="kpi-card kpi-card--accent">
@@ -8687,10 +8804,7 @@ Réponse attendue:
         accounts={accounts}
         transactions={transactions}
         member={selectedProfileId}
-        onChange={(next) => {
-          setSavingsTargets(next)
-          window.localStorage.setItem(SAVINGS_TARGETS_STORAGE_KEY, JSON.stringify(next))
-        }}
+        onChange={commitSavingsTargets}
         onClose={() => setShowGoalsPanel(false)}
       />
     ) : null}

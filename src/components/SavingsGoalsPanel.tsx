@@ -1,9 +1,11 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { Pencil, Trash2, Plus, X, Target, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Pencil, Trash2, Plus, X, Target, CheckCircle2, AlertTriangle, PiggyBank } from 'lucide-react'
 import type { Account, FamilyMember, SavingsTarget, Transaction } from '../types'
 import {
+  addContribution,
   computeCurrentSaved,
   computeGoalStatus,
+  computePaceOutlook,
   progressPercent,
   recommendedMonthlyAmount,
   validateGoal,
@@ -58,6 +60,21 @@ const euro2 = new Intl.NumberFormat('fr-FR', {
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
+const monthYear = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' })
+const shortDate = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' })
+const formatMonthYear = (iso: string) => monthYear.format(new Date(`${iso}T00:00:00`))
+const formatShortDate = (iso: string) => shortDate.format(new Date(`${iso}T00:00:00`))
+
+/** Phrase « à ce rythme » : rythme observé + date projetée + avance/retard. */
+const describeOutlook = (
+  outlook: { pace: number; projectedDate: string; monthsDelta: number | null },
+): string => {
+  const base = `Rythme ${euro.format(outlook.pace)}/mois · atteint vers ${formatMonthYear(outlook.projectedDate)}`
+  if (outlook.monthsDelta === null || outlook.monthsDelta === 0) return base
+  const n = Math.abs(outlook.monthsDelta)
+  return `${base} (${outlook.monthsDelta < 0 ? `${n} mois d'avance` : `${n} mois de retard`})`
+}
+
 const emptyForm = (): FormState => ({
   id: null,
   label: '',
@@ -94,6 +111,17 @@ export function SavingsGoalsPanel({
   const [form, setForm] = useState<FormState>(emptyForm)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
+  /** Objectif dont le mini-formulaire « Mettre de côté » est ouvert. */
+  const [contributingId, setContributingId] = useState<string | null>(null)
+  const [contributionAmount, setContributionAmount] = useState('')
+
+  const handleContribute = (goalId: string) => {
+    const amount = Number(contributionAmount.replace(',', '.'))
+    if (!Number.isFinite(amount) || amount === 0) return
+    onChange(goals.map((g) => (g.id === goalId ? addContribution(g, amount, todayIso()) : g)))
+    setContributingId(null)
+    setContributionAmount('')
+  }
 
   const memberAccounts = useMemo(
     () => accounts.filter((a) => a.ownerMember === member && a.archivedAt === null),
@@ -327,6 +355,8 @@ export function SavingsGoalsPanel({
                 const monthly = recommendedMonthlyAmount(g, current, today)
                 const remaining = Math.max(0, g.targetAmount - current)
                 const color = g.displayColor ?? DEFAULT_COLOR
+                const outlook = computePaceOutlook(g, current, today)
+                const recent = [...(g.contributions ?? [])].slice(-3).reverse()
 
                 return (
                   <li key={g.id} className={`goal-item status-${status}`}>
@@ -375,7 +405,77 @@ export function SavingsGoalsPanel({
                       </div>
                     )}
 
+                    {outlook && status !== 'achieved' ? (
+                      <p className="goal-outlook">{describeOutlook(outlook)}</p>
+                    ) : null}
+
+                    {recent.length > 0 ? (
+                      <ul className="goal-contributions" aria-label="Derniers versements">
+                        {recent.map((c) => (
+                          <li key={c.id}>
+                            <span>{formatShortDate(c.date)}</span>
+                            <span className={c.amount < 0 ? 'negative' : 'positive'}>
+                              {c.amount < 0 ? '−' : '+'} {euro.format(Math.abs(c.amount))}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+
+                    {contributingId === g.id ? (
+                      <form
+                        className="goal-contribute-form"
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          handleContribute(g.id)
+                        }}
+                      >
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.01"
+                          placeholder="Montant (ex : 50)"
+                          aria-label="Montant mis de côté"
+                          value={contributionAmount}
+                          onChange={(event) => setContributionAmount(event.target.value)}
+                          autoFocus
+                        />
+                        <button type="submit" className="hero-cta-button">
+                          Valider
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          onClick={() => {
+                            setContributingId(null)
+                            setContributionAmount('')
+                          }}
+                        >
+                          Annuler
+                        </button>
+                        {g.destinationAccountId ? (
+                          <span className="goal-contribute-hint">
+                            Compte lié : le solde du compte fait foi, le versement sert au rythme.
+                          </span>
+                        ) : null}
+                      </form>
+                    ) : null}
+
                     <div className="goal-actions">
+                      {status !== 'achieved' ? (
+                        <button
+                          type="button"
+                          className="goal-contribute"
+                          onClick={() => {
+                            setContributingId(g.id)
+                            setContributionAmount('')
+                          }}
+                          title="Mettre de côté"
+                        >
+                          <PiggyBank size={14} />
+                          <span>Mettre de côté</span>
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => handleMarkAchieved(g.id)}

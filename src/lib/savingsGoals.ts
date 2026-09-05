@@ -1,4 +1,4 @@
-import type { Account, SavingsTarget, Transaction } from '../types'
+import type { Account, SavingsContribution, SavingsTarget, Transaction } from '../types'
 import { computeAccountBalance } from './accounts'
 
 /**
@@ -108,4 +108,109 @@ export const validateGoal = (goal: Partial<SavingsTarget>): GoalValidationError 
     if (goal.targetDate < today) return 'target_date_in_past'
   }
   return null
+}
+
+// ── V2 : versements, rythme, projection ──────────────────────────────
+
+/** Fenêtre d'observation du rythme d'épargne (jours). */
+export const PACE_WINDOW_DAYS = 90
+
+const createContributionId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `contrib-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
+
+/**
+ * Enregistre un versement (ou un retrait si amount < 0) sur l'objectif.
+ * Sans compte lié, `currentSaved` est mis à jour ; avec compte lié, seule
+ * l'historique est enrichi (le solde du compte fait foi).
+ * Un objectif atteint après versement n'est pas verrouillé automatiquement :
+ * c'est l'utilisateur qui « marque atteint » (achievedAt).
+ */
+export const addContribution = (
+  goal: SavingsTarget,
+  amount: number,
+  dateIso: string = new Date().toISOString().slice(0, 10),
+): SavingsTarget => {
+  if (!Number.isFinite(amount) || amount === 0) return goal
+  const entry: SavingsContribution = { id: createContributionId(), date: dateIso, amount }
+  const contributions = [...(goal.contributions ?? []), entry]
+  const next: SavingsTarget = { ...goal, contributions, updatedAt: Date.now() }
+  if (!goal.destinationAccountId) {
+    next.currentSaved = Math.max(0, (goal.currentSaved ?? 0) + amount)
+  }
+  return next
+}
+
+/**
+ * Rythme d'épargne observé : total des versements des `PACE_WINDOW_DAYS`
+ * derniers jours, ramené au mois. Null si aucun versement dans la fenêtre
+ * (rien à projeter).
+ */
+export const monthlyPace = (
+  goal: SavingsTarget,
+  todayIso: string = new Date().toISOString().slice(0, 10),
+): number | null => {
+  const contributions = goal.contributions ?? []
+  if (contributions.length === 0) return null
+  const today = new Date(`${todayIso}T00:00:00Z`).getTime()
+  const windowStart = today - PACE_WINDOW_DAYS * MS_PER_DAY
+  const inWindow = contributions.filter((c) => {
+    const t = new Date(`${c.date}T00:00:00Z`).getTime()
+    return t >= windowStart && t <= today
+  })
+  if (inWindow.length === 0) return null
+  // La fenêtre démarre au premier versement observé (pas de mois « vides »
+  // avant qu'on ne commence à épargner), avec un plancher d'un mois.
+  const first = Math.min(...inWindow.map((c) => new Date(`${c.date}T00:00:00Z`).getTime()))
+  const observedDays = Math.max(30.44, (today - first) / MS_PER_DAY + 1)
+  const total = inWindow.reduce((sum, c) => sum + c.amount, 0)
+  if (total <= 0) return null
+  return total / (observedDays / 30.44)
+}
+
+/**
+ * Date (YYYY-MM-DD) à laquelle l'objectif sera atteint au rythme observé.
+ * Null si pas de rythme ou déjà atteint.
+ */
+export const projectedCompletionDate = (
+  goal: SavingsTarget,
+  currentSaved: number,
+  pace: number | null,
+  todayIso: string = new Date().toISOString().slice(0, 10),
+): string | null => {
+  if (pace === null || pace <= 0) return null
+  const remaining = goal.targetAmount - currentSaved
+  if (remaining <= 0) return null
+  const days = Math.ceil((remaining / pace) * 30.44)
+  const date = new Date(new Date(`${todayIso}T00:00:00Z`).getTime() + days * MS_PER_DAY)
+  return date.toISOString().slice(0, 10)
+}
+
+export type PaceOutlook = {
+  /** Rythme observé (€/mois). */
+  pace: number
+  /** Date projetée d'atteinte. */
+  projectedDate: string
+  /** Écart en mois vs la date cible : négatif = en avance, positif = en retard, null sans échéance. */
+  monthsDelta: number | null
+}
+
+/** Synthèse « à ce rythme » prête pour l'affichage. Null si rien à projeter. */
+export const computePaceOutlook = (
+  goal: SavingsTarget,
+  currentSaved: number,
+  todayIso: string = new Date().toISOString().slice(0, 10),
+): PaceOutlook | null => {
+  const pace = monthlyPace(goal, todayIso)
+  const projectedDate = projectedCompletionDate(goal, currentSaved, pace, todayIso)
+  if (pace === null || projectedDate === null) return null
+  let monthsDelta: number | null = null
+  if (goal.targetDate) {
+    const diffDays =
+      (new Date(`${projectedDate}T00:00:00Z`).getTime() - new Date(`${goal.targetDate}T00:00:00Z`).getTime()) /
+      MS_PER_DAY
+    monthsDelta = Math.round(diffDays / 30.44)
+  }
+  return { pace, projectedDate, monthsDelta }
 }
