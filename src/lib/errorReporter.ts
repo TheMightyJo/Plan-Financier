@@ -1,5 +1,3 @@
-import { supabase } from '../supabase'
-
 /**
  * Remontée des erreurs de production vers la fonction Edge `report-error`
  * (table client_errors + digest quotidien par email). Sans tiers, sans
@@ -38,10 +36,13 @@ export const reportError = (error: unknown, context?: string): void => {
   reportsSent++
 
   void (async () => {
+    // Identifiant de compte lu dans la session stockée (clé de src/supabase.ts)
+    // sans importer le client Supabase : la vitrine reste légère.
     let userId: string | null = null
     try {
-      const { data } = await supabase.auth.getSession()
-      userId = data.session?.user.id ?? null
+      const raw = window.localStorage.getItem('plan-financier-supabase-auth')
+      const parsed = raw ? (JSON.parse(raw) as { user?: { id?: string } }) : null
+      userId = typeof parsed?.user?.id === 'string' ? parsed.user.id : null
     } catch {
       /* session indisponible : remontée anonyme */
     }

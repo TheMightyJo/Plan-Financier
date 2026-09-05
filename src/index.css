@@ -12549,3 +12549,18 @@ html {
   margin: 0;
   color: var(--text-2);
 }
+
+/* ── Chargement de l'app (vitrine d'abord) ────────────────────────────── */
+
+.app-boot {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  background: var(--bg-1);
+}
+
+.app-boot .inline-loader {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-width: 3px;
+}
