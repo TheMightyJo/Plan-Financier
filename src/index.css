@@ -3114,6 +3114,182 @@ h1 {
   background: var(--kpi-value-accent);
 }
 
+/* ── Prévision de fin de mois ─────────────────────────────────────── */
+.hero-forecast {
+  margin: 0.35rem 0 0;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-2);
+}
+
+.hero-forecast--ok {
+  color: var(--pf-color-positive-text, #15803d);
+}
+
+.hero-forecast--tight {
+  color: var(--pf-color-warning-text, #b45309);
+}
+
+.hero-forecast--negative {
+  color: var(--pf-color-negative-text, #b91c1c);
+}
+
+.forecast-card {
+  margin: 0 0 1rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.forecast-card .panel-title {
+  align-items: flex-start;
+}
+
+.forecast-end {
+  font-size: 1.6rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.forecast-end.positive {
+  color: var(--pf-color-positive-text, #15803d);
+}
+
+.forecast-end.negative {
+  color: var(--pf-color-negative-text, #b91c1c);
+}
+
+.forecast-spark {
+  width: 100%;
+  height: 96px;
+  display: block;
+}
+
+.forecast-spark__dot {
+  vector-effect: non-scaling-stroke;
+}
+
+.forecast-spark__zero {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.forecast-spark__line {
+  stroke: var(--pf-color-positive-text, #15803d);
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.forecast-spark__area {
+  fill: var(--pf-color-positive-text, #15803d);
+  opacity: 0.12;
+}
+
+.forecast-spark--tight .forecast-spark__line {
+  stroke: var(--pf-color-warning-text, #b45309);
+}
+
+.forecast-spark--tight .forecast-spark__area {
+  fill: var(--pf-color-warning-text, #b45309);
+}
+
+.forecast-spark--negative .forecast-spark__line {
+  stroke: var(--pf-color-negative-text, #b91c1c);
+}
+
+.forecast-spark--negative .forecast-spark__area {
+  fill: var(--pf-color-negative-text, #b91c1c);
+}
+
+.forecast-spark__dot {
+  fill: var(--surface, #fff);
+  stroke: var(--pf-color-negative-text, #b91c1c);
+  stroke-width: 2;
+}
+
+.forecast-spark__dot--revenu {
+  stroke: var(--pf-color-positive-text, #15803d);
+}
+
+.forecast-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem;
+}
+
+.forecast-figures > div {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.75rem;
+  background: var(--surface-soft, var(--bg-2));
+}
+
+.forecast-figure__label {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.forecast-figures strong {
+  font-size: var(--text-md, 1rem);
+}
+
+.forecast-figures .positive,
+.forecast-upcoming .positive {
+  color: var(--pf-color-positive-text, #15803d);
+}
+
+.forecast-figures .negative,
+.forecast-upcoming .negative {
+  color: var(--pf-color-negative-text, #b91c1c);
+}
+
+.forecast-upcoming {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+  font-size: var(--text-sm);
+}
+
+.forecast-upcoming li {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr auto;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.forecast-upcoming__date {
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+
+.forecast-upcoming__more {
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+
+.forecast-note {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.forecast-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--text-1);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
 /* ── Tour guidé des fonctionnalités ──────────────────────────────── */
 .tour-root {
   position: fixed;

@@ -16,6 +16,8 @@ import { StartChecklist } from './components/StartChecklist'
 import { RecurringSuggestions } from './components/RecurringSuggestions'
 import { NotificationsSettings } from './components/NotificationsSettings'
 import { FeatureTour } from './components/FeatureTour'
+import { ForecastCard } from './components/ForecastCard'
+import { computeForecast } from './lib/forecast'
 import { FEATURE_TOUR_STEPS } from './lib/featureTourSteps'
 import { detectRecurringCandidates, type RecurringCandidate } from './lib/recurringDetection'
 import { addContribution, computeCurrentSaved, computePaceOutlook, recommendedMonthlyAmount } from './lib/savingsGoals'
@@ -1953,6 +1955,13 @@ Voici les données financières de l'utilisateur pour ${formatMonth(selectedMont
 - Solde net : ${euroFormatter.format(monthlyNet)}
 - Top dépenses : ${topExpenses || 'aucune'}
 - Objectifs d'épargne : ${goalsText || 'aucun'}
+- Fin de mois prévue : ${
+      forecast
+        ? `${euroFormatter.format(forecast.endOfMonth)} au rythme actuel (charges fixes à venir ${euroFormatter.format(forecast.fixedExpenses)}, dépenses courantes ≈ ${euroFormatter.format(forecast.variableDailyRate)}/jour)${
+            forecast.firstNegativeDate ? `, découvert probable le ${forecast.firstNegativeDate}` : ''
+          }`
+        : 'non calculée'
+    }
 - Projet d'épargne principal : ${
       primarySavingsTarget
         ? `${primarySavingsTarget.label} — ${euroFormatter.format(primarySavingsCurrent)} sur ${euroFormatter.format(primarySavingsTarget.targetAmount)} (${primarySavingsProgress}%)${
@@ -2899,6 +2908,21 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
   const budget = selectedProfileBudget + (rolloverState.carryOver[selectedProfileId] ?? 0)
   const remaining = budget - monthlyExpense
+
+  // Prévision de fin de mois (mois courant, budget défini) : charges fixes à
+  // venir + revenus récurrents + rythme de dépenses courantes.
+  const forecast = useMemo(() => {
+    if (budget <= 0 || selectedMonth !== currentMonth) return null
+    return computeForecast({
+      todayIso,
+      remaining,
+      rules: recurringRules.filter((rule) => rule.member === selectedProfileId),
+      transactions: activeTransactions,
+      budget,
+    })
+  }, [budget, selectedMonth, currentMonth, todayIso, remaining, recurringRules, selectedProfileId, activeTransactions])
+  const forecastDayLabel = (iso: string) =>
+    new Date(`${iso}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
   const usageRateRaw = budget > 0 ? (monthlyExpense / budget) * 100 : 0
   const incomeRate = budget > 0 ? (monthlyIncome / budget) * 100 : 0
   const usageRate = Math.min(100, usageRateRaw)
@@ -3541,6 +3565,18 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
       alerts.push({ message: 'Attention : plus de 80% du budget consommé.', level: 'warning' })
     }
 
+    if (forecast?.status === 'negative' && forecast.firstNegativeDate) {
+      alerts.push({
+        message: `Découvert probable le ${forecastDayLabel(forecast.firstNegativeDate)} au rythme actuel (${euroFormatter.format(forecast.endOfMonth)} prévus en fin de mois).`,
+        level: 'danger',
+      })
+    } else if (forecast?.status === 'tight') {
+      alerts.push({
+        message: `Fin de mois serrée : ${euroFormatter.format(forecast.endOfMonth)} prévus au rythme actuel.`,
+        level: 'warning',
+      })
+    }
+
     envelopeBreakdown.forEach(({ envelope, total }) => {
       const share = monthlyExpense > 0 ? total / monthlyExpense : 0
       if (share >= 0.5 && total >= 150) {
@@ -3581,7 +3617,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     })
 
     return alerts.slice(0, 5)
-  }, [activeMonthTransactions, envelopeBreakdown, goalProgress, monthlyExpense, usageRate])
+  }, [activeMonthTransactions, envelopeBreakdown, goalProgress, monthlyExpense, usageRate, forecast])
 
   const annualTrendData = useMemo(() => {
     const now = new Date()
@@ -5688,6 +5724,15 @@ Réponse attendue:
                   ? `≈ ${euroFormatter.format(dailyAllowance)} / jour sur les ${daysLeftInMonth} jours restants`
                   : 'Budget dépassé — réduisez une catégorie ou ajustez le budget.'}
               </p>
+              {forecast ? (
+                <p className={`hero-forecast hero-forecast--${forecast.status}`}>
+                  {forecast.status === 'negative' && forecast.firstNegativeDate
+                    ? `⚠️ Découvert probable le ${forecastDayLabel(forecast.firstNegativeDate)} · fin de mois ${euroFormatter.format(forecast.endOfMonth)}`
+                    : forecast.status === 'tight'
+                      ? `Fin de mois serrée : ${euroFormatter.format(forecast.endOfMonth)} prévus`
+                      : `Fin de mois prévue : ${forecast.endOfMonth >= 0 ? '+' : ''}${euroFormatter.format(forecast.endOfMonth)}`}
+                </p>
+              ) : null}
             </>
           )}
           {(() => {
@@ -5894,6 +5939,10 @@ Réponse attendue:
             </div>
           )}
         </section>
+        ) : null}
+
+        {isActiveView('overview') && forecast ? (
+          <ForecastCard forecast={forecast} onManageRecurring={() => setShowRecurringPanel(true)} />
         ) : null}
 
         {isActiveView('overview') ? (
