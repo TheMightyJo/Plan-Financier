@@ -29,6 +29,7 @@ export const LOCAL_DATA_KEYS = [
   'plan-financier-envelope-funds-v1',
   'plan-financier-custom-envelopes-v1',
   'plan-financier-custom-categories-v1',
+  'plan-financier-view-layout-v1',
   'plan-financier-notes-v1',
   'plan-financier-onboarding-done-v1',
   'plan-financier-first-tx-tour-done-v1',

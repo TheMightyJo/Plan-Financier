@@ -39,6 +39,9 @@ import { detectRecurringCandidates, type RecurringCandidate } from './lib/recurr
 import { addContribution, computeCurrentSaved, computePaceOutlook, recommendedMonthlyAmount } from './lib/savingsGoals'
 import { switchLocalWorkspace } from './lib/localWorkspace'
 import { computePremiumAccess } from './lib/premiumAccess'
+import { loadViewLayouts, moveCard, resetViewLayout, saveViewLayouts, setCardHidden, type ViewId, type ViewLayouts } from './lib/viewLayout'
+import { ViewLayoutContext } from './lib/viewLayoutContext'
+import { HiddenCardsBar, ViewCard } from './components/ViewCard'
 import { pullDocuments, setDocumentSyncUser } from './lib/documentSync'
 import { queuePendingDeletes } from './lib/pendingDeletes'
 import { accountIdentityFromMetadata, personalizeProfiles, type AccountIdentity } from './lib/accountIdentity'
@@ -1010,6 +1013,17 @@ function App() {
     return isPaletteId(stored) ? stored : 'cafe'
   })
   const [dashboardWidgetState, setDashboardWidgetState] = useState<DashboardWidgetState>(loadDashboardWidgetState)
+  // Disposition des cartes par vue (ordre, masquées) — flèches et « masquer » sur chaque carte.
+  const [viewLayouts, setViewLayouts] = useState<ViewLayouts>(() => loadViewLayouts())
+  const viewLayoutApi = useMemo(
+    () => ({
+      layouts: viewLayouts,
+      move: (view: ViewId, id: string, direction: -1 | 1) => setViewLayouts((previous) => moveCard(view, id, direction, previous)),
+      hide: (view: ViewId, id: string, hidden: boolean) => setViewLayouts((previous) => setCardHidden(view, id, hidden, previous)),
+      reset: (view: ViewId) => setViewLayouts((previous) => resetViewLayout(view, previous)),
+    }),
+    [viewLayouts],
+  )
   const [widgetSizeMenuFor, setWidgetSizeMenuFor] = useState<DashboardWidgetId | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('profiles')
@@ -2730,6 +2744,9 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   useEffect(() => {
     registerCategoryOverrides(categoryOverrides(customCategories))
   }, [customCategories])
+  useEffect(() => {
+    if (!demoMode) saveViewLayouts(viewLayouts)
+  }, [viewLayouts, demoMode])
   const expenseCategoryGroups = useMemo(() => buildCategoryGroups('depense', customCategories), [customCategories])
   const incomeCategoryGroups = useMemo(() => buildCategoryGroups('revenu', customCategories), [customCategories])
   const expenseCategoryLabels = useMemo(() => allCategoryLabels('depense', customCategories), [customCategories])
@@ -5378,7 +5395,7 @@ Réponse attendue:
   }
 
   return (
-    <>
+    <ViewLayoutContext.Provider value={viewLayoutApi}>
     {planBanner ? (
       <div className={`plan-banner plan-banner--${planBanner.tone}`} role="status">
         <span>{planBanner.tone === 'trial' ? '⏳' : '🌱'} {planBanner.text}</span>
@@ -5901,6 +5918,7 @@ Réponse attendue:
         ) : null}
 
         {isActiveView('overview') && startChecklist.visible ? (
+          <ViewCard view="overview" id="starter">
           <StartChecklist
             items={startChecklist.items}
             done={startChecklist.done}
@@ -5918,17 +5936,21 @@ Réponse attendue:
               },
             }}
           />
+          </ViewCard>
         ) : null}
 
         {isActiveView('overview') && !startChecklist.visible ? (
+          <ViewCard view="overview" id="starter">
           <RecurringSuggestions
             candidates={recurringCandidates}
             onProgram={programRecurringCandidate}
             onDismiss={dismissRecurringCandidate}
           />
+          </ViewCard>
         ) : null}
 
         {isActiveView('overview') ? (
+          <ViewCard view="overview" id="kpis">
         <section className="kpi-summary" style={{ margin: '0 0 1rem 0' }}>
           <div className="kpi-card kpi-card--secondary">
             <div className="kpi-card-label">Revenus ce mois</div>
@@ -6038,13 +6060,17 @@ Réponse attendue:
             </div>
           )}
         </section>
+          </ViewCard>
         ) : null}
 
         {isActiveView('overview') && forecast ? (
+          <ViewCard view="overview" id="forecast">
           <ForecastCard forecast={forecast} onManageRecurring={() => setShowRecurringPanel(true)} />
+          </ViewCard>
         ) : null}
 
         {isActiveView('overview') ? (
+          <ViewCard view="overview" id="calendar">
         <section className="glass-card home-calendar-card" aria-label="Calendrier des dépenses">
           <div className="panel-title">
             <h2>Mon calendrier</h2>
@@ -6060,9 +6086,11 @@ Réponse attendue:
             recurringRules={recurringRules.filter((rule) => rule.member === selectedProfileId)}
           />
         </section>
+          </ViewCard>
         ) : null}
 
         {isActiveView('overview') && recentTransactions.length > 0 ? (
+          <ViewCard view="overview" id="recent">
         <section className="glass-card recent-tx-card" aria-label="Dernières opérations">
           <div className="panel-title">
             <h2>Dernières opérations</h2>
@@ -6098,9 +6126,11 @@ Réponse attendue:
             ))}
           </ul>
         </section>
+          </ViewCard>
         ) : null}
 
         {isActiveView('overview') && (monthSummary.spent > 0 || monthSummary.income > 0) ? (
+          <ViewCard view="overview" id="summary">
         <section className="glass-card month-summary-card" aria-label="Bilan du mois">
           <div className="panel-title">
             <h2>Bilan · {formatMonth(selectedMonth)}</h2>
@@ -6134,7 +6164,9 @@ Réponse attendue:
             ) : null}
           </div>
         </section>
+          </ViewCard>
         ) : null}
+        {isActiveView('overview') ? <HiddenCardsBar view="overview" /> : null}
 
       {isActiveView('family') ? (
         <FamilyView month={selectedMonth} peers={familyPeers} myUserId={myUserId} />
@@ -7344,6 +7376,7 @@ Réponse attendue:
         </article>
 
         {/* ── Liste des opérations (déplacée en tête, groupée par jour) ── */}
+        <ViewCard view="operations" id="transactions" wide>
         <article className="glass-card transaction-panel wide-card">
           <div className="panel-title">
             <div>
@@ -7496,8 +7529,10 @@ Réponse attendue:
             </button>
           )}
         </article>
+        </ViewCard>
 
 
+        <ViewCard view="operations" id="categories" wide={!yoyComparisonData.some((item) => item.previous > 0)}>
         <article className={`glass-card chart-card${yoyComparisonData.some((item) => item.previous > 0) ? '' : ' wide-card'}`}>
           <div className="panel-title">
             <h2>Dépenses par catégorie</h2>
@@ -7526,8 +7561,10 @@ Réponse attendue:
             <strong>{euroFormatter.format(monthlyExpense)}</strong>
           </div>
         </article>
+        </ViewCard>
 
         {yoyComparisonData.some((item) => item.previous > 0) ? (
+          <ViewCard view="operations" id="yoy">
         <article className="glass-card chart-card">
           <div className="panel-title">
             <h2>Comparaison avec l’an dernier</h2>
@@ -7571,8 +7608,10 @@ Réponse attendue:
             </ul>
           )}
         </article>
+          </ViewCard>
         ) : null}
 
+        <ViewCard view="operations" id="detailed" wide>
         <details className="glass-card form-panel wide-card operations-detailed" open={editingTxId !== null}>
           <summary>
             <span>
@@ -7735,6 +7774,8 @@ Réponse attendue:
             </div>
           </form>
         </details>
+        </ViewCard>
+        <HiddenCardsBar view="operations" />
       </section>
       ) : null}
 
@@ -8193,6 +8234,7 @@ Réponse attendue:
         ) : null}
 
         {isActiveView('budget') ? (
+          <ViewCard view="budget" id="envelopes" wide>
         <article className="glass-card chart-card wide-card envelope-board">
           <div className="panel-title">
             <div>
@@ -8265,8 +8307,10 @@ Réponse attendue:
             </button>
           </div>
         </article>
+          </ViewCard>
         ) : null}
         {isPilotageWidgetVisible('alerts') && isActiveView('budget') ? (
+          <ViewCard view="budget" id="alerts">
         <article className="glass-card chart-card">
           <div className="panel-title">
             <h2>Alertes</h2>
@@ -8287,9 +8331,11 @@ Réponse attendue:
             </ul>
           )}
         </article>
+          </ViewCard>
         ) : null}
 
         {isPilotageWidgetVisible('savingsGoals') && isActiveView('budget') ? (
+          <ViewCard view="budget" id="caps">
         <article className="glass-card chart-card">
           <div className="panel-title">
             <h2>Budgets par catégorie</h2>
@@ -8371,9 +8417,11 @@ Réponse attendue:
           </ul>
           <p className="goal-list-hint">Appuyez sur un montant pour ajuster le plafond de la catégorie.</p>
         </article>
+          </ViewCard>
         ) : null}
 
         {isPilotageWidgetVisible('recurringCharges') && isActiveView('budget') ? (
+          <ViewCard view="budget" id="recurring">
         <article className="glass-card chart-card">
           <div className="panel-title">
             <div>
@@ -8405,9 +8453,11 @@ Réponse attendue:
             </ul>
           )}
         </article>
+          </ViewCard>
         ) : null}
 
         {isPilotageWidgetVisible('savingsProjects') && isActiveView('budget') ? (
+          <ViewCard view="budget" id="savings">
         <article className="glass-card chart-card">
           <div className="panel-title">
             <div>
@@ -8493,9 +8543,11 @@ Réponse attendue:
             <button type="submit"><Target size={14} /> Ajouter</button>
           </form>
         </article>
+          </ViewCard>
         ) : null}
 
         {isActiveView('budget') ? (
+          <ViewCard view="budget" id="accounts">
         <article className="glass-card chart-card accounts-widget">
           <div className="panel-title">
             <div>
@@ -8545,9 +8597,11 @@ Réponse attendue:
             )
           })()}
         </article>
+          </ViewCard>
         ) : null}
 
         {isPilotageWidgetVisible('coaching') && isActiveView('budget') ? (
+          <ViewCard view="budget" id="coaching">
         <article className="glass-card chart-card">
           <div className="panel-title">
             <h2>Coaching financier</h2>
@@ -8594,7 +8648,9 @@ Réponse attendue:
             </div>
           ) : null}
         </article>
+          </ViewCard>
         ) : null}
+        {isActiveView('budget') ? <HiddenCardsBar view="budget" /> : null}
 
         {isPilotageWidgetVisible('csvImport') && isActiveView('operations') ? (
         <article id="import-csv" className="glass-card form-panel wide-card">
@@ -9166,7 +9222,7 @@ Réponse attendue:
         onClose={() => setShowGoalsPanel(false)}
       />
     ) : null}
-    </>
+    </ViewLayoutContext.Provider>
   )
 }
 
