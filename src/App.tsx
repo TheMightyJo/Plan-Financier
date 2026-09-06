@@ -17,6 +17,7 @@ import { RecurringSuggestions } from './components/RecurringSuggestions'
 import { NotificationsSettings } from './components/NotificationsSettings'
 import { FeatureTour } from './components/FeatureTour'
 import { ForecastCard } from './components/ForecastCard'
+import { dayLabel, groupTransactionsByDay } from './lib/transactionGroups'
 import { CategoriesPanel } from './components/CategoriesPanel'
 import { GroupedSearchSelect } from './components/GroupedSearchSelect'
 import {
@@ -7251,23 +7252,234 @@ Réponse attendue:
       ) : null}
 
       {isActiveView('operations') ? (
-      <section id="operations" className="panel-grid">
-        <article className="glass-card chart-card">
+      <section id="operations" className="panel-grid operations-grid">
+        <article className="glass-card chart-card wide-card operations-header">
+          <div className="operations-header__top">
+            <div>
+              <h2 className="operations-header__title">
+                Dépenses ·{' '}
+                <span className="budget-title-month-nav">
+                  <button type="button" onClick={() => navigateMonth(-1)} aria-label="Mois précédent">‹</button>
+                  <span>{formatMonth(selectedMonth)}</span>
+                  <button type="button" onClick={() => navigateMonth(1)} aria-label="Mois suivant">›</button>
+                </span>
+              </h2>
+              <p>{selectedProfileName} · {activeMonthTransactions.length} opération{activeMonthTransactions.length !== 1 ? 's' : ''}</p>
+            </div>
+            <div className="operations-header__actions">
+              <button
+                type="button"
+                className="hero-cta-button"
+                onClick={() => openQuickAdd(selectedMonth === currentMonth ? todayIso : `${selectedMonth}-01`)}
+              >
+                <Plus size={16} /> Ajouter une opération
+              </button>
+              <button type="button" className="ghost-button" onClick={() => setShowHistoryPanel(true)} title="Recherche, filtres, édition et export CSV sur tout l'historique">
+                <Layers3 size={14} /> Historique complet
+              </button>
+            </div>
+          </div>
+          <div className="operations-kpis">
+            <div>
+              <span>Dépensé</span>
+              <strong className="expense">−{euroFormatter.format(monthlyExpense)}</strong>
+            </div>
+            <div>
+              <span>Reçu</span>
+              <strong className="income">+{euroFormatter.format(monthlyIncome)}</strong>
+            </div>
+            <div>
+              <span>Par jour</span>
+              <strong>{euroFormatter.format(monthlyExpense / Math.max(1, selectedMonth === currentMonth ? Number(todayIso.slice(8, 10)) : new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5, 7)), 0).getDate()))}</strong>
+            </div>
+            <div>
+              <span>vs mois dernier</span>
+              <strong className={monthSummary.previousSpent > 0 ? (monthSummary.delta > 0 ? 'expense' : 'income') : ''}>
+                {monthSummary.previousSpent > 0
+                  ? `${monthSummary.delta > 0 ? '+' : ''}${euroFormatter.format(monthSummary.delta)}`
+                  : '—'}
+              </strong>
+            </div>
+          </div>
+        </article>
+
+        {/* ── Liste des opérations (déplacée en tête, groupée par jour) ── */}
+        <article className="glass-card transaction-panel wide-card">
+          <div className="panel-title">
+            <div>
+              <h2>Opérations du mois</h2>
+              <p>{txFiltered.length} opération{txFiltered.length !== 1 ? 's' : ''} · {formatMonth(selectedMonth)} · touchez le crayon pour modifier</p>
+            </div>
+          </div>
+          {txSearch.trim() || txFilterKind !== 'tous' ? (
+          <div className="tx-summary-bar">
+            <div className="tx-summary-card">
+              <strong>{txFilteredCount}</strong>
+              <span>résultat{txFilteredCount > 1 ? 's' : ''}</span>
+            </div>
+            <div className="tx-summary-card">
+              <strong className={txFilteredNet < 0 ? 'expense' : 'income'}>{txFilteredNet < 0 ? '-' : '+'}{euroFormatter.format(Math.abs(txFilteredNet))}</strong>
+              <span>solde des lignes filtrées</span>
+            </div>
+            <div className="tx-summary-context">
+              <span>{txFilterContext}</span>
+              {txShowAll ? <small>Vue complète active</small> : <small>Vue condensée 8 lignes</small>}
+            </div>
+          </div>
+          ) : null}
+          <div className="tx-toolbar">
+            <input
+              className="tx-search"
+              placeholder="Rechercher un libellé ou une catégorie..."
+              value={txSearch}
+              onChange={(event) => setTxSearch(event.target.value)}
+            />
+            <select
+              value={txFilterKind}
+              onChange={(event) => setTxFilterKind(event.target.value as 'tous' | TransactionKind)}
+            >
+              <option value="tous">Tous types</option>
+              <option value="depense">Dépenses</option>
+              <option value="revenu">Revenus</option>
+            </select>
+            <select
+              value={txSortField}
+              onChange={(event) => setTxSortField(event.target.value as 'date' | 'amount')}
+            >
+              <option value="date">Tri : date</option>
+              <option value="amount">Tri : montant</option>
+            </select>
+          </div>
+          {txFiltered.length === 0 ? (
+            <p className="auth-note">Aucune transaction pour ces critères.</p>
+          ) : (
+            <ul className="transaction-list transaction-list--days">
+              {(txSortField === 'date' ? groupTransactionsByDay(txDisplayed) : [{ date: '', items: txDisplayed, spent: 0, income: 0 }]).map((group) => (
+              <li key={group.date || 'flat'} className="tx-day">
+                {group.date ? (
+                  <div className="tx-day-head">
+                    <span>{dayLabel(group.date, todayIso)}</span>
+                    <small>
+                      {group.spent > 0 ? <span className="expense">−{euroFormatter.format(group.spent)}</span> : null}
+                      {group.income > 0 ? <span className="income">+{euroFormatter.format(group.income)}</span> : null}
+                    </small>
+                  </div>
+                ) : null}
+                <ul className="transaction-list">
+              {group.items.map((item) => (
+                <li
+                  key={item.id}
+                  className={
+                    editingTxId === item.id
+                      ? 'tx-editing'
+                      : deletingTxId === item.id
+                      ? 'tx-confirming'
+                      : ''
+                  }
+                  onDoubleClick={() => startEditTransaction(item)}
+                  title="Double-clic : édition détaillée (compte, poche, profil)"
+                >
+                  <div>
+                    <p>
+                      <MerchantLogo label={item.label} fallbackIcon={item.icon ?? categoryEmoji(item.category)} />
+                      {item.label}
+                      {item.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
+                    </p>
+                    <small>
+                      {item.category} · {item.envelope}
+                      {(item.tags ?? []).map((tag) => (
+                        <span key={tag} className="tx-tag">#{tag}</span>
+                      ))}
+                    </small>
+                  </div>
+                  {deletingTxId === item.id ? (
+                    <div className="tx-confirm-row">
+                      <span>Supprimer ?</span>
+                      <button
+                        type="button"
+                        className="tx-confirm-yes"
+                        onClick={() => {
+                          deleteTransaction(item.id)
+                          setDeletingTxId(null)
+                        }}
+                      >
+                        Oui
+                      </button>
+                      <button
+                        type="button"
+                        className="tx-confirm-no"
+                        onClick={() => setDeletingTxId(null)}
+                      >
+                        Non
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="tx-actions">
+                      <strong className={item.kind === 'depense' ? 'expense' : 'income'}>
+                        {item.kind === 'depense' ? '-' : '+'}
+                        {euroFormatter.format(item.amount)}
+                      </strong>
+                      <button
+                        type="button"
+                        className="tx-btn tx-edit"
+                        onClick={() => openQuickEdit(item)}
+                        title="Modifier"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="tx-btn tx-delete"
+                        onClick={() => setDeletingTxId(item.id)}
+                        title="Supprimer"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+                </ul>
+              </li>
+              ))}
+            </ul>
+          )}
+          {txFiltered.length > 8 && (
+            <button
+              type="button"
+              className="tx-show-more"
+              onClick={() => setTxShowAll((previous) => !previous)}
+            >
+              {txShowAll
+                ? 'Réduire la liste'
+                : `Voir toutes les ${txFiltered.length} opérations`}
+            </button>
+          )}
+        </article>
+
+
+        <article className={`glass-card chart-card${yoyComparisonData.some((item) => item.previous > 0) ? '' : ' wide-card'}`}>
           <div className="panel-title">
             <h2>Dépenses par catégorie</h2>
-            <p>Vue simplifiée pour ce mois</p>
+            <p>Où est parti votre argent ce mois-ci</p>
           </div>
           <ul className="operations-category-list">
-            {pieData.map((entry) => (
-              <li key={entry.name} className="operations-category-item">
-                <span className="recent-tx-dot" style={{ background: colorForCategory(entry.name) }} aria-hidden="true" />
-                <span className="operations-category-name">{entry.name}</span>
-                <small className="operations-category-share">
-                  {monthlyExpense > 0 ? `${Math.round((entry.value / monthlyExpense) * 100)}%` : ''}
-                </small>
-                <span className="operations-category-amount">{euroFormatter.format(entry.value)}</span>
-              </li>
-            ))}
+            {pieData.map((entry) => {
+              const share = monthlyExpense > 0 ? Math.round((entry.value / monthlyExpense) * 100) : 0
+              return (
+                <li key={entry.name} className="operations-category-item">
+                  <span className="operations-category-icon" style={{ background: colorForCategory(entry.name) }} aria-hidden="true">
+                    {categoryEmoji(entry.name)}
+                  </span>
+                  <span className="operations-category-name">{entry.name}</span>
+                  <span className="operations-category-bar" aria-hidden="true">
+                    <span style={{ width: `${Math.max(2, share)}%`, background: colorForCategory(entry.name) }} />
+                  </span>
+                  <small className="operations-category-share">{share}%</small>
+                  <span className="operations-category-amount">{euroFormatter.format(entry.value)}</span>
+                </li>
+              )
+            })}
           </ul>
           <div className="operations-category-total">
             <strong>Total dépensé:</strong>
@@ -7275,7 +7487,8 @@ Réponse attendue:
           </div>
         </article>
 
-        <article className="glass-card chart-card wide-card">
+        {yoyComparisonData.some((item) => item.previous > 0) ? (
+        <article className="glass-card chart-card">
           <div className="panel-title">
             <h2>Comparaison avec l’an dernier</h2>
             <p>{formatMonth(selectedMonth)} par rapport au même mois l'an dernier</p>
@@ -7318,155 +7531,15 @@ Réponse attendue:
             </ul>
           )}
         </article>
+        ) : null}
 
-        <article className="glass-card transaction-panel wide-card">
-          <div className="panel-title">
-            <div>
-              <h2>Transactions du mois</h2>
-              <p>{txFiltered.length} opération{txFiltered.length !== 1 ? 's' : ''} · {formatMonth(selectedMonth)} · {selectedProfileName.toLowerCase()}</p>
-            </div>
-            <button
-              type="button"
-              className="hero-cta-button"
-              onClick={() => setShowHistoryPanel(true)}
-              title="Recherche, filtres, édition, export CSV sur tout l'historique"
-            >
-              <Layers3 size={14} />
-              Voir tout l'historique
-            </button>
-          </div>
-          <div className="tx-summary-bar">
-            <div className="tx-summary-card">
-              <strong>{txFilteredCount}</strong>
-              <span>résultat{txFilteredCount > 1 ? 's' : ''}</span>
-            </div>
-            <div className="tx-summary-card">
-              <strong className={txFilteredNet < 0 ? 'expense' : 'income'}>{txFilteredNet < 0 ? '-' : '+'}{euroFormatter.format(Math.abs(txFilteredNet))}</strong>
-              <span>solde des lignes filtrées</span>
-            </div>
-            <div className="tx-summary-context">
-              <span>{txFilterContext}</span>
-              {txShowAll ? <small>Vue complète active</small> : <small>Vue condensée 8 lignes</small>}
-            </div>
-          </div>
-          <div className="tx-toolbar">
-            <input
-              className="tx-search"
-              placeholder="Rechercher un libellé ou une catégorie..."
-              value={txSearch}
-              onChange={(event) => setTxSearch(event.target.value)}
-            />
-            <select
-              value={txFilterKind}
-              onChange={(event) => setTxFilterKind(event.target.value as 'tous' | TransactionKind)}
-            >
-              <option value="tous">Tous types</option>
-              <option value="depense">Dépenses</option>
-              <option value="revenu">Revenus</option>
-            </select>
-            <select
-              value={txSortField}
-              onChange={(event) => setTxSortField(event.target.value as 'date' | 'amount')}
-            >
-              <option value="date">Tri : date</option>
-              <option value="amount">Tri : montant</option>
-            </select>
-          </div>
-          {txFiltered.length === 0 ? (
-            <p className="auth-note">Aucune transaction pour ces critères.</p>
-          ) : (
-            <ul className="transaction-list">
-              {txDisplayed.map((item) => (
-                <li
-                  key={item.id}
-                  className={
-                    editingTxId === item.id
-                      ? 'tx-editing'
-                      : deletingTxId === item.id
-                      ? 'tx-confirming'
-                      : ''
-                  }
-                >
-                  <div>
-                    <p>
-                      <MerchantLogo label={item.label} fallbackIcon={item.icon ?? categoryEmoji(item.category)} />
-                      {item.label}
-                      {item.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
-                    </p>
-                    <small>
-                      {item.date} · {item.category} · {item.envelope}
-                      {(item.tags ?? []).map((tag) => (
-                        <span key={tag} className="tx-tag">#{tag}</span>
-                      ))}
-                    </small>
-                  </div>
-                  {deletingTxId === item.id ? (
-                    <div className="tx-confirm-row">
-                      <span>Supprimer ?</span>
-                      <button
-                        type="button"
-                        className="tx-confirm-yes"
-                        onClick={() => {
-                          deleteTransaction(item.id)
-                          setDeletingTxId(null)
-                        }}
-                      >
-                        Oui
-                      </button>
-                      <button
-                        type="button"
-                        className="tx-confirm-no"
-                        onClick={() => setDeletingTxId(null)}
-                      >
-                        Non
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="tx-actions">
-                      <strong className={item.kind === 'depense' ? 'expense' : 'income'}>
-                        {item.kind === 'depense' ? '-' : '+'}
-                        {euroFormatter.format(item.amount)}
-                      </strong>
-                      <button
-                        type="button"
-                        className="tx-btn tx-edit"
-                        onClick={() => startEditTransaction(item)}
-                        title="Modifier"
-                      >
-                        <Pencil size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        className="tx-btn tx-delete"
-                        onClick={() => setDeletingTxId(item.id)}
-                        title="Supprimer"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-          {txFiltered.length > 8 && (
-            <button
-              type="button"
-              className="tx-show-more"
-              onClick={() => setTxShowAll((previous) => !previous)}
-            >
-              {txShowAll
-                ? 'Réduire la liste'
-                : `Voir toutes les ${txFiltered.length} opérations`}
-            </button>
-          )}
-        </article>
-
-        <article className="glass-card form-panel">
-          <div className="panel-title">
-            <h2>{editingTxId !== null ? "Modifier l'opération" : 'Ajouter une opération'}</h2>
-            <p>{editingTxId !== null ? 'Modifiez les champs puis validez' : 'Suivi en direct du budget personnel'}</p>
-          </div>
+        <details className="glass-card form-panel wide-card operations-detailed" open={editingTxId !== null}>
+          <summary>
+            <span>
+              <strong>{editingTxId !== null ? "Modifier l'opération" : 'Formulaire détaillé'}</strong>
+              <small>{editingTxId !== null ? 'Modifiez les champs puis validez' : 'Compte, poche, profil… (double-cliquez une ligne pour l’éditer ici)'}</small>
+            </span>
+          </summary>
           <form onSubmit={addTransaction}>
             <label>
               Libellé
@@ -7621,7 +7694,7 @@ Réponse attendue:
               )}
             </div>
           </form>
-        </article>
+        </details>
       </section>
       ) : null}
 
