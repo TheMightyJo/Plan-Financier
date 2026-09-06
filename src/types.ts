@@ -5,8 +5,9 @@ export type UserProfile = {
   name: string
   monthlyBudget: number
   /**
-   * Avatar optionnel : `emoji:💰` (preset libre de droit) ou data URI
-   * `data:image/…` (photo importée, redimensionnée côté client).
+   * Avatar optionnel : `emoji:💰` (preset libre de droit), `initials:JQ`
+   * (initiales prénom + nom du compte) ou data URI `data:image/…`
+   * (photo importée, redimensionnée côté client).
    * Absent = pastille initiales + couleur dérivée de l'id.
    */
   avatar?: string

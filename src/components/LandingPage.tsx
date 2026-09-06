@@ -6,6 +6,8 @@ import { BrandLogo } from './BrandMark'
 type Props = {
   /** Ouvre l'écran de connexion / inscription. */
   onLogin: () => void
+  /** « Créer mon compte » : ouvre directement le formulaire d'inscription. */
+  onSignup: () => void
   /** Lance le mode démo sans compte. */
   onTryDemo: () => void
 }
@@ -126,7 +128,7 @@ const FAQ = [
   },
 ]
 
-export function LandingPage({ onLogin, onTryDemo }: Props) {
+export function LandingPage({ onLogin, onSignup, onTryDemo }: Props) {
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [legalDoc, setLegalDoc] = useState<'terms' | 'privacy' | null>(null)
 
@@ -146,7 +148,7 @@ export function LandingPage({ onLogin, onTryDemo }: Props) {
           <button type="button" className="landing-login-btn" onClick={onLogin}>
             Se connecter
           </button>
-          <button type="button" className="hero-cta-button landing-signup-btn" onClick={onLogin}>
+          <button type="button" className="hero-cta-button landing-signup-btn" onClick={onSignup}>
             Créer mon compte
           </button>
         </div>
@@ -162,7 +164,7 @@ export function LandingPage({ onLogin, onTryDemo }: Props) {
           assistant IA et météo de vos semaines — sans jamais connecter votre banque.
         </p>
         <div className="landing-hero-ctas">
-          <button type="button" className="hero-cta-button landing-cta-main" onClick={onLogin}>
+          <button type="button" className="hero-cta-button landing-cta-main" onClick={onSignup}>
             Créer mon compte gratuit
           </button>
           <button type="button" className="ghost-button landing-cta-demo" onClick={onTryDemo}>
@@ -247,7 +249,7 @@ export function LandingPage({ onLogin, onTryDemo }: Props) {
               <button
                 type="button"
                 className={plan.highlight ? 'hero-cta-button' : 'ghost-button'}
-                onClick={onLogin}
+                onClick={onSignup}
               >
                 {plan.cta}
               </button>
@@ -283,7 +285,7 @@ export function LandingPage({ onLogin, onTryDemo }: Props) {
       {/* ── CTA final ── */}
       <section className="landing-final-cta">
         <h2>Prêt·e à voir clair dans votre argent ?</h2>
-        <button type="button" className="hero-cta-button landing-cta-main" onClick={onLogin}>
+        <button type="button" className="hero-cta-button landing-cta-main" onClick={onSignup}>
           Créer mon compte gratuit
         </button>
       </section>
