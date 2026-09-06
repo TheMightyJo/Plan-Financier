@@ -18,6 +18,7 @@ import { NotificationsSettings } from './components/NotificationsSettings'
 import { detectRecurringCandidates, type RecurringCandidate } from './lib/recurringDetection'
 import { addContribution, computeCurrentSaved, computePaceOutlook, recommendedMonthlyAmount } from './lib/savingsGoals'
 import { switchLocalWorkspace } from './lib/localWorkspace'
+import { accountIdentityFromMetadata, personalizeProfiles, type AccountIdentity } from './lib/accountIdentity'
 import { canPromptInstall, isIos, isStandalone, onInstallAvailabilityChange, promptInstall } from './lib/pwaInstall'
 import { CashChatPanel } from './components/CashChatPanel'
 import { QuickAddModal } from './components/QuickAddModal'
@@ -463,7 +464,9 @@ const normalizeProfile = (value: unknown): UserProfile | null => {
 
   const avatar =
     typeof candidate.avatar === 'string' &&
-    (candidate.avatar.startsWith('emoji:') || candidate.avatar.startsWith('data:image/')) &&
+    (candidate.avatar.startsWith('emoji:') ||
+      candidate.avatar.startsWith('initials:') ||
+      candidate.avatar.startsWith('data:image/')) &&
     candidate.avatar.length <= AVATAR_MAX_DATA_URI_LENGTH
       ? candidate.avatar
       : undefined
@@ -956,6 +959,8 @@ function App() {
   // (saveSensitiveState) — plus aucune lecture depuis la fin des sessions locales.
   const [, setSensitiveState] = useState<SensitiveState>(defaultSensitiveState)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  // Prénom / nom du compte (inscription ou Google) → profil local personnalisé.
+  const [accountIdentity, setAccountIdentity] = useState<AccountIdentity | null>(null)
   // Mode démo : visite guidée sans compte — données en mémoire uniquement
   // (toutes les persistances localStorage sont désactivées tant qu'il est actif).
   const [demoMode, setDemoMode] = useState(false)
@@ -965,7 +970,7 @@ function App() {
   const [showLanding, setShowLanding] = useState(() => {
     if (isStandalone()) return false
     const path = window.location.pathname
-    return path !== '/login' && !path.startsWith('/app')
+    return path !== '/login' && path !== '/signup' && !path.startsWith('/app')
   })
   const [, setAuthRole] = useState<AuthRole>('Parent')
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>(
@@ -1573,14 +1578,22 @@ Règles :
     } catch { return null }
   }
 
+  // Profil principal au nom du compte (prénom + initiales) tant qu'il porte
+  // un nom générique — à la connexion et après l'onboarding.
+  useEffect(() => {
+    if (!isAuthenticated || demoMode || !accountIdentity) return
+    setProfiles((previous) => personalizeProfiles(previous, defaultProfileId, accountIdentity))
+  }, [isAuthenticated, demoMode, accountIdentity, defaultProfileId])
+
   const applyOnboardingConfig = (config: { profiles: UserProfile[]; defaultProfileId: string }) => {
-    const cleaned = config.profiles
+    const normalized = config.profiles
       .map((p) => normalizeProfile(p))
       .filter((p): p is UserProfile => p !== null)
-    if (cleaned.length === 0) return
+    if (normalized.length === 0) return
+    const defId = normalized.find((p) => p.id === config.defaultProfileId)?.id ?? normalized[0].id
+    const cleaned = personalizeProfiles(normalized, defId, accountIdentity)
     setProfiles(cleaned)
     saveProfiles(cleaned)
-    const defId = cleaned.find((p) => p.id === config.defaultProfileId)?.id ?? cleaned[0].id
     setDefaultProfileId(defId)
     window.localStorage.setItem(DEFAULT_PROFILE_STORAGE_KEY, defId)
     setSelectedMember(defId)
@@ -1685,7 +1698,7 @@ Règles :
     } catch {
       /* stockage indisponible : on part sans reprise */
     }
-    window.location.href = '/login'
+    window.location.href = '/signup'
   }
 
   // Entrée en mode démo : jeu de données réaliste, en mémoire seulement.
@@ -2546,12 +2559,17 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     // données sont en place, on bascule l'espace PUIS on recharge pour relire
     // l'état — avant toute synchro cloud (sinon les données de l'ancien compte
     // seraient poussées dans le nouveau).
-    const applySession = (session: { user: { id: string; email?: string; created_at?: string } } | null) => {
+    const applySession = (
+      session: {
+        user: { id: string; email?: string; created_at?: string; user_metadata?: Record<string, unknown> }
+      } | null,
+    ) => {
       if (session && switchLocalWorkspace(session.user.id)) {
         const path = window.location.pathname
         window.location.replace(path.startsWith('/app') ? path : '/app')
         return
       }
+      setAccountIdentity(session ? accountIdentityFromMetadata(session.user.user_metadata) : null)
       setIsAuthenticated(!!session)
       setUserEmail(session?.user.email ?? '')
       setAccountCreatedAt(session?.user.created_at ?? null)
@@ -4628,7 +4646,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     }
     return (
       <span className="member-avatar" style={{ background: avatarColor(profile.id) }} aria-hidden="true">
-        {avatarInitials(profile.name)}
+        {profile.avatar?.startsWith('initials:') ? profile.avatar.slice(9) : avatarInitials(profile.name)}
       </span>
     )
   }
@@ -5142,6 +5160,10 @@ Réponse attendue:
         <LandingPage
           onLogin={() => {
             window.history.pushState({}, '', '/login')
+            setShowLanding(false)
+          }}
+          onSignup={() => {
+            window.history.pushState({}, '', '/signup')
             setShowLanding(false)
           }}
           onTryDemo={() => {

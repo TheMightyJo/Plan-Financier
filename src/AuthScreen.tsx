@@ -184,7 +184,12 @@ type AuthScreenProps = {
 }
 
 export default function AuthScreen({ onTryDemo, onBackToSite }: AuthScreenProps = {}) {
-  const [mode, setMode] = useState<Mode>('login')
+  // « Créer mon compte » depuis la vitrine ou la démo arrive sur /signup.
+  const [mode, setMode] = useState<Mode>(() =>
+    typeof window !== 'undefined' && window.location.pathname === '/signup' ? 'signup' : 'login',
+  )
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -245,6 +250,10 @@ export default function AuthScreen({ onTryDemo, onBackToSite }: AuthScreenProps 
     }
 
     if (mode === 'signup') {
+      if (!firstName.trim() || !lastName.trim()) {
+        setError('Indiquez votre prénom et votre nom (ils servent à votre profil).')
+        return
+      }
       if (password !== confirm) {
         setError('Les mots de passe ne correspondent pas.')
         return
@@ -276,6 +285,13 @@ export default function AuthScreen({ onTryDemo, onBackToSite }: AuthScreenProps 
           password,
           options: {
             emailRedirectTo: window.location.origin,
+            // Prénom / nom : profil local (nom + initiales de l'avatar) et
+            // profiles.display_name côté serveur (trigger handle_new_user).
+            data: {
+              first_name: firstName.trim(),
+              last_name: lastName.trim(),
+              display_name: `${firstName.trim()} ${lastName.trim()}`,
+            },
             ...(captchaEnabled ? { captchaToken } : {}),
           },
         })
@@ -374,6 +390,35 @@ export default function AuthScreen({ onTryDemo, onBackToSite }: AuthScreenProps 
         ) : null}
 
         <form className="auth-form" onSubmit={(e) => void handleSubmit(e)}>
+          {mode === 'signup' ? (
+            <div className="auth-name-row">
+              <label>
+                Prénom
+                <input
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="Camille"
+                  required
+                  disabled={loading}
+                  autoComplete="given-name"
+                  autoFocus
+                />
+              </label>
+              <label>
+                Nom
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Durand"
+                  required
+                  disabled={loading}
+                  autoComplete="family-name"
+                />
+              </label>
+            </div>
+          ) : null}
           <label>
             Email
             <input
@@ -384,7 +429,7 @@ export default function AuthScreen({ onTryDemo, onBackToSite }: AuthScreenProps 
               required
               disabled={loading}
               autoComplete={mode === 'signup' ? 'email' : 'username'}
-              autoFocus
+              autoFocus={mode !== 'signup'}
             />
           </label>
 

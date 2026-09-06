@@ -59,6 +59,10 @@ export default function Bootstrap() {
           window.history.pushState({}, '', '/login')
           setShowApp(true)
         }}
+        onSignup={() => {
+          window.history.pushState({}, '', '/signup')
+          setShowApp(true)
+        }}
         onTryDemo={() => {
           window.history.pushState({}, '', '/demo')
           setShowApp(true)
