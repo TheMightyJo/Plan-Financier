@@ -31,6 +31,7 @@ export const LOCAL_DATA_KEYS = [
   'plan-financier-notes-v1',
   'plan-financier-onboarding-done-v1',
   'plan-financier-first-tx-tour-done-v1',
+  'plan-financier-feature-tour-done-v1',
   'plan-financier-start-checklist-done-v1',
   'plan-financier-recurring-dismissed-v1',
   'plan-financier-dashboard-widgets-v1',

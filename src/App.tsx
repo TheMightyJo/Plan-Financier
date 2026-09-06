@@ -15,6 +15,8 @@ import { PremiumGateModal } from './components/PremiumGateModal'
 import { StartChecklist } from './components/StartChecklist'
 import { RecurringSuggestions } from './components/RecurringSuggestions'
 import { NotificationsSettings } from './components/NotificationsSettings'
+import { FeatureTour } from './components/FeatureTour'
+import { FEATURE_TOUR_STEPS } from './lib/featureTourSteps'
 import { detectRecurringCandidates, type RecurringCandidate } from './lib/recurringDetection'
 import { addContribution, computeCurrentSaved, computePaceOutlook, recommendedMonthlyAmount } from './lib/savingsGoals'
 import { switchLocalWorkspace } from './lib/localWorkspace'
@@ -47,7 +49,6 @@ import {
   BellRing,
   Upload,
   FileSpreadsheet,
-  Download,
   Layers3,
   Brain,
   Landmark,
@@ -204,6 +205,8 @@ const MANUAL_ONBOARDING_PHASES = [
   'Finalisation de votre plan…',
 ]
 const FIRST_TX_TOUR_DONE_KEY = 'plan-financier-first-tx-tour-done-v1'
+/** Tour guidé des fonctionnalités (première connexion, relançable depuis Paramètres). */
+const FEATURE_TOUR_DONE_KEY = 'plan-financier-feature-tour-done-v1'
 const START_CHECKLIST_DONE_KEY = 'plan-financier-start-checklist-done-v1'
 /** Suggestions de récurrence rejetées (clés libellé+type). */
 const RECURRING_DISMISSED_KEY = 'plan-financier-recurring-dismissed-v1'
@@ -959,6 +962,12 @@ function App() {
   // (saveSensitiveState) — plus aucune lecture depuis la fin des sessions locales.
   const [, setSensitiveState] = useState<SensitiveState>(defaultSensitiveState)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  // Tour guidé : affiché une fois que l'état d'onboarding du compte est connu.
+  const [onboardingChecked, setOnboardingChecked] = useState(false)
+  const [showFeatureTour, setShowFeatureTour] = useState(false)
+  // ?tour=1 à l'arrivée : tour forcé (support, démo) — lu une fois, l'URL
+  // étant réécrite ensuite par la navigation interne.
+  const [tourForced] = useState(() => new URLSearchParams(window.location.search).get('tour') === '1')
   // Prénom / nom du compte (inscription ou Google) → profil local personnalisé.
   const [accountIdentity, setAccountIdentity] = useState<AccountIdentity | null>(null)
   // Mode démo : visite guidée sans compte — données en mémoire uniquement
@@ -1582,8 +1591,36 @@ Règles :
   // un nom générique — à la connexion et après l'onboarding.
   useEffect(() => {
     if (!isAuthenticated || demoMode || !accountIdentity) return
+    // Synchronisation dérivée (même référence si rien ne change → pas de rendu).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setProfiles((previous) => personalizeProfiles(previous, defaultProfileId, accountIdentity))
   }, [isAuthenticated, demoMode, accountIdentity, defaultProfileId])
+
+  // Tour guidé : première connexion (après onboarding et budget), ou forcé
+  // avec ?tour=1 (support, démo).
+  useEffect(() => {
+    if (!tourForced) {
+      if (!isAuthenticated || demoMode || !onboardingChecked || showOnboarding || showFirstTxTour) return
+      if (window.localStorage.getItem(FEATURE_TOUR_DONE_KEY)) return
+    } else if (showOnboarding || showFirstTxTour) {
+      return
+    }
+    // Différé : laisse l'accueil se peindre avant le projecteur.
+    const timer = window.setTimeout(() => setShowFeatureTour(true), 600)
+    return () => window.clearTimeout(timer)
+  }, [isAuthenticated, demoMode, onboardingChecked, showOnboarding, showFirstTxTour, tourForced])
+
+  const finishFeatureTour = () => {
+    try {
+      if (!demoMode) window.localStorage.setItem(FEATURE_TOUR_DONE_KEY, '1')
+    } catch {
+      /* stockage indisponible */
+    }
+    setShowFeatureTour(false)
+    if (window.location.search.includes('tour=1')) {
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }
 
   const applyOnboardingConfig = (config: { profiles: UserProfile[]; defaultProfileId: string }) => {
     const normalized = config.profiles
@@ -1795,6 +1832,8 @@ Règles :
         if (!profile?.onboarding_completed_at) setShowOnboarding(true)
       } catch {
         if (!window.localStorage.getItem(ONBOARDING_DONE_KEY)) setShowOnboarding(true)
+      } finally {
+        if (!cancelled) setOnboardingChecked(true)
       }
     })()
     return () => {
@@ -5551,6 +5590,7 @@ Réponse attendue:
               className={activeSectionId === item.id ? 'active' : ''}
               onClick={() => navigateToSection(item.id)}
               aria-label={item.label}
+              data-tour={`nav-${item.id}`}
             >
               <span className="nav-icon" aria-hidden="true">{item.icon}</span>
               <span className="nav-label">{item.label}</span>
@@ -5564,6 +5604,7 @@ Réponse attendue:
             className="side-menu-settings-btn"
             onClick={() => openSettingsPanel('profiles')}
             aria-label="Ouvrir les paramètres"
+            data-tour="settings"
           >
             ⚙️<span className="side-menu-btn-label"> Paramètres</span>
           </button>
@@ -5595,7 +5636,7 @@ Réponse attendue:
         {/* Hero actionnable : LE chiffre que les utilisateurs cherchent en
             premier (« combien il me reste »), son rythme par jour, et le CTA
             principal — au lieu d'un slogan marketing. */}
-        <div className="hero-main">
+        <div className="hero-main" data-tour="hero">
           <span className="hero-greeting">
             Bonjour {selectedProfile.name}{' '}
             <span className="hero-wave" aria-hidden="true">👋</span>
@@ -5628,10 +5669,10 @@ Réponse attendue:
             const week = weeklyStatsData.at(-1)
             if (!week) return null
             const WEEK_STATUS = {
-              danger: { icon: '⚠️', label: 'Danger', advice: 'Vous dépensez plus que vous ne recevez — levez le pied cette semaine.' },
-              up: { icon: '📈', label: 'Up', advice: 'Solde en hausse par rapport à la semaine dernière — continuez !' },
-              highest: { icon: '🏆', label: 'Highest ever', advice: 'Record absolu de la semaine — bravo !' },
-              normal: { icon: '✅', label: 'Normal', advice: 'Semaine équilibrée, rien à signaler.' },
+              danger: { icon: '⚠️', label: 'À surveiller', advice: 'Vous avez dépensé plus que reçu cette semaine — levez le pied.' },
+              up: { icon: '📈', label: 'En progrès', advice: 'Vous finissez la semaine avec plus de reste que la semaine dernière — continuez !' },
+              highest: { icon: '🏆', label: 'Record', advice: 'Votre meilleure semaine depuis le début — bravo !' },
+              normal: { icon: '✅', label: 'Équilibrée', advice: 'Vous avez dépensé moins que reçu, rien à signaler.' },
             } as const
             const status = WEEK_STATUS[week.type]
             return (
@@ -5653,11 +5694,8 @@ Réponse attendue:
             )
           })()}
           <div className="hero-primary-actions">
-            <button type="button" className="hero-cta-button" onClick={() => openQuickAdd(todayIso)}>
+            <button type="button" className="hero-cta-button" onClick={() => openQuickAdd(todayIso)} data-tour="quick-add">
               <Plus size={16} /> Ajouter une dépense ou un revenu
-            </button>
-            <button type="button" className="ghost-button" onClick={() => void exportMonthlyPdf()}>
-              <Download size={16} /> PDF mensuel
             </button>
           </div>
         </div>
@@ -6052,6 +6090,18 @@ Réponse attendue:
                     ))}
                   </div>
                 ))}
+                <button
+                  type="button"
+                  className="settings-nav-tour"
+                  onClick={() => {
+                    closeSettingsPanel()
+                    navigateToSection('overview')
+                    setShowFeatureTour(true)
+                  }}
+                >
+                  <span className="settings-nav-icon" aria-hidden="true">🎓</span>
+                  Revoir le tour guidé
+                </button>
               </aside>
 
               <div className="settings-content">
@@ -7364,6 +7414,7 @@ Réponse attendue:
           statsWeekDaily={statsWeekDaily}
           statsChartRef={statsChartRef}
           exportWeeklyStatsPdf={exportWeeklyStatsPdf}
+          exportMonthlyPdf={exportMonthlyPdf}
         />
       ) : null}
 
@@ -8658,6 +8709,11 @@ Réponse attendue:
         onSubmit={(value) => completeFirstTxTour(value)}
         onSkip={() => completeFirstTxTour()}
       />
+    ) : null}
+
+    {/* ── Tour guidé des fonctionnalités ─────────────────────────── */}
+    {showFeatureTour && !showOnboarding && !showFirstTxTour ? (
+      <FeatureTour steps={FEATURE_TOUR_STEPS} onNavigate={navigateToSection} onFinish={finishFeatureTour} />
     ) : null}
 
     {/* ── Panneau de gestion des comptes ─────────────────────────── */}

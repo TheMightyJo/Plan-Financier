@@ -66,6 +66,7 @@ export function CashChatPanel(props: Props) {
           onClick={() => setChatOpen((prev) => !prev)}
           title="Cash, votre assistant budget"
           aria-label="Ouvrir Cash, votre assistant budget"
+          data-tour="cash"
         >
           {chatOpen ? <X size={22} /> : <Bot size={24} />}
           {!chatOpen && chatMessages.length > 0 && (

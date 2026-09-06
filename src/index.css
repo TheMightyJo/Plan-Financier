@@ -3114,6 +3114,147 @@ h1 {
   background: var(--kpi-value-accent);
 }
 
+/* ── Tour guidé des fonctionnalités ──────────────────────────────── */
+.tour-root {
+  position: fixed;
+  inset: 0;
+  z-index: 1095;
+}
+
+.tour-veil {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 10, 8, 0.62);
+  animation: fade-up 200ms ease both;
+}
+
+.tour-spotlight {
+  position: fixed;
+  border-radius: 14px;
+  box-shadow: 0 0 0 9999px rgba(15, 10, 8, 0.62), 0 0 0 3px rgba(184, 150, 62, 0.9);
+  pointer-events: none;
+  transition: top 220ms ease, left 220ms ease, width 220ms ease, height 220ms ease;
+}
+
+.tour-bubble {
+  position: fixed;
+  width: min(360px, calc(100vw - 24px));
+  background: var(--surface, #fff);
+  color: var(--text-1);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.1rem 1.2rem 1rem;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  animation: fade-up 220ms ease both;
+}
+
+/* Bulle centrée : grille plein écran (pas de transform, l'animation en pose une). */
+.tour-center {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  pointer-events: none;
+}
+
+.tour-bubble--center {
+  position: relative;
+  width: min(440px, calc(100vw - 24px));
+  pointer-events: auto;
+}
+
+.tour-bubble h3 {
+  margin: 0.2rem 2rem 0.4rem 0;
+  font-size: 1.05rem;
+}
+
+.tour-bubble p {
+  margin: 0 0 0.9rem;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.tour-progress {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+}
+
+.tour-close {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  padding: 0.2rem;
+  border-radius: 999px;
+}
+
+.tour-close:hover {
+  background: var(--surface-soft, var(--bg-2));
+  color: var(--text-1);
+}
+
+.tour-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.tour-actions__spacer {
+  flex: 1 1 auto;
+}
+
+.tour-actions .hero-cta-button,
+.tour-actions .ghost-button {
+  padding: 0.5rem 0.95rem;
+  font-size: var(--text-sm);
+}
+
+.tour-skip {
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.settings-nav-tour {
+  margin-top: 0.6rem;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-2);
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.settings-nav-tour:hover {
+  color: var(--text-1);
+  background: var(--surface-soft, var(--bg-2));
+}
+
+.stats-week-legend {
+  margin: 0.2rem 0 0.8rem;
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
 /* Lien inline dans le hero (budget à définir). */
 .hero-inline-link {
   background: none;
