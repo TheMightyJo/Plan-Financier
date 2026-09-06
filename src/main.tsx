@@ -6,11 +6,15 @@ import Bootstrap from './Bootstrap.tsx'
 import AppErrorBoundary from './AppErrorBoundary.tsx'
 import { installErrorReporter } from './lib/errorReporter'
 import { installPwaListeners } from './lib/pwaInstall'
+import { installDocumentSync } from './lib/documentSync'
 
 // Monitoring maison des erreurs (prod uniquement, cf. lib/errorReporter).
 installErrorReporter()
 // PWA : l'événement d'installation ne se rejoue pas, on l'écoute dès le départ.
 installPwaListeners()
+// Synchronisation des données locales du compte : intercepte les écritures
+// localStorage dès le départ (avant le premier rendu).
+installDocumentSync()
 
 // PWA : service worker en prod uniquement (en dev il interférerait avec HMR).
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

@@ -41,6 +41,8 @@ export const LOCAL_DATA_KEYS = [
   'plan-financier-ai-provider-keys-v1',
   'plan-financier-anthropic-key-v1',
   'plan-financier-cash-nudge-at',
+  'plan-financier-doc-sync-meta-v1',
+  'plan-financier-pending-deletes-v1',
 ] as const
 
 /** Préfixes de clés dynamiques (historique de chat par profil, etc.). */

@@ -20,6 +20,8 @@ import { FEATURE_TOUR_STEPS } from './lib/featureTourSteps'
 import { detectRecurringCandidates, type RecurringCandidate } from './lib/recurringDetection'
 import { addContribution, computeCurrentSaved, computePaceOutlook, recommendedMonthlyAmount } from './lib/savingsGoals'
 import { switchLocalWorkspace } from './lib/localWorkspace'
+import { pullDocuments, setDocumentSyncUser } from './lib/documentSync'
+import { queuePendingDeletes } from './lib/pendingDeletes'
 import { accountIdentityFromMetadata, personalizeProfiles, type AccountIdentity } from './lib/accountIdentity'
 import { canPromptInstall, isIos, isStandalone, onInstallAvailabilityChange, promptInstall } from './lib/pwaInstall'
 import { CashChatPanel } from './components/CashChatPanel'
@@ -964,6 +966,7 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   // Tour guidé : affiché une fois que l'état d'onboarding du compte est connu.
   const [onboardingChecked, setOnboardingChecked] = useState(false)
+  const sessionUserIdRef = useRef<string | null>(null)
   const [showFeatureTour, setShowFeatureTour] = useState(false)
   // ?tour=1 à l'arrivée : tour forcé (support, démo) — lu une fois, l'URL
   // étant réécrite ensuite par la navigation interne.
@@ -1609,6 +1612,11 @@ Règles :
     const timer = window.setTimeout(() => setShowFeatureTour(true), 600)
     return () => window.clearTimeout(timer)
   }, [isAuthenticated, demoMode, onboardingChecked, showOnboarding, showFirstTxTour, tourForced])
+
+  // Démo : rien ne part vers le cloud ; retour au compte à la sortie.
+  useEffect(() => {
+    setDocumentSyncUser(demoMode ? null : sessionUserIdRef.current)
+  }, [demoMode])
 
   const finishFeatureTour = () => {
     try {
@@ -2315,7 +2323,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
         setCloudSyncStatus('error')
         return
       }
-      if (report.transactions && report.transactions.addedFromRemote > 0) {
+      if (report.transactions && (report.transactions.addedFromRemote > 0 || report.transactions.removedLocally > 0)) {
         setTransactions(report.transactions.merged)
       }
       if (report.accounts && report.accounts.addedFromRemote > 0) {
@@ -2598,7 +2606,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     // données sont en place, on bascule l'espace PUIS on recharge pour relire
     // l'état — avant toute synchro cloud (sinon les données de l'ancien compte
     // seraient poussées dans le nouveau).
-    const applySession = (
+    const applySession = async (
       session: {
         user: { id: string; email?: string; created_at?: string; user_metadata?: Record<string, unknown> }
       } | null,
@@ -2608,15 +2616,30 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
         window.location.replace(path.startsWith('/app') ? path : '/app')
         return
       }
+      // Documents du compte (profils, poches, objectifs…) : on applique ce
+      // qui est plus récent ailleurs, puis on recharge pour relire l'état.
+      sessionUserIdRef.current = session?.user.id ?? null
+      if (session) {
+        setDocumentSyncUser(session.user.id)
+        const pulled = await pullDocuments(session.user.id)
+        if (pulled.applied > 0) {
+          window.location.reload()
+          return
+        }
+      } else {
+        setDocumentSyncUser(null)
+      }
       setAccountIdentity(session ? accountIdentityFromMetadata(session.user.user_metadata) : null)
       setIsAuthenticated(!!session)
       setUserEmail(session?.user.email ?? '')
       setAccountCreatedAt(session?.user.created_at ?? null)
       setAuthProviderReady(true)
     }
-    supabase.auth.getSession().then(({ data }) => applySession(data.session))
+    void supabase.auth.getSession().then(({ data }) => applySession(data.session))
     // Puis écoute les changements (signin/signout/refresh)
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => applySession(session))
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      void applySession(session)
+    })
     return () => subscription.subscription.unsubscribe()
   }, [])
 
@@ -4353,6 +4376,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
   const deleteTransaction = (id: number) => {
     setTransactions((previous) => previous.filter((tx) => tx.id !== id))
+    if (!demoMode) queuePendingDeletes([id])
     showToast('Transaction supprimée')
     if (editingTxId === id) {
       setEditingTxId(null)
@@ -4897,6 +4921,7 @@ Réponse attendue:
     const fallbackProfileId = remainingProfiles[0]?.id ?? defaultProfile.id
 
     setProfiles(remainingProfiles)
+    if (!demoMode) queuePendingDeletes(transactions.filter((item) => item.member === profileIdToDelete).map((item) => item.id))
     setTransactions((previous) => previous.filter((item) => item.member !== profileIdToDelete))
     setSavingsGoals((previous) => {
       const next = { ...previous }
