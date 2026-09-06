@@ -3114,6 +3114,136 @@ h1 {
   background: var(--kpi-value-accent);
 }
 
+/* ── Paramètres → Catégories ─────────────────────────────────────── */
+.categories-panel {
+  display: grid;
+  gap: 1.2rem;
+}
+
+.categories-form h3 {
+  margin: 0 0 0.4rem;
+  font-size: var(--text-md, 1rem);
+}
+
+.categories-emoji-input {
+  max-width: 6rem;
+}
+
+.categories-emoji-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+}
+
+/* Spécificité renforcée : les boutons des panneaux Paramètres sont stylés en CTA par défaut. */
+.form-panel .categories-panel .categories-emoji-presets button,
+.categories-panel .categories-emoji-presets button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-1);
+  border-radius: 0.5rem;
+  width: 2rem;
+  height: 2rem;
+  min-width: 0;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  box-shadow: none;
+}
+
+.form-panel .categories-panel .categories-emoji-presets button.active,
+.categories-panel .categories-emoji-presets button.active {
+  border-color: var(--accent, #8B6C52);
+  background: var(--surface-soft, var(--bg-2));
+}
+
+.categories-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.categories-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.7rem;
+  align-items: center;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: var(--surface);
+}
+
+.categories-row--archived {
+  opacity: 0.6;
+}
+
+.categories-row__icon {
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 0.65rem;
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+  color: #fff;
+}
+
+.categories-row__main {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.categories-row__main small {
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+
+.categories-row__actions {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.form-panel .categories-panel .categories-row__actions button,
+.categories-panel .categories-row__actions button {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  width: 1.9rem;
+  height: 1.9rem;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  box-shadow: none;
+}
+
+.form-panel .categories-panel .categories-row__actions button:hover:not(:disabled),
+.categories-panel .categories-row__actions button:hover:not(:disabled) {
+  background: var(--surface-soft, var(--bg-2));
+  color: var(--text-1);
+}
+
+.form-panel .categories-panel .categories-row__actions button.goal-delete:hover:not(:disabled) {
+  background: var(--pf-color-negative-bg);
+  color: var(--pf-color-negative-text);
+  border-color: var(--pf-color-negative-border);
+}
+
+.form-panel .categories-panel .categories-row__actions button:disabled,
+.categories-panel .categories-row__actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* ── Prévision de fin de mois ─────────────────────────────────────── */
 .hero-forecast {
   margin: 0.35rem 0 0;
@@ -7166,6 +7296,11 @@ h1 {
   display: grid;
   align-content: start;
   gap: 0.9rem;
+  /* Le menu défile dans sa colonne : sinon, sur un écran peu haut, il
+     déborde sous le pied de page légal qui intercepte alors les clics. */
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.2rem;
 }
 
 .settings-nav-group {
@@ -10459,6 +10594,13 @@ h1 {
 .ops-rail {
   gap: 1.1rem;
   grid-template-rows: none;
+  align-content: start;
+}
+
+/* Rail « Dépenses » : Cash, À venir, Plus grosses dépenses et Tags en cartes séparées. */
+.ops-rail-stack {
+  display: grid;
+  gap: 1rem;
   align-content: start;
 }
 

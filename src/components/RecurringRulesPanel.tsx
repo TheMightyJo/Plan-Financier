@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Pencil, Trash2, Pause, Play, Plus, X } from 'lucide-react'
 import type { RecurringRule, Category, Envelope, FamilyMember, TransactionKind } from '../types'
 import { RECURRING_FREQUENCIES, type RecurringFrequency } from '../types'
-import { categories, colorForCategory, envelopes, inferEnvelope } from '../lib/categories'
+import { categories, colorForCategory, envelopes, inferEnvelope, type CategoryGroup } from '../lib/categories'
 import { validateRule } from '../lib/recurring'
 import { buildRecurringRule, removeRule, toggleRulePause, upsertRule } from '../repos/recurringRulesRepo'
 
@@ -11,6 +11,8 @@ type Props = {
   onChange: (next: RecurringRule[]) => void
   member: FamilyMember
   onClose: () => void
+  /** Catalogue groupé (catalogue + catégories personnalisées) ; sinon les 7 principales. */
+  categoryGroups?: CategoryGroup[]
 }
 
 type FormState = {
@@ -75,7 +77,7 @@ const ruleToForm = (rule: RecurringRule): FormState => ({
   endDate: rule.endDate ?? '',
 })
 
-export function RecurringRulesPanel({ rules, onChange, member, onClose }: Props) {
+export function RecurringRulesPanel({ rules, onChange, member, onClose, categoryGroups }: Props) {
   const [form, setForm] = useState<FormState>(emptyForm)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
@@ -222,11 +224,24 @@ export function RecurringRulesPanel({ rules, onChange, member, onClose }: Props)
                     setForm((p) => ({ ...p, category: next, envelope: inferEnvelope(next) }))
                   }}
                 >
-                  {categories.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
+                  {categoryGroups && !categoryGroups.some((g) => g.options.includes(form.category)) ? (
+                    <option value={form.category}>{form.category}</option>
+                  ) : null}
+                  {categoryGroups
+                    ? categoryGroups.map((group) => (
+                        <optgroup key={group.label} label={group.label}>
+                          {group.options.map((cat) => (
+                            <option key={cat} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))
+                    : categories.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
                 </select>
               </label>
 

@@ -115,7 +115,16 @@ const FALLBACK_CATEGORY_PALETTE = [
   '#C05C2A', '#8B6C52', '#B8963E', '#6B5B8A', '#A08060', '#3A7D44', '#7D5BA6', '#5B8A72',
 ]
 
+// Surcharges (emoji / couleur) posées par l'utilisateur — cf. lib/customCategories.
+// Registre module : évite de faire circuler la liste jusqu'à chaque pastille.
+let categoryOverrideMap: Record<string, { emoji?: string; color?: string }> = {}
+export const registerCategoryOverrides = (overrides: Record<string, { emoji?: string; color?: string }>): void => {
+  categoryOverrideMap = overrides
+}
+
 export const colorForCategory = (category: Category): string => {
+  const override = categoryOverrideMap[category]?.color
+  if (override) return override
   const known = categoryColors[category]
   if (known) return known
   let hash = 0
@@ -227,6 +236,8 @@ const GROUP_EMOJI: Record<string, string> = {
 }
 
 export const categoryEmoji = (category: Category): string => {
+  const override = categoryOverrideMap[category]?.emoji
+  if (override) return override
   if (CATEGORY_EMOJI[category]) return CATEGORY_EMOJI[category]
   const group =
     EXPENSE_CATEGORY_GROUPS.find((entry) => entry.options.includes(category)) ??

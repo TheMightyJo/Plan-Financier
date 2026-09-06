@@ -25,6 +25,7 @@ export const DOCUMENT_KEYS = [
   'plan-financier-envelope-budgets-v1',
   'plan-financier-envelope-funds-v1',
   'plan-financier-custom-envelopes-v1',
+  'plan-financier-custom-categories-v1',
   'plan-financier-notes-v1',
   'plan-financier-goals-v1',
   'plan-financier-rollover-v1',

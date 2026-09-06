@@ -8,7 +8,7 @@ import type {
   Transaction,
   TransactionKind,
 } from '../types'
-import { categories, colorForCategory, envelopes, inferEnvelope } from '../lib/categories'
+import { categories, colorForCategory, envelopes, inferEnvelope, type CategoryGroup } from '../lib/categories'
 import {
   aggregateFilteredStats,
   defaultCriteria,
@@ -26,6 +26,8 @@ type Props = {
   member: FamilyMember
   onChange: (next: Transaction[]) => void
   onClose: () => void
+  /** Catalogue groupé (catalogue + catégories personnalisées) ; sinon les 7 principales. */
+  categoryGroups?: CategoryGroup[]
 }
 
 type EditState = {
@@ -78,8 +80,7 @@ export function TransactionHistoryPanel({
   accounts,
   member,
   onChange,
-  onClose,
-}: Props) {
+  onClose, categoryGroups }: Props) {
   const [criteria, setCriteria] = useState<TransactionFilterCriteria>(() => ({
     ...defaultCriteria(member),
   }))
@@ -227,11 +228,21 @@ export function TransactionHistoryPanel({
               aria-label="Catégorie"
             >
               <option value="all">Toutes catégories</option>
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
+              {categoryGroups
+                ? categoryGroups.map((group) => (
+                    <optgroup key={group.label} label={group.label}>
+                      {group.options.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))
+                : categories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
             </select>
 
             <select
@@ -377,11 +388,24 @@ export function TransactionHistoryPanel({
                             }}
                             aria-label="Catégorie"
                           >
-                            {categories.map((c) => (
-                              <option key={c} value={c}>
-                                {c}
-                              </option>
-                            ))}
+                            {!(categoryGroups ?? []).some((g) => g.options.includes(edit.category)) && categoryGroups ? (
+                              <option value={edit.category}>{edit.category}</option>
+                            ) : null}
+                            {categoryGroups
+                              ? categoryGroups.map((group) => (
+                                  <optgroup key={group.label} label={group.label}>
+                                    {group.options.map((c) => (
+                                      <option key={c} value={c}>
+                                        {c}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                ))
+                              : categories.map((c) => (
+                                  <option key={c} value={c}>
+                                    {c}
+                                  </option>
+                                ))}
                           </select>
                           <select
                             value={edit.envelope}
