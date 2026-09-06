@@ -38,6 +38,7 @@ import { FEATURE_TOUR_STEPS } from './lib/featureTourSteps'
 import { detectRecurringCandidates, type RecurringCandidate } from './lib/recurringDetection'
 import { addContribution, computeCurrentSaved, computePaceOutlook, recommendedMonthlyAmount } from './lib/savingsGoals'
 import { switchLocalWorkspace } from './lib/localWorkspace'
+import { computePremiumAccess } from './lib/premiumAccess'
 import { pullDocuments, setDocumentSyncUser } from './lib/documentSync'
 import { queuePendingDeletes } from './lib/pendingDeletes'
 import { accountIdentityFromMetadata, personalizeProfiles, type AccountIdentity } from './lib/accountIdentity'
@@ -239,8 +240,6 @@ const DEMO_SEED_MAX_ID = 12
 // nouveau compte a 30 jours d'essai complet, puis le plan Découverte
 // s'applique (3 poches, 1 profil, pas de rapport email ; l'IA est déjà
 // limitée par quota côté serveur).
-const EARLY_ADOPTER_UNTIL = '2026-10-01'
-const TRIAL_DAYS = 30
 
 // ── URLs propres (routage SPA léger, sans dépendance) ───────────────────────
 // / (vitrine) · /login · /demo · /app, /app/depenses, /app/budget,
@@ -1202,18 +1201,37 @@ function App() {
   const [accountCreatedAt, setAccountCreatedAt] = useState<string | null>(null)
   // Fonctionnalité Premium demandée sans accès : nom affiché dans la modale.
   const [premiumGate, setPremiumGate] = useState<string | null>(null)
-  const premiumAccess = useMemo(() => {
-    if (demoMode) return { unlocked: true, reason: 'demo' as const, trialEndsAt: null }
-    if (userPlan !== 'free') return { unlocked: true, reason: 'plan' as const, trialEndsAt: null }
-    // Session pas encore lue : ne jamais bloquer par précaution.
-    if (!accountCreatedAt) return { unlocked: true, reason: 'unknown' as const, trialEndsAt: null }
-    const created = new Date(accountCreatedAt)
-    if (created < new Date(`${EARLY_ADOPTER_UNTIL}T00:00:00`)) {
-      return { unlocked: true, reason: 'early' as const, trialEndsAt: null }
+  const premiumAccess = useMemo(
+    () => computePremiumAccess({ demoMode, plan: userPlan, accountCreatedAt }),
+    [demoMode, userPlan, accountCreatedAt],
+  )
+  // Bandeau essai / Découverte : masquable pour la journée.
+  const [planBannerDismissedAt, setPlanBannerDismissedAt] = useState<number>(() => {
+    try {
+      return Number(window.localStorage.getItem('plan-financier-plan-banner-dismissed-v1') ?? 0)
+    } catch {
+      return 0
     }
-    const trialEndsAt = new Date(created.getTime() + TRIAL_DAYS * 86_400_000)
-    return { unlocked: Date.now() < trialEndsAt.getTime(), reason: 'trial' as const, trialEndsAt }
-  }, [demoMode, userPlan, accountCreatedAt])
+  })
+  const dismissPlanBanner = () => {
+    const at = Date.now()
+    setPlanBannerDismissedAt(at)
+    try {
+      window.localStorage.setItem('plan-financier-plan-banner-dismissed-v1', String(at))
+    } catch {
+      /* stockage indisponible */
+    }
+  }
+  const planBanner: { tone: 'trial' | 'ended'; text: string } | null = (() => {
+    if (demoMode || premiumAccess.reason !== 'trial') return null
+    if (Date.now() - planBannerDismissedAt < 86_400_000) return null
+    if (premiumAccess.unlocked) {
+      const days = premiumAccess.daysLeft ?? 0
+      if (days > 7) return null
+      return { tone: 'trial', text: `Votre essai Premium se termine ${days <= 1 ? "aujourd'hui" : `dans ${days} jours`} — ensuite, plan Découverte (1 profil, 3 poches, 15 messages Cash).` }
+    }
+    return { tone: 'ended', text: 'Vous êtes sur le plan Découverte : 1 profil, 3 poches, 15 messages Cash par mois, sans rapport email.' }
+  })()
   /** Bloque une action Premium (et explique) si le compte n'y a pas accès. */
   const requirePremium = (feature: string): boolean => {
     if (premiumAccess.unlocked) return false
@@ -1900,6 +1918,15 @@ Règles :
   const saveAnthropicKey = (key: string) => {
     saveAiProviderKey('anthropic', key)
   }
+
+  // Lien profond depuis les emails (« Voir les formules ») : /app?plan=1.
+  useEffect(() => {
+    if (!isAuthenticated || demoMode) return
+    if (new URLSearchParams(window.location.search).get('plan') !== '1') return
+    window.history.replaceState({}, '', window.location.pathname)
+    openSettingsPanel('subscription')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, demoMode])
 
   const openSettingsPanel = (section: SettingsSection = 'profiles') => {
     setSettingsSection(section)
@@ -5352,6 +5379,19 @@ Réponse attendue:
 
   return (
     <>
+    {planBanner ? (
+      <div className={`plan-banner plan-banner--${planBanner.tone}`} role="status">
+        <span>{planBanner.tone === 'trial' ? '⏳' : '🌱'} {planBanner.text}</span>
+        <span className="plan-banner__actions">
+          <button type="button" className="plan-banner__cta" onClick={() => openSettingsPanel('subscription')}>
+            Voir les formules
+          </button>
+          <button type="button" className="plan-banner__close" onClick={dismissPlanBanner} aria-label="Masquer pour aujourd'hui">
+            ✕
+          </button>
+        </span>
+      </div>
+    ) : null}
     {demoMode ? (
       <div className="demo-banner" role="status">
         <span>
@@ -7031,7 +7071,7 @@ Réponse attendue:
                             {userPlan === 'free'
                               ? premiumAccess.reason === 'trial'
                                 ? premiumAccess.unlocked && premiumAccess.trialEndsAt
-                                  ? `Essai complet jusqu'au ${premiumAccess.trialEndsAt.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}. Ensuite : 3 poches, 1 profil, sans rapport email.`
+                                  ? `Essai complet : ${premiumAccess.daysLeft ?? 0} jour${(premiumAccess.daysLeft ?? 0) > 1 ? 's' : ''} restant${(premiumAccess.daysLeft ?? 0) > 1 ? 's' : ''} (jusqu'au ${premiumAccess.trialEndsAt.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}). Ensuite : plan Découverte — 1 profil, 3 poches, 15 messages Cash par mois, sans rapport email.`
                                   : 'Essai terminé — plan Découverte : 3 poches, 1 profil, sans rapport email. Passez Premium pour tout retrouver.'
                                 : 'Vous profitez de la période de lancement : toutes les fonctionnalités sont offertes aux premiers inscrits.'
                               : subscription?.cancelAtPeriodEnd

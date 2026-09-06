@@ -8,6 +8,9 @@
 //   2. Relance J+3 — POST { cron: true } + header x-cron-secret : parcourt les
 //      profils dont l'onboarding date de 3 à 4 jours et envoie le conseil
 //      « poches » (une fois).
+//   3. Fin d'essai — même cron : comptes créés depuis le 1er octobre 2026,
+//      sans abonnement payant, à J-3 (« votre essai se termine dans 3 jours »)
+//      puis le jour J (« plan Découverte »). Migration 0013 requise.
 //
 // Secrets : RESEND_API_KEY, CRON_SECRET, REPORT_FROM (optionnel), APP_URL.
 // Déploiement : supabase functions deploy lifecycle-emails --no-verify-jwt
@@ -112,7 +115,35 @@ const firstNameOf = (displayName: string | null | undefined, email: string) => {
   return first.charAt(0).toUpperCase() + first.slice(1)
 }
 
-type Kind = 'welcome' | 'followup_d3'
+type Kind = 'welcome' | 'followup_d3' | 'trial_ending' | 'trial_ended'
+
+// Miroir du gating doux de l'app (src/lib/premiumAccess.ts).
+const EARLY_ADOPTER_UNTIL = Date.UTC(2026, 9, 1) // 1er octobre 2026
+const TRIAL_DAYS = 30
+
+const trialEndingEmail = (firstName: string) => ({
+  subject: 'Votre essai Plan Financier se termine dans 3 jours',
+  html: layout(
+    'Fin d’essai dans 3 jours',
+    `<p style="margin:0 0 12px;font-size:20px;font-weight:800;">${firstName}, plus que 3 jours d'essai complet</p>
+     <p style="margin:0 0 14px;">Dans trois jours, votre compte passe sur le plan <strong>Découverte</strong> (gratuit, sans limite de durée) : 1 profil, 3 poches, 15 messages Cash par mois, et plus de rapport par email. Vos opérations, votre calendrier, vos statistiques et votre prévision de fin de mois restent là, rien n'est perdu.</p>
+     <p style="margin:0 0 14px;">Pour garder profils et poches illimités, Cash sans compter et les rapports automatiques : <strong>Premium, 3,99 € par mois</strong> (ou 29,99 € par an), résiliable en un clic.</p>
+     <p style="margin:0 0 18px;">${button(`${APP_URL}/app?plan=1`, 'Voir les formules')}</p>
+     <p style="margin:0;color:#6B5644;">Une question, un doute sur ce qui change ? Répondez à cet email.</p>`,
+  ),
+})
+
+const trialEndedEmail = (firstName: string) => ({
+  subject: 'Votre compte Plan Financier est passé en plan Découverte',
+  html: layout(
+    'Plan Découverte',
+    `<p style="margin:0 0 12px;font-size:20px;font-weight:800;">${firstName}, votre essai est terminé</p>
+     <p style="margin:0 0 14px;">Votre compte est maintenant sur le plan <strong>Découverte</strong>, gratuit et sans limite de durée. Vous gardez toutes vos données, le calendrier, les statistiques et la prévision de fin de mois.</p>
+     <p style="margin:0 0 14px;">Ce qui est limité : 1 profil, 3 poches, 15 messages Cash par mois, pas de rapport par email. Si vous aviez plus de profils ou de poches, ils sont conservés mais vous ne pouvez plus en créer.</p>
+     <p style="margin:0 0 18px;">${button(`${APP_URL}/app?plan=1`, 'Passer Premium — 3,99 €/mois')}</p>
+     <p style="margin:0;color:#6B5644;">Merci d'avoir essayé Plan Financier. Si quelque chose vous a manqué pendant l'essai, dites-le nous en répondant à cet email : on lit tout.</p>`,
+  ),
+})
 
 /** Envoie l'email `kind` à l'utilisateur si pas déjà fait. */
 const sendOnce = async (
@@ -139,7 +170,14 @@ const sendOnce = async (
     .maybeSingle()
   const firstName = firstNameOf(profile?.display_name as string | undefined, email)
 
-  const message = kind === 'welcome' ? welcomeEmail(firstName) : followupEmail(firstName)
+  const message =
+    kind === 'welcome'
+      ? welcomeEmail(firstName)
+      : kind === 'followup_d3'
+        ? followupEmail(firstName)
+        : kind === 'trial_ending'
+          ? trialEndingEmail(firstName)
+          : trialEndedEmail(firstName)
   const failure = await sendEmail(email, message.subject, message.html)
   if (failure) return failure
 
@@ -184,7 +222,45 @@ Deno.serve(async (req) => {
       else if (result === 'skipped') skipped++
       else failures.push(result)
     }
-    return json(200, { sent, skipped, failures: failures.length })
+
+    // ── Fin d'essai : J-3 et jour J ────────────────────────────────────
+    // Comptes en essai = créés depuis EARLY_ADOPTER_UNTIL, sans plan payant.
+    const trial = { sent: 0, skipped: 0, failed: 0 }
+    const dayMs = 86_400_000
+    const windows: Array<{ kind: Kind; fromDays: number; toDays: number }> = [
+      { kind: 'trial_ending', fromDays: TRIAL_DAYS - 3, toDays: TRIAL_DAYS - 2 },
+      { kind: 'trial_ended', fromDays: TRIAL_DAYS, toDays: TRIAL_DAYS + 1 },
+    ]
+    const { data: paid } = await admin
+      .from('subscriptions')
+      .select('user_id, plan, status')
+      .neq('plan', 'free')
+    const paidIds = new Set(
+      ((paid ?? []) as Array<{ user_id: string; plan: string; status: string }>)
+        .filter((sub) => ['active', 'trialing', 'past_due'].includes(sub.status))
+        .map((sub) => sub.user_id),
+    )
+    let page = 1
+    const perPage = 200
+    for (;;) {
+      const { data: users, error: usersError } = await admin.auth.admin.listUsers({ page, perPage })
+      if (usersError || !users?.users?.length) break
+      for (const user of users.users) {
+        const created = Date.parse(user.created_at ?? '')
+        if (!Number.isFinite(created) || created < EARLY_ADOPTER_UNTIL || paidIds.has(user.id)) continue
+        const ageDays = (now - created) / dayMs
+        for (const window of windows) {
+          if (ageDays < window.fromDays || ageDays >= window.toDays) continue
+          const result = await sendOnce(admin, user.id, window.kind)
+          if (result === 'sent') trial.sent++
+          else if (result === 'skipped') trial.skipped++
+          else trial.failed++
+        }
+      }
+      if (users.users.length < perPage) break
+      page++
+    }
+    return json(200, { sent, skipped, failures: failures.length, trial })
   }
 
   // ── Session utilisateur : bienvenue ──────────────────────────────────

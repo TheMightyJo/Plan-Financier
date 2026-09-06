@@ -3114,6 +3114,61 @@ h1 {
   background: var(--kpi-value-accent);
 }
 
+/* ── Bandeau essai / plan Découverte ──────────────────────────────── */
+.plan-banner {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.55rem 1rem;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: #2A1810;
+  background: linear-gradient(120deg, #F3E3B8, #E8CF8F);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.plan-banner--ended {
+  background: linear-gradient(120deg, #E6EFE2, #D2E3C8);
+}
+
+.plan-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.plan-banner__cta {
+  border: none;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  background: #2A1810;
+  color: #FFF8F0;
+  font-weight: 700;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.plan-banner__close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  padding: 0.2rem 0.4rem;
+}
+
+@media (max-width: 760px) {
+  .plan-banner {
+    flex-wrap: wrap;
+    font-size: var(--text-xs);
+  }
+}
+
 /* ── Vue Dépenses ─────────────────────────────────────────────────── */
 .operations-header {
   display: grid;
