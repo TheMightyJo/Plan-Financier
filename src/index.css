@@ -3129,32 +3129,28 @@ h1 {
   right: 0.9rem;
   z-index: 5;
   display: flex;
-  gap: 0.15rem;
+  gap: 0.1rem;
   padding: 0.15rem;
   border-radius: 999px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  opacity: 0;
-  transition: opacity 0.15s ease;
+  border: 1px solid color-mix(in srgb, var(--accent, #8B6C52) 45%, var(--border));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  /* Toujours visible, un peu en retrait au repos, pleine au survol. */
+  opacity: 0.72;
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
 .view-card:hover > .view-card__tools,
-.view-card:focus-within > .view-card__tools {
+.view-card:focus-within > .view-card__tools,
+.view-card__tools:hover {
   opacity: 1;
-}
-
-@media (hover: none), (pointer: coarse) {
-  .view-card__tools {
-    opacity: 0.85;
-  }
 }
 
 .view-card__tools button {
   appearance: none;
   border: none;
   background: transparent;
-  color: var(--text-2);
+  color: var(--accent, #8B6C52);
   width: 1.6rem;
   height: 1.6rem;
   border-radius: 999px;
