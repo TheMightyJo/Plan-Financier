@@ -6039,7 +6039,7 @@ Réponse attendue:
                   onClick={() => openQuickEdit(tx)}
                   aria-label={`Modifier ${tx.label}`}
                 >
-                  <MerchantLogo label={tx.label} fallbackIcon={tx.icon ?? categoryEmoji(tx.category)} />
+                  <MerchantLogo label={tx.label} icon={tx.icon} fallbackIcon={categoryEmoji(tx.category)} />
                   <span className="recent-tx-label">
                     {tx.label}
                     {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
@@ -7381,7 +7381,7 @@ Réponse attendue:
                 >
                   <div>
                     <p>
-                      <MerchantLogo label={item.label} fallbackIcon={item.icon ?? categoryEmoji(item.category)} />
+                      <MerchantLogo label={item.label} icon={item.icon} fallbackIcon={categoryEmoji(item.category)} />
                       {item.label}
                       {item.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement (charge récurrente)">🔁</span> : null}
                     </p>
@@ -8888,7 +8888,7 @@ Réponse attendue:
             <ul className="ops-rail__list">
               {topExpensesMonth.map((tx) => (
                 <li key={tx.id}>
-                  <MerchantLogo label={tx.label} fallbackIcon={tx.icon ?? categoryEmoji(tx.category)} className="ops-rail__icon" />
+                  <MerchantLogo label={tx.label} icon={tx.icon} fallbackIcon={categoryEmoji(tx.category)} className="ops-rail__icon" />
                   <span className="ops-rail__label">
                     {tx.label}
                     <small>{tx.category}</small>

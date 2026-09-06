@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { merchantFaviconUrl, suggestMerchantDomain, isValidTxIcon, suggestMerchantIcon } from './merchantIcons'
+import { merchantFaviconUrl, suggestMerchantDomain, isValidTxIcon, suggestMerchantIcon, guessMerchantDomains } from './merchantIcons'
 
 describe('suggestMerchantIcon', () => {
   it('reconnaît les enseignes courantes (accents/casse ignorés)', () => {
@@ -53,5 +53,25 @@ describe('faux positifs en sous-chaîne', () => {
 
   it('« train » seul matche toujours', () => {
     expect(suggestMerchantIcon('Billet de train')).not.toBeNull()
+  })
+})
+
+describe('guessMerchantDomains', () => {
+  it('devine marque.fr puis marque.com', () => {
+    expect(guessMerchantDomains('Sosh')).toEqual(['sosh.fr', 'sosh.com'])
+    expect(guessMerchantDomains('CB LEROY MERLIN 3456 12/09')).toEqual([
+      'leroymerlin.fr',
+      'leroymerlin.com',
+      'leroy-merlin.fr',
+      'leroy.fr',
+      'leroy.com',
+    ])
+  })
+
+  it('ignore le bruit bancaire et les libellés génériques', () => {
+    expect(guessMerchantDomains('PRLV SEPA Boulanger')).toEqual(['boulanger.fr', 'boulanger.com'])
+    expect(guessMerchantDomains('Courses marché')).toEqual([])
+    expect(guessMerchantDomains('Loyer')).toEqual([])
+    expect(guessMerchantDomains('CB 1234')).toEqual([])
   })
 })
