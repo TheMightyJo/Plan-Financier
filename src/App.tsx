@@ -39,6 +39,8 @@ import { detectRecurringCandidates, type RecurringCandidate } from './lib/recurr
 import { addContribution, computeCurrentSaved, computePaceOutlook, recommendedMonthlyAmount } from './lib/savingsGoals'
 import { switchLocalWorkspace } from './lib/localWorkspace'
 import { computePremiumAccess } from './lib/premiumAccess'
+import { planCardVariant } from './lib/planUsage'
+import { PlanCard } from './components/PlanCard'
 import { loadViewLayouts, moveCard, resetViewLayout, saveViewLayouts, setCardHidden, type ViewId, type ViewLayouts } from './lib/viewLayout'
 import { ViewLayoutContext } from './lib/viewLayoutContext'
 import { HiddenCardsBar, ViewCard } from './components/ViewCard'
@@ -1219,6 +1221,39 @@ function App() {
       /* stockage indisponible */
     }
   }
+  // Carte « Votre formule » du rail de droite (usage réel vs limites), « Pas maintenant » = 7 jours.
+  const [planCardDismissedAt, setPlanCardDismissedAt] = useState<number>(() => {
+    try {
+      return Number(window.localStorage.getItem('plan-financier-plan-card-dismissed-v1') ?? 0)
+    } catch {
+      return 0
+    }
+  })
+  const dismissPlanCard = () => {
+    const at = Date.now()
+    setPlanCardDismissedAt(at)
+    try {
+      window.localStorage.setItem('plan-financier-plan-card-dismissed-v1', String(at))
+    } catch {
+      /* stockage indisponible */
+    }
+  }
+  const planCard = useMemo(
+    () =>
+      planCardVariant(
+        premiumAccess,
+        {
+          profiles: profiles.length,
+          customEnvelopes: Object.values(customEnvelopes).reduce((sum, list) => sum + list.length, 0),
+          aiUsed: aiQuota?.used ?? 0,
+          aiLimit: aiQuota?.limit ?? 15,
+          reportsOn: reportPrefs.frequency !== 'none',
+        },
+        planCardDismissedAt,
+      ),
+    [premiumAccess, profiles.length, customEnvelopes, aiQuota, reportPrefs.frequency, planCardDismissedAt],
+  )
+
   const planBanner: { tone: 'trial' | 'ended'; text: string } | null = (() => {
     if (demoMode || premiumAccess.reason !== 'trial') return null
     if (Date.now() - planBannerDismissedAt < 86_400_000) return null
@@ -8157,6 +8192,7 @@ Réponse attendue:
 
       {isActiveView('operations') ? (
       <div className="dashboard-right-rail ops-rail-stack" aria-label="Repères dépenses">
+        {planCard ? <PlanCard variant={planCard} onSeePlans={() => openSettingsPanel('subscription')} onDismiss={dismissPlanCard} /> : null}
         <aside className="glass-card budget-advice-rail ops-rail" aria-label="Assistant Cash">
           <div className="ops-rail__section">{renderCashAdvice()}</div>
         </aside>
@@ -8228,15 +8264,21 @@ Réponse attendue:
       ) : null}
 
       {isActiveView('stats') ? (
-      <aside className="glass-card budget-advice-rail dashboard-right-rail overview-coaching-rail" aria-label="Assistant">
-        {renderCashAdvice()}
-      </aside>
+      <div className="dashboard-right-rail ops-rail-stack">
+        {planCard ? <PlanCard variant={planCard} onSeePlans={() => openSettingsPanel('subscription')} onDismiss={dismissPlanCard} /> : null}
+        <aside className="glass-card budget-advice-rail overview-coaching-rail" aria-label="Assistant">
+          {renderCashAdvice()}
+        </aside>
+      </div>
       ) : null}
 
       {isActiveView('overview') || isActiveView('family') || isActiveView('budget') ? (
-      <aside className="glass-card budget-advice-rail dashboard-right-rail overview-coaching-rail" aria-label="Assistant">
-        {renderCashAdvice()}
-      </aside>
+      <div className="dashboard-right-rail ops-rail-stack">
+        {planCard ? <PlanCard variant={planCard} onSeePlans={() => openSettingsPanel('subscription')} onDismiss={dismissPlanCard} /> : null}
+        <aside className="glass-card budget-advice-rail overview-coaching-rail" aria-label="Assistant">
+          {renderCashAdvice()}
+        </aside>
+      </div>
       ) : null}
 
     </main>

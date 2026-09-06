@@ -79,3 +79,19 @@ Dans l'app (compte de test), Paramètres → Abonnement :
 ## Rien d'autre côté Supabase
 Le cron quotidien `lifecycle-emails` existe déjà : les emails de fin d'essai
 partiront dès que la migration 0013 est appliquée et le code recollé.
+
+## Complément — rappels d'abonnement dans le tableau de bord
+
+Carte « Votre formule » en tête du rail de droite (Accueil, Budget, Famille,
+Statistiques, Dépenses), calculée par `src/lib/planUsage.ts` :
+
+- **Essai Premium** : jours restants + ce que la personne utilise réellement et
+  qui dépasse Découverte (profils, poches personnalisées, messages Cash,
+  rapports email) → « Garder tout · 3,99 €/mois ». Sans usage Premium : invitation
+  à essayer, bouton discret « Voir les formules ».
+- **Découverte (essai terminé)** : usage face aux limites (messages Cash avec
+  barre, profils 1/1, poches personnalisées en lecture seule) → « Passer Premium ».
+- Rien pour les abonnés, les premiers inscrits (gratuit à vie) et la démo.
+- « Pas maintenant » masque la carte 7 jours (`plan-financier-plan-card-dismissed-v1`),
+  sauf quota Cash épuisé (la carte reste, sans bouton de report).
+- Le bouton ouvre Réglages → Abonnement (`openSettingsPanel('subscription')`).

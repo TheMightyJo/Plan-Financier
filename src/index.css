@@ -3215,6 +3215,99 @@ h1 {
   color: var(--text-2);
 }
 
+/* ── Carte « Votre formule » (rail de droite) ─────────────────────── */
+.plan-card {
+  padding: 1rem 1.1rem;
+  display: grid;
+  gap: 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--accent, #8B6C52) 35%, var(--border));
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent, #8B6C52) 8%, var(--surface)), var(--surface));
+}
+
+.plan-card--alert {
+  border-color: var(--danger);
+}
+
+.plan-card .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+}
+
+.plan-card__text {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.plan-card__text strong {
+  color: var(--text-1);
+}
+
+.plan-card__usage {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.plan-card__usage li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.2rem 0.6rem;
+  align-items: baseline;
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.plan-card__usage strong {
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.plan-card__usage strong.negative {
+  color: var(--danger);
+}
+
+.plan-card__bar {
+  grid-column: 1 / -1;
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border-soft, var(--border));
+  overflow: hidden;
+}
+
+.plan-card__bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent, #8B6C52);
+}
+
+.plan-card--alert .plan-card__bar > span {
+  background: var(--danger);
+}
+
+.plan-card__cta {
+  justify-self: start;
+}
+
+.plan-card__later {
+  justify-self: start;
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
 /* ── Bandeau essai / plan Découverte ──────────────────────────────── */
 .plan-banner {
   position: sticky;
