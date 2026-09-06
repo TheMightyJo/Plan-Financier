@@ -20,8 +20,8 @@ export function PremiumGateModal({ feature, onClose, onSeePlans }: Props) {
           <h2 id="premium-gate-title">Passez à la vitesse supérieure</h2>
           <p>
             {feature.charAt(0).toUpperCase() + feature.slice(1)} font partie de Plan Financier Premium :
-            poches et profils illimités, rapports email automatiques, Cash sans compter.
-            <strong> 3,99 €/mois</strong>, résiliable en un clic.
+            profils et poches illimités, 300 messages Cash par mois, rapports email automatiques.
+            <strong> 3,99 €/mois</strong> ou 29,99 €/an, résiliable en un clic. Vos données restent à vous, quel que soit le plan.
           </p>
           <div className="premium-gate-actions">
             <button
