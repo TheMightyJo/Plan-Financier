@@ -32,6 +32,9 @@ type Props = {
   quickAddAiBusy: boolean
   quickAddAiApplied: boolean
   envelopeGroupsWithCustom: CategoryGroup[]
+  /** Catalogues (catalogue + catégories personnalisées). */
+  expenseCategoryGroups?: CategoryGroup[]
+  incomeCategoryGroups?: CategoryGroup[]
   isBudgetAiConfigured: boolean
   onConfigureAi: () => void
   quickAddDeleteAsk: boolean
@@ -173,7 +176,7 @@ export function QuickAddModal(props: Props) {
                 ) : null}
                 <GroupedSearchSelect
                   value={quickAddForm.category}
-                  groups={quickAddForm.kind === 'revenu' ? INCOME_CATEGORY_GROUPS : EXPENSE_CATEGORY_GROUPS}
+                  groups={quickAddForm.kind === 'revenu' ? (props.incomeCategoryGroups ?? INCOME_CATEGORY_GROUPS) : (props.expenseCategoryGroups ?? EXPENSE_CATEGORY_GROUPS)}
                   onChange={(category) => {
                     quickAddTouchedRef.current.category = true
                     setQuickAddForm((previous) => ({ ...previous, category }))

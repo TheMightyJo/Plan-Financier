@@ -17,6 +17,21 @@ import { RecurringSuggestions } from './components/RecurringSuggestions'
 import { NotificationsSettings } from './components/NotificationsSettings'
 import { FeatureTour } from './components/FeatureTour'
 import { ForecastCard } from './components/ForecastCard'
+import { CategoriesPanel } from './components/CategoriesPanel'
+import { GroupedSearchSelect } from './components/GroupedSearchSelect'
+import {
+  allCategoryLabels,
+  buildCategoryGroups,
+  categoryOverrides,
+  categoryUsage,
+  loadCustomCategories,
+  renameCategoryInCaps,
+  renameCategoryInRules,
+  renameCategoryInTransactions,
+  saveCustomCategories,
+  type CustomCategory,
+} from './lib/customCategories'
+import { registerCategoryOverrides } from './lib/categories'
 import { computeForecast } from './lib/forecast'
 import { FEATURE_TOUR_STEPS } from './lib/featureTourSteps'
 import { detectRecurringCandidates, type RecurringCandidate } from './lib/recurringDetection'
@@ -153,7 +168,6 @@ import {
 import { ACCOUNT_TYPE_LABELS } from './types'
 import type { Account, RecurringFrequency, RecurringRule } from './types'
 import {
-  allExpenseCategories,
   categories,
   categoryEmoji,
   colorForCategory,
@@ -778,7 +792,7 @@ function InfoHint({ text }: { text: string }) {
 }
 
 function App() {
-  type SettingsSection = 'profiles' | 'ai' | 'security' | 'backup' | 'reset' | 'theme' | 'rgpd' | 'account' | 'report' | 'a11y' | 'subscription' | 'install' | 'notifications'
+  type SettingsSection = 'profiles' | 'categories' | 'ai' | 'security' | 'backup' | 'reset' | 'theme' | 'rgpd' | 'account' | 'report' | 'a11y' | 'subscription' | 'install' | 'notifications'
   const currentMonth = new Date().toISOString().slice(0, 7)
   const todayIso = new Date().toISOString().slice(0, 10)
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
@@ -1041,6 +1055,8 @@ function App() {
   )
   const [transactions, setTransactions] = useState<Transaction[]>(loadTransactions)
   const [recurringRules, setRecurringRules] = useState<RecurringRule[]>(loadRecurringRules)
+  // Catégories personnalisées (et surcharges icône/couleur du catalogue).
+  const [customCategories, setCustomCategories] = useState<CustomCategory[]>(() => loadCustomCategories())
   const [showRecurringPanel, setShowRecurringPanel] = useState(false)
   const [accounts, setAccounts] = useState<Account[]>(loadAccounts)
   const [showAccountsPanel, setShowAccountsPanel] = useState(false)
@@ -2676,6 +2692,25 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
     saveAccounts(accounts)
   }, [accounts, demoMode])
 
+  // Catégories personnalisées : persistance + surcharges d'affichage (pastilles, emoji).
+  useEffect(() => {
+    if (!demoMode) saveCustomCategories(customCategories)
+  }, [customCategories, demoMode])
+  useEffect(() => {
+    registerCategoryOverrides(categoryOverrides(customCategories))
+  }, [customCategories])
+  const expenseCategoryGroups = useMemo(() => buildCategoryGroups('depense', customCategories), [customCategories])
+  const incomeCategoryGroups = useMemo(() => buildCategoryGroups('revenu', customCategories), [customCategories])
+  const expenseCategoryLabels = useMemo(() => allCategoryLabels('depense', customCategories), [customCategories])
+
+  /** Renommage d'une catégorie personnalisée : migre opérations, règles et plafonds. */
+  const renameCategoryEverywhere = (from: string, to: string) => {
+    setTransactions((previous) => renameCategoryInTransactions(previous, from, to))
+    setRecurringRules((previous) => renameCategoryInRules(previous, from, to))
+    setSavingsGoals((previous) => renameCategoryInCaps(previous, from, to) as typeof previous)
+    showToast(`Catégorie « ${from} » renommée en « ${to} »`)
+  }
+
   // Migration : transactions sans accountId → compte courant par défaut
   // Auto-stable : après migration toutes les transactions ont un accountId,
   // donc l'effet ne déclenche plus rien.
@@ -3237,13 +3272,23 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
   const goalsForSelectedMember = savingsGoals[selectedProfileId] ?? defaultGoalTemplate
 
+  const capCategories = useMemo(
+    () => [
+      ...categories,
+      ...customCategories
+        .filter((c) => c.kind === 'depense' && !c.archivedAt && !categories.includes(c.label))
+        .map((c) => c.label),
+    ],
+    [customCategories],
+  )
+
   const goalProgress = useMemo(
     () =>
-      categories.map((category) => {
+      capCategories.map((category) => {
         const spent = activeMonthTransactions
           .filter((item) => item.kind === 'depense' && item.category === category)
           .reduce((sum, item) => sum + item.amount, 0)
-        const target = goalsForSelectedMember[category]
+        const target = goalsForSelectedMember[category] ?? 0
 
         return {
           category,
@@ -3252,7 +3297,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
           rate: target > 0 ? Math.min(100, (spent / target) * 100) : 0,
         }
       }),
-    [activeMonthTransactions, goalsForSelectedMember],
+    [activeMonthTransactions, goalsForSelectedMember, capCategories],
   )
 
 
@@ -4126,14 +4171,14 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
         apiKey: anthropicKey || undefined,
         maxTokens: 120,
         system:
-          'Tu classes une dépense de budget familial français. Réponds UNIQUEMENT un objet JSON de la forme {"category": "...", "tags": ["..."], "icon": "🛒"} sans autre texte. category doit être exactement une valeur parmi: ' + allExpenseCategories.join(', ') + '. tags: 0 à 3 étiquettes courtes en minuscules, utiles et non redondantes avec la catégorie, sinon tableau vide. icon: UN SEUL emoji représentant au mieux le marchand ou la dépense (jamais de texte).',
+          'Tu classes une dépense de budget familial français. Réponds UNIQUEMENT un objet JSON de la forme {"category": "...", "tags": ["..."], "icon": "🛒"} sans autre texte. category doit être exactement une valeur parmi: ' + expenseCategoryLabels.join(', ') + '. tags: 0 à 3 étiquettes courtes en minuscules, utiles et non redondantes avec la catégorie, sinon tableau vide. icon: UN SEUL emoji représentant au mieux le marchand ou la dépense (jamais de texte).',
         messages: [{ role: 'user', content: label }],
       })
       const match = /\{[\s\S]*\}/.exec(text)
       if (!match) return
       const parsed = JSON.parse(match[0]) as { category?: string; tags?: unknown; icon?: unknown }
       if (isValidTxIcon(parsed.icon)) quickAddAiIconRef.current = parsed.icon
-      const aiCategory = allExpenseCategories.includes(parsed.category as string)
+      const aiCategory = expenseCategoryLabels.includes(parsed.category as string)
         ? (parsed.category as Category)
         : null
       const aiTags = Array.isArray(parsed.tags)
@@ -6128,6 +6173,7 @@ Réponse attendue:
                       ['install', '📲', "Installer l'app"],
                       ['a11y', '♿', 'Accessibilité'],
                       ['profiles', '👥', 'Profils'],
+                      ['categories', '🏷️', 'Catégories'],
                       ['ai', '✨', 'Assistant IA'],
                     ],
                   },
@@ -6501,6 +6547,23 @@ Réponse attendue:
                     onOpenInstall={() => setSettingsSection('install')}
                     showToast={showToast}
                   />
+                ) : null}
+
+                {settingsSection === 'categories' ? (
+                  <div className="settings-section-grid settings-section-grid--single">
+                    <article className="glass-card settings-section-card form-panel">
+                      <div className="panel-title">
+                        <h2>Catégories</h2>
+                        <p>Créez vos propres catégories (Chien, Voiture, Études…), choisissez une icône et une couleur, ou personnalisez celles du catalogue. Elles apparaissent dans tous les sélecteurs et dans les plafonds par catégorie.</p>
+                      </div>
+                      <CategoriesPanel
+                        customCategories={customCategories}
+                        usage={categoryUsage(transactions, recurringRules)}
+                        onChange={setCustomCategories}
+                        onRename={renameCategoryEverywhere}
+                      />
+                    </article>
+                  </div>
                 ) : null}
 
                 {settingsSection === 'install' ? (
@@ -7370,22 +7433,18 @@ Réponse attendue:
             </label>
             <label>
               Catégorie
-              <select
+              <GroupedSearchSelect
                 value={form.category}
-                onChange={(event) =>
+                groups={form.kind === 'revenu' ? incomeCategoryGroups : expenseCategoryGroups}
+                selectAriaLabel="Catégorie"
+                onChange={(next) =>
                   setForm((previous) => ({
                     ...previous,
-                    category: event.target.value as Category,
-                    envelope: inferEnvelope(event.target.value as Category),
+                    category: next as Category,
+                    envelope: inferEnvelope(next as Category),
                   }))
                 }
-              >
-                {categories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <label>
               Profil
@@ -8624,8 +8683,11 @@ Réponse attendue:
       </div>
 
       {isActiveView('operations') ? (
-      <aside className="glass-card budget-advice-rail dashboard-right-rail ops-rail" aria-label="Repères dépenses">
-        <div className="ops-rail__section">{renderCashAdvice()}</div>
+      <div className="dashboard-right-rail ops-rail-stack" aria-label="Repères dépenses">
+        <aside className="glass-card budget-advice-rail ops-rail" aria-label="Assistant Cash">
+          <div className="ops-rail__section">{renderCashAdvice()}</div>
+        </aside>
+        <aside className="glass-card budget-advice-rail ops-rail" aria-label="À venir">
         <div className="ops-rail__section">
           <div className="ops-rail__week-head">
             <span>⏳ À venir · semaine du {upcomingCharges.rangeLabel}</span>
@@ -8652,6 +8714,8 @@ Réponse attendue:
             </ul>
           )}
         </div>
+        </aside>
+        <aside className="glass-card budget-advice-rail ops-rail" aria-label="Plus grosses dépenses">
         <div className="ops-rail__section">
           <p className="eyebrow">🔝 Plus grosses dépenses du mois</p>
           {topExpensesMonth.length === 0 ? (
@@ -8671,7 +8735,9 @@ Réponse attendue:
             </ul>
           )}
         </div>
+        </aside>
         {topTags.length > 0 ? (
+          <aside className="glass-card budget-advice-rail ops-rail" aria-label="Tags du mois">
           <div className="ops-rail__section">
             <p className="eyebrow">🏷️ Tags du mois</p>
             <div className="ops-rail__tags">
@@ -8683,8 +8749,9 @@ Réponse attendue:
             </div>
             <small className="ops-rail__hint">Un clic filtre la liste des transactions.</small>
           </div>
+          </aside>
         ) : null}
-      </aside>
+      </div>
       ) : null}
 
       {isActiveView('stats') ? (
@@ -8772,6 +8839,7 @@ Réponse attendue:
         rules={recurringRules}
         onChange={setRecurringRules}
         member={selectedProfileId}
+        categoryGroups={expenseCategoryGroups}
         onClose={() => setShowRecurringPanel(false)}
       />
     ) : null}
@@ -8807,6 +8875,7 @@ Réponse attendue:
         transactions={transactions}
         accounts={accounts}
         member={selectedProfileId}
+        categoryGroups={expenseCategoryGroups}
         onChange={setTransactions}
         onClose={() => setShowHistoryPanel(false)}
       />
@@ -8816,6 +8885,8 @@ Réponse attendue:
     {/* ── Ajout rapide de dépense depuis le calendrier ────────────── */}
     {quickAddDate ? (
       <QuickAddModal
+        expenseCategoryGroups={expenseCategoryGroups}
+        incomeCategoryGroups={incomeCategoryGroups}
         quickAddDate={quickAddDate}
         setQuickAddDate={setQuickAddDate}
         closeQuickAdd={closeQuickAdd}
