@@ -7,8 +7,19 @@ Deux circuits envoient des emails :
 | **Supabase Auth** (SMTP) | confirmation d'inscription, reset mot de passe, changement d'email | `noreply@mail.app.supabase.io` (SMTP Supabase par défaut, ~4 emails/h) | `Plan Financier <contact@protojo.fr>` via SMTP Resend |
 | **Fonctions Edge** (API Resend) | bienvenue, relance J+3, rapports, digest erreurs | secret `REPORT_FROM` (défaut code : `contact@protojo.fr`) | idem |
 
-Le logo (`https://planfinancier.app/logo.png`) est déjà dans le code des
-fonctions et dans les templates de [supabase-email-templates.md](supabase-email-templates.md).
+Le logo est **embarqué** dans les emails des fonctions (PNG 96×96 en base64,
+pièce jointe inline `cid:`) : il s'affiche même quand le client mail bloque le
+contenu distant (Apple Mail « Charger le contenu distant »). Les templates
+Supabase Auth ([supabase-email-templates.md](supabase-email-templates.md))
+référencent `https://planfinancier.app/logo.png` (le SMTP Auth n'accepte pas
+de pièce jointe).
+
+Le rapport par email (`send-report`) comprend : bonjour + comparaison avec la
+période précédente, dépensé / reçu / solde, répartition par catégorie avec
+barres, 5 plus grosses dépenses, détail des opérations (format détaillé),
+bouton « Ouvrir mon tableau de bord ». Le PDF joint reprend la même structure
+(bandeau, indicateurs, barres, tableau paginé).
+
 Il reste 3 actions côté dashboards, dans cet ordre.
 
 ## 1. Vérifier le domaine `protojo.fr` dans Resend (10 min)

@@ -106,3 +106,32 @@ par `demoMode`).
 - Expéditeur par défaut du code : `Plan Financier <contact@protojo.fr>`.
 - Marche à suivre dashboards (domaine Resend, secret `REPORT_FROM`, SMTP
   Supabase Auth) : [docs/emails-expediteur.md](emails-expediteur.md).
+
+---
+
+## Ajouts du 6 septembre (suite)
+
+### Tour guidé des fonctionnalités
+- `src/components/FeatureTour.tsx` + `src/lib/featureTourSteps.ts` : 8 étapes
+  (accueil, ajout rapide, Dépenses, Budget, Statistiques, Cash, Paramètres),
+  projecteur sur l'élément `data-tour="…"`, bulle explicative, « Passer le
+  tour », clavier (Échap, flèches). Rendu en portail vers `<body>` (un ancêtre
+  avec backdrop-filter décalerait le `position:fixed`).
+- Déclenché une fois par compte à la première connexion, après l'onboarding
+  et le budget (`plan-financier-feature-tour-done-v1`, dans l'espace local du
+  compte). Relançable : Paramètres → « Revoir le tour guidé ». Forçable avec
+  `?tour=1` (support, démo).
+- Étape dont la cible est absente (Cash non configuré) : sautée.
+- E2E `e2e/tour.e2e.ts` : alignement projecteur/cible, enchaînement, passage.
+
+### Accueil et statistiques
+- « PDF mensuel » retiré de l'accueil ; l'export est dans Statistiques
+  (« 📄 PDF du mois », à côté de « 📄 Semaines »).
+- Statuts de semaine vulgarisés partout (accueil, statistiques, push) :
+  ✅ Équilibrée · 📈 En progrès · 🏆 Record · ⚠️ À surveiller, avec une
+  légende sous le graphique des semaines.
+
+### Logos des marchands
+- ~200 domaines ajoutés (Sosh, RED, B&You, banques, assurances, énergie,
+  enseignes, restauration, transport, loisirs…). Un libellé inconnu garde
+  l'emoji de catégorie.

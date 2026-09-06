@@ -21,13 +21,15 @@ type Props = {
   statsWeekDaily: StatsDailyPoint[] | null
   statsChartRef: RefObject<HTMLDivElement | null>
   exportWeeklyStatsPdf: (week?: WeekStat) => Promise<void>
+  /** Export PDF du mois affiché (déplacé ici depuis l'accueil). */
+  exportMonthlyPdf: () => Promise<void>
 }
 
 /** Vue Statistiques : courbe hebdo dépenses vs revenus + semaine par semaine. */
 export function StatsView(props: Props) {
   const {
     statsMonth, setStatsMonth, statsSelectedWeek, setStatsSelectedWeek, todayIso, formatMonth,
-    statsViewData, statsMonthWeeks, statsWeekDaily, statsChartRef, exportWeeklyStatsPdf,
+    statsViewData, statsMonthWeeks, statsWeekDaily, statsChartRef, exportWeeklyStatsPdf, exportMonthlyPdf,
   } = props
   // Sélecteur mois + année (popover) : état purement local à la vue.
   const [statsPickerOpen, setStatsPickerOpen] = useState(false)
@@ -107,10 +109,18 @@ export function StatsView(props: Props) {
                 </button>
               ) : null}
               <button type="button" className="hero-cta-button stats-export-btn" onClick={() => void exportWeeklyStatsPdf()}>
-                📄 Exporter
+                📄 Semaines
+              </button>
+              <button type="button" className="hero-cta-button stats-export-btn" onClick={() => void exportMonthlyPdf()}>
+                📄 PDF du mois
               </button>
             </div>
           </div>
+          <p className="stats-week-legend">
+            <strong>Lecture des semaines :</strong> ✅ Équilibrée = vous avez dépensé moins que reçu ·
+            📈 En progrès = plus de reste que la semaine précédente · 🏆 Record = votre meilleure semaine ·
+            ⚠️ À surveiller = vous avez dépensé plus que reçu.
+          </p>
           {statsSelectedWeek && statsWeekDaily ? (
             <div className="stats-week-detail-bar">
               <strong>
@@ -199,10 +209,10 @@ export function StatsView(props: Props) {
                     {week.net >= 0 ? '+' : ''}{euroFormatter.format(week.net)}
                   </strong>
                   <span className={`stats-week-type stats-week-type--${week.type}`}>
-                    {week.type === 'danger' ? '⚠️ Danger'
-                      : week.type === 'highest' ? '🏆 Highest ever'
-                      : week.type === 'up' ? '📈 Up'
-                      : 'Normal'}
+                    {week.type === 'danger' ? '⚠️ À surveiller'
+                      : week.type === 'highest' ? '🏆 Record'
+                      : week.type === 'up' ? '📈 En progrès'
+                      : '✅ Équilibrée'}
                   </span>
                 </button>
                 <button

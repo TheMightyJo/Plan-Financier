@@ -1,7 +1,7 @@
 // Edge Function : send-push
 // ---------------------------------------------------------------------------
 // Bilan de la semaine en notification push (Web Push, VAPID), le dimanche
-// soir : « Votre semaine : Normal ✅ — +180 € ». Calculé côté serveur à
+// soir : « Votre semaine : Équilibrée ✅ — +180 € ». Calculé côté serveur à
 // partir des transactions synchronisées des 7 derniers jours (et des 7
 // précédents pour le statut « Up »).
 //
@@ -75,7 +75,7 @@ const weeklyMessage = async (admin: ReturnType<typeof createClient>, userId: str
   if (week.spent === 0 && week.income === 0) return null
   const net = week.income - week.spent
   const previousNet = previous.income - previous.spent
-  const status = net < 0 ? { label: 'Danger', icon: '⚠️' } : net > previousNet ? { label: 'Up', icon: '📈' } : { label: 'Normal', icon: '✅' }
+  const status = net < 0 ? { label: 'À surveiller', icon: '⚠️' } : net > previousNet ? { label: 'En progrès', icon: '📈' } : { label: 'Équilibrée', icon: '✅' }
   return {
     title: `Votre semaine : ${status.label} ${status.icon}`,
     body: `${net >= 0 ? '+' : ''}${euro(net)} · dépensé ${euro(week.spent)}, reçu ${euro(week.income)}`,
