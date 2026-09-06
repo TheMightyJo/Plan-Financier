@@ -319,7 +319,6 @@ const MERCHANT_DOMAINS: Array<[keywords: string[], domain: string]> = [
   [['fnac spectacles', 'ticketmaster'], 'ticketmaster.fr'],
   // Enfants, école, santé
   [['doctolib'], 'doctolib.fr'],
-  [['pharmacie'], 'ordre.pharmacien.fr'],
   [['crous'], 'lescrous.fr'],
   // Voyages
   [['abritel', 'vrbo'], 'abritel.fr'],
@@ -357,3 +356,48 @@ export const suggestMerchantDomain = (label: string): string | null => {
  * redirection — la CSP img-src autorise https://*.gstatic.com). */
 export const merchantFaviconUrl = (domain: string): string =>
   `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${encodeURIComponent(domain)}&size=64`
+
+// ── Domaine deviné à partir du libellé ─────────────────────────────────────
+// Hors dictionnaire, on tente « marque.fr » puis « marque.com » : le service
+// favicon répond 404 pour un domaine inconnu (repli emoji via onError), et
+// l'icône réelle sinon. Les libellés génériques (« Courses », « Loyer »…) ne
+// donnent lieu à aucune tentative.
+
+/** Préfixes bancaires / intermédiaires de paiement, sans valeur de marque. */
+const PAYMENT_NOISE = new Set([
+  'cb', 'carte', 'prlv', 'prelevement', 'prelev', 'vir', 'virement', 'sepa', 'paypal', 'sumup', 'zettle',
+  'stripe', 'sq', 'facture', 'achat', 'paiement', 'dab', 'retrait', 'echeance', 'abonnement', 'mensuel',
+  'sarl', 'sas', 'sa', 'eu', 'fr', 'france', 'lu', 'ie', 'ltd', 'inc', 'gmbh', 'de', 'du', 'la', 'le',
+  'les', 'chez', 'et', 'and', 'the', 'com', 'www', 'online', 'internet', 'web', 'paris', 'lyon',
+])
+
+/** Libellés génériques : pas de marque à deviner. */
+const GENERIC_LABELS = new Set([
+  'courses', 'loyer', 'restaurant', 'resto', 'cinema', 'cine', 'pharmacie', 'essence', 'carburant',
+  'salaire', 'paie', 'cantine', 'electricite', 'eau', 'gaz', 'mobile', 'assurance', 'impots', 'impot',
+  'taxe', 'cadeau', 'cadeaux', 'vacances', 'hotel', 'train', 'metro', 'bus', 'taxi', 'parking', 'peage',
+  'ecole', 'medecin', 'docteur', 'dentiste', 'coiffeur', 'boulangerie', 'marche', 'supermarche', 'loisirs',
+  'sport', 'remboursement', 'frais', 'credit', 'pret', 'epargne', 'livret', 'transfert', 'transfer',
+  'divers', 'autre', 'nourriture', 'repas', 'dejeuner', 'diner', 'cafe', 'bar', 'pizza', 'kebab', 'sushi',
+  'boucherie', 'poissonnerie', 'fleuriste', 'tabac', 'presse', 'jouets', 'vetements', 'chaussures',
+  'garage', 'controle', 'amende', 'mutuelle', 'creche', 'nounou', 'garde', 'anniversaire', 'noel',
+  'menage', 'jardinage', 'bricolage', 'meubles', 'travaux', 'deco', 'animaux', 'veterinaire', 'coiffure',
+  'kine', 'osteo', 'psy', 'opticien', 'lunettes', 'lentilles', 'don', 'dons', 'pourboire', 'cheque',
+])
+
+/** Candidats de domaine pour un libellé hors dictionnaire (vide si générique). */
+export const guessMerchantDomains = (label: string): string[] => {
+  const tokens = normalizeText(label)
+    .split(' ')
+    .filter((token) => token.length >= 3 && !/\d/.test(token) && !PAYMENT_NOISE.has(token))
+  if (tokens.length === 0) return []
+  if (GENERIC_LABELS.has(tokens[0])) return []
+  const first = tokens[0]
+  const candidates: string[] = []
+  if (tokens.length >= 2 && !GENERIC_LABELS.has(tokens[1])) {
+    const joined = `${first}${tokens[1]}`
+    candidates.push(`${joined}.fr`, `${joined}.com`, `${first}-${tokens[1]}.fr`)
+  }
+  candidates.push(`${first}.fr`, `${first}.com`)
+  return candidates
+}
