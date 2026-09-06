@@ -1015,6 +1015,9 @@ function App() {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('profiles')
   // Sélecteur photo/avatar du profil : s'ouvre en touchant la photo.
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false)
+  // Paramètres → Profils : formulaire d'ajout replié, confirmation de suppression inline.
+  const [addProfileOpen, setAddProfileOpen] = useState(false)
+  const [deleteProfileAsk, setDeleteProfileAsk] = useState(false)
   // PWA : bouton « Installer » natif disponible (Chrome/Edge/Android).
   const [installAvailable, setInstallAvailable] = useState(() => canPromptInstall())
   useEffect(() => onInstallAvailabilityChange(() => setInstallAvailable(canPromptInstall())), [])
@@ -2917,6 +2920,16 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
         : activeTransactions.filter((item) => item.envelope === selectedEnvelope),
     [activeTransactions, selectedEnvelope],
   )
+
+  // Dépenses du mois courant par profil (liste des profils dans Paramètres).
+  const spentByProfileThisMonth = useMemo(() => {
+    const totals: Record<string, number> = {}
+    for (const tx of transactions) {
+      if (tx.kind !== 'depense' || !tx.date.startsWith(currentMonth)) continue
+      totals[tx.member] = (totals[tx.member] ?? 0) + tx.amount
+    }
+    return totals
+  }, [transactions, currentMonth])
 
   const activeMonthTransactions = useMemo(
     // Le mois de budget prime sur le mois de la date : une dépense imputée
@@ -6229,42 +6242,241 @@ Réponse attendue:
                 {settingsSuccess ? <p className="auth-success">{settingsSuccess}</p> : null}
 
                 {settingsSection === 'profiles' ? (
+                  <>
                   <div className="settings-section-grid">
                     <article className="glass-card settings-section-card form-panel">
                       <div className="panel-title">
                         <h2>
-                          Profils
-                          <InfoHint text="Après l'ajout, basculez de profil via les cercles en haut du menu — chaque profil a son budget et ses dépenses." />
+                          Vos profils
+                          <InfoHint text="Un profil = un budget et des dépenses séparés (vous, votre conjoint·e, un enfant, un projet). Vous basculez de l'un à l'autre via les cercles en haut du menu." />
                         </h2>
-                        <p>Crée, mets à jour et désigne le profil par défaut depuis un espace dédié.</p>
+                        <p>Chaque profil a son budget mensuel et ses opérations. Touchez un profil pour le modifier.</p>
                       </div>
-                      <form onSubmit={handleAddProfile}>
-                        <label>
-                          Nouveau profil
-                          <input
-                            value={settingsForm.newProfileName}
-                            onChange={(event) => updateSettingsValue('newProfileName', event.target.value)}
-                            placeholder="Ex: Pro, Perso, Studio"
-                          />
-                        </label>
-                        <label>
-                          Budget mensuel du profil
-                          <input
-                            type="number"
-                            min="200"
-                            value={settingsForm.newProfileBudget}
-                            onChange={(event) => updateSettingsValue('newProfileBudget', event.target.value)}
-                          />
-                        </label>
-                        <button type="submit">Ajouter le profil</button>
-                      </form>
-                      <div className="family-invite-block">
-                        <h3>🤝 Inviter un proche</h3>
+                      <ul className="profiles-list" aria-label="Profils">
+                        {profiles.map((profile) => {
+                          const spent = spentByProfileThisMonth[profile.id] ?? 0
+                          const ratio = profile.monthlyBudget > 0 ? Math.min(100, Math.round((spent / profile.monthlyBudget) * 100)) : 0
+                          const isManaged = profile.id === managedProfile.id
+                          return (
+                            <li key={profile.id}>
+                              <button
+                                type="button"
+                                className={`profile-row${isManaged ? ' profile-row--selected' : ''}`}
+                                onClick={() => {
+                                  handleManagedProfileSelection(profile.id)
+                                  setDeleteProfileAsk(false)
+                                }}
+                                aria-pressed={isManaged}
+                              >
+                                {profileAvatarNode(profile)}
+                                <span className="profile-row__main">
+                                  <span className="profile-row__name">
+                                    <strong>{profile.name}</strong>
+                                    {profile.id === selectedProfileId ? <span className="profile-badge profile-badge--active">Actif</span> : null}
+                                    {profile.id === defaultProfileId ? <span className="profile-badge">Par défaut</span> : null}
+                                  </span>
+                                  <span className="profile-row__budget">
+                                    {profile.monthlyBudget > 0
+                                      ? `${euroFormatter.format(spent)} dépensés sur ${euroFormatter.format(profile.monthlyBudget)} ce mois-ci`
+                                      : 'Budget mensuel à définir'}
+                                  </span>
+                                  {profile.monthlyBudget > 0 ? (
+                                    <span className="kpi-progress-track profile-row__track" aria-hidden="true">
+                                      <span className={`kpi-progress-fill${ratio >= 100 ? ' profile-row__fill--over' : ''}`} style={{ width: `${ratio}%` }} />
+                                    </span>
+                                  ) : null}
+                                </span>
+                                <span className="profile-row__chevron" aria-hidden="true">›</span>
+                              </button>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                      {addProfileOpen ? (
+                        <form onSubmit={(event) => { handleAddProfile(event); setAddProfileOpen(false) }} className="profile-add-form">
+                          <h3>Nouveau profil</h3>
+                          <div className="goals-form-row">
+                            <label>
+                              Nom
+                              <input
+                                value={settingsForm.newProfileName}
+                                onChange={(event) => updateSettingsValue('newProfileName', event.target.value)}
+                                placeholder="Ex : Camille, Enfants, Pro"
+                                autoFocus
+                              />
+                            </label>
+                            <label>
+                              Budget mensuel (€)
+                              <input
+                                type="number"
+                                min="200"
+                                value={settingsForm.newProfileBudget}
+                                onChange={(event) => updateSettingsValue('newProfileBudget', event.target.value)}
+                              />
+                            </label>
+                          </div>
+                          <div className="settings-inline-actions">
+                            <button type="submit">Créer le profil</button>
+                            <button type="button" className="ghost-button" onClick={() => setAddProfileOpen(false)}>
+                              Annuler
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
+                        <button type="button" className="ghost-button profile-add-btn" onClick={() => setAddProfileOpen(true)}>
+                          <Plus size={16} /> Ajouter un profil
+                        </button>
+                      )}
+                    </article>
+
+                    <article className="glass-card settings-section-card form-panel">
+                      <div className="panel-title">
+                        <h2>Modifier « {managedProfile.name} »</h2>
+                        <p>Photo, nom et budget mensuel de ce profil.</p>
+                      </div>
+                      <form onSubmit={handleUpdateManagedProfile}>
+                        <div className="avatar-editor">
+                          <span className="avatar-editor__label">Photo ou avatar</span>
+                          <div className="avatar-editor__row">
+                            <div className="avatar-editor__current avatar-editor__current--large">
+                              <button
+                                type="button"
+                                className="avatar-editor__avatar-btn"
+                                onClick={() => setAvatarPickerOpen((open) => !open)}
+                                aria-expanded={avatarPickerOpen}
+                                aria-label="Changer la photo ou l'avatar du profil"
+                              >
+                                {profileAvatarNode(managedProfile)}
+                              </button>
+                            </div>
+                            <div className="avatar-editor__actions">
+                              <button type="button" className="ghost-button" onClick={() => setAvatarPickerOpen((open) => !open)}>
+                                📷 {managedProfile.avatar ? 'Changer' : 'Choisir une photo ou un avatar'}
+                              </button>
+                              {managedProfile.avatar ? (
+                                <button
+                                  type="button"
+                                  className="ghost-button"
+                                  onClick={() => {
+                                    setProfileAvatar(managedProfile.id, undefined)
+                                    setAvatarPickerOpen(false)
+                                  }}
+                                >
+                                  Retirer
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                          {avatarPickerOpen ? (
+                            <div className="avatar-editor__picker">
+                              <label className="ghost-button avatar-upload-btn">
+                                📷 Importer une photo
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(event) => {
+                                    void handleAvatarUpload(event.target.files?.[0])
+                                    event.target.value = ''
+                                    setAvatarPickerOpen(false)
+                                  }}
+                                />
+                              </label>
+                              <span className="avatar-editor__label avatar-editor__label--sub">
+                                … ou choisissez un avatar (libres de droit)
+                              </span>
+                              <div className="avatar-preset-grid" role="listbox" aria-label="Avatars proposés">
+                                {MONEY_AVATAR_PRESETS.map((emoji) => (
+                                  <button
+                                    key={emoji}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={managedProfile.avatar === `emoji:${emoji}`}
+                                    className={`avatar-preset${managedProfile.avatar === `emoji:${emoji}` ? ' avatar-preset--active' : ''}`}
+                                    onClick={() => {
+                                      setProfileAvatar(managedProfile.id, `emoji:${emoji}`)
+                                      setAvatarPickerOpen(false)
+                                    }}
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="goals-form-row">
+                          <label>
+                            Nom du profil
+                            <input
+                              value={settingsForm.manageProfileName}
+                              onChange={(event) => updateSettingsValue('manageProfileName', event.target.value)}
+                            />
+                          </label>
+                          <label>
+                            Budget mensuel (€)
+                            <input
+                              type="number"
+                              min="200"
+                              step="50"
+                              value={settingsForm.manageProfileBudget}
+                              onChange={(event) => updateSettingsValue('manageProfileBudget', event.target.value)}
+                            />
+                          </label>
+                        </div>
                         <p className="auth-note">
-                          Cette personne recevra un email pour créer son propre compte. Une fois
-                          l'invitation acceptée, un onglet « Famille » fusionnera vos budgets
-                          et dépenses (chacun garde la main sur les siens).
+                          💡 Repère : vos revenus mensuels moins ce que vous voulez épargner. Toutes les jauges, alertes et la prévision de fin de mois s'appuient sur ce montant.
                         </p>
+                        <div className="settings-inline-actions">
+                          <button type="submit">Enregistrer</button>
+                          {managedProfile.id !== defaultProfileId ? (
+                            <button type="button" className="ghost-button" onClick={handleSetDefaultProfile}>
+                              Définir par défaut
+                            </button>
+                          ) : null}
+                          {profiles.length > 1 && !deleteProfileAsk ? (
+                            <button type="button" className="danger-button" onClick={() => setDeleteProfileAsk(true)}>
+                              Supprimer…
+                            </button>
+                          ) : null}
+                        </div>
+                        {deleteProfileAsk ? (
+                          <div className="profile-delete-confirm" role="alertdialog" aria-label="Confirmer la suppression du profil">
+                            <p>
+                              Supprimer « {managedProfile.name} » et ses{' '}
+                              <strong>{transactions.filter((tx) => tx.member === managedProfile.id).length} opération{transactions.filter((tx) => tx.member === managedProfile.id).length > 1 ? 's' : ''}</strong>
+                              {' '}? Cette action est définitive.
+                            </p>
+                            <div className="settings-inline-actions">
+                              <button
+                                type="button"
+                                className="danger-button"
+                                onClick={() => {
+                                  handleDeleteManagedProfile()
+                                  setDeleteProfileAsk(false)
+                                }}
+                              >
+                                Oui, supprimer
+                              </button>
+                              <button type="button" className="ghost-button" onClick={() => setDeleteProfileAsk(false)}>
+                                Annuler
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+                        {managedProfile.id === defaultProfileId ? (
+                          <p className="auth-note">Ce profil est le profil par défaut : c'est lui qui s'ouvre au lancement.</p>
+                        ) : null}
+                      </form>
+                    </article>
+                  </div>
+
+                  <div className="settings-section-grid settings-section-grid--single">
+                    <article className="glass-card settings-section-card form-panel">
+                      <div className="panel-title">
+                        <h2>🤝 Famille</h2>
+                        <p>Invitez un proche : il crée son propre compte, et un onglet « Famille » réunit vos budgets et dépenses (chacun garde la main sur les siens).</p>
+                      </div>
+                      <div className="family-invite-block">
                         <div className="family-invite-row">
                           <input
                             type="email"
@@ -6336,129 +6548,8 @@ Réponse attendue:
                         ) : null}
                       </div>
                     </article>
-
-                    <article className="glass-card settings-section-card form-panel">
-                      <div className="panel-title">
-                        <h2>
-                          Profil actif
-                          <InfoHint text="Le profil par défaut sert de filet de sécurité : si un profil est supprimé, ses données lui sont rattachées." />
-                        </h2>
-                        <p>Réglages du profil sélectionné et choix du profil de repli.</p>
-                      </div>
-                      <form onSubmit={handleUpdateManagedProfile}>
-                        <label>
-                          Profil à gérer
-                          <select
-                            value={settingsForm.manageProfileId}
-                            onChange={(event) => handleManagedProfileSelection(event.target.value)}
-                          >
-                            {profiles.map((profile) => (
-                              <option key={profile.id} value={profile.id}>
-                                {profile.name}
-                                {profile.id === defaultProfileId ? ' (défaut)' : ''}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <div className="avatar-editor">
-                          <span className="avatar-editor__label">Photo du profil</span>
-                          <div className="avatar-editor__row">
-                            <div className="avatar-editor__current">
-                              <button
-                                type="button"
-                                className="avatar-editor__avatar-btn"
-                                onClick={() => setAvatarPickerOpen((open) => !open)}
-                                aria-expanded={avatarPickerOpen}
-                                aria-label="Changer la photo ou l'avatar du profil"
-                              >
-                                {profileAvatarNode(managedProfile)}
-                                <span className="avatar-editor__edit-badge" aria-hidden="true">📷</span>
-                              </button>
-                              {managedProfile.avatar ? (
-                                <button
-                                  type="button"
-                                  className="avatar-editor__remove"
-                                  onClick={() => {
-                                    setProfileAvatar(managedProfile.id, undefined)
-                                    setAvatarPickerOpen(false)
-                                  }}
-                                  aria-label="Retirer la photo et revenir aux initiales"
-                                  title="Revenir aux initiales"
-                                >
-                                  <X size={12} />
-                                </button>
-                              ) : null}
-                            </div>
-                            <span className="avatar-editor__hint">
-                              Touchez la photo pour la changer
-                              {managedProfile.avatar ? ' — la croix la retire.' : '.'}
-                            </span>
-                          </div>
-                          {avatarPickerOpen ? (
-                            <div className="avatar-editor__picker">
-                              <label className="ghost-button avatar-upload-btn">
-                                📷 Importer une photo
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  onChange={(event) => {
-                                    void handleAvatarUpload(event.target.files?.[0])
-                                    event.target.value = ''
-                                    setAvatarPickerOpen(false)
-                                  }}
-                                />
-                              </label>
-                              <span className="avatar-editor__label avatar-editor__label--sub">
-                                … ou choisissez un avatar (libres de droit)
-                              </span>
-                              <div className="avatar-preset-grid" role="listbox" aria-label="Avatars proposés">
-                                {MONEY_AVATAR_PRESETS.map((emoji) => (
-                                  <button
-                                    key={emoji}
-                                    type="button"
-                                    role="option"
-                                    aria-selected={managedProfile.avatar === `emoji:${emoji}`}
-                                    className={`avatar-preset${managedProfile.avatar === `emoji:${emoji}` ? ' avatar-preset--active' : ''}`}
-                                    onClick={() => {
-                                      setProfileAvatar(managedProfile.id, `emoji:${emoji}`)
-                                      setAvatarPickerOpen(false)
-                                    }}
-                                  >
-                                    {emoji}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                        <label>
-                          Nom du profil
-                          <input
-                            value={settingsForm.manageProfileName}
-                            onChange={(event) => updateSettingsValue('manageProfileName', event.target.value)}
-                          />
-                        </label>
-                        <label>
-                          Budget mensuel
-                          <input
-                            type="number"
-                            min="200"
-                            value={settingsForm.manageProfileBudget}
-                            onChange={(event) => updateSettingsValue('manageProfileBudget', event.target.value)}
-                          />
-                        </label>
-                        <div className="settings-inline-actions">
-                          <button type="submit">Mettre à jour</button>
-                          <button type="button" className="ghost-button" onClick={handleSetDefaultProfile}>
-                            Définir par défaut
-                          </button>
-                          <button type="button" className="danger-button" onClick={handleDeleteManagedProfile}>
-                            Supprimer
-                          </button>
-                        </div>
-                      </form>
-                    </article>
                   </div>
+                  </>
                 ) : null}
 
                 {settingsSection === 'ai' ? (
