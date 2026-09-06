@@ -3114,6 +3114,144 @@ h1 {
   background: var(--kpi-value-accent);
 }
 
+/* ── Paramètres → Profils ─────────────────────────────────────────── */
+.profiles-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.form-panel .profiles-list .profile-row,
+.profile-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.8rem;
+  align-items: center;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--surface);
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: none;
+  font: inherit;
+  margin: 0;
+}
+
+.form-panel .profiles-list .profile-row:hover,
+.profile-row:hover {
+  background: var(--surface-soft, var(--bg-2));
+}
+
+.form-panel .profiles-list .profile-row--selected,
+.profile-row--selected {
+  border-color: var(--accent, #8B6C52);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #8B6C52) 25%, transparent);
+}
+
+.profile-row .member-avatar {
+  width: 2.6rem;
+  height: 2.6rem;
+  font-size: 1rem;
+}
+
+.profile-row__main {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.profile-row__name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.profile-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+}
+
+.profile-badge--active {
+  color: var(--pf-color-positive-text, #15803d);
+  border-color: var(--pf-color-positive-border, #86efac);
+  background: var(--pf-color-positive-bg, #f0fdf4);
+}
+
+.profile-row__budget {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.profile-row__track {
+  max-width: 220px;
+}
+
+.profile-row__fill--over {
+  background: var(--pf-color-negative-text, #b91c1c);
+}
+
+.profile-row__chevron {
+  color: var(--text-2);
+  font-size: 1.3rem;
+}
+
+.form-panel .profile-add-btn {
+  margin-top: 0.7rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.profile-add-form {
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border-soft, var(--border));
+}
+
+.profile-add-form h3 {
+  margin: 0 0 0.5rem;
+  font-size: var(--text-md, 1rem);
+}
+
+.avatar-editor__current--large .member-avatar {
+  width: 4.2rem;
+  height: 4.2rem;
+  font-size: 1.5rem;
+}
+
+.avatar-editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.profile-delete-confirm {
+  margin-top: 0.6rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 0.8rem;
+  border: 1px solid var(--pf-color-negative-border, #fecaca);
+  background: var(--pf-color-negative-bg, #fef2f2);
+  display: grid;
+  gap: 0.5rem;
+}
+
+.profile-delete-confirm p {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
 /* ── Paramètres → Catégories ─────────────────────────────────────── */
 .categories-panel {
   display: grid;
