@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { buildMonthGrid, shiftDay, shiftMonth } from '../lib/calendar'
 import { getOccurrencesBetween } from '../lib/recurring'
 import { euroFormatter } from '../lib/format'
-import { colorForCategory } from '../lib/categories'
+import { categoryEmoji } from '../lib/categories'
+import { MerchantLogo } from './MerchantLogo'
 import type { RecurringRule, Transaction } from '../types'
 
 type CalendarView = 'day' | 'month' | 'year'
@@ -77,7 +78,7 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
   // Échéances récurrentes À VENIR (strictement après aujourd'hui) sur la
   // plage affichée — montrées en « prévu », sans compter dans les totaux.
   const plannedByDay = useMemo(() => {
-    const map = new Map<string, { total: number; items: Array<{ label: string; amount: number; kind: Transaction['kind'] }> }>()
+    const map = new Map<string, { total: number; items: Array<{ label: string; amount: number; kind: Transaction['kind']; category: string }> }>()
     if (recurringRules.length === 0) return map
     const gridStart = weeks[0]?.days[0]?.date
     const gridEnd = weeks.at(-1)?.days.at(-1)?.date
@@ -97,7 +98,7 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
         if (materialized.has(`${rule.id}|${date}`)) continue
         const entry = map.get(date) ?? { total: 0, items: [] }
         entry.total += rule.kind === 'depense' ? rule.amount : 0
-        entry.items.push({ label: rule.label, amount: rule.amount, kind: rule.kind })
+        entry.items.push({ label: rule.label, amount: rule.amount, kind: rule.kind, category: rule.category })
         map.set(date, entry)
       }
     }
@@ -273,7 +274,7 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
                     aria-label={`Modifier ${tx.label}`}
                     title={onEditExpense ? 'Appuyer pour modifier' : undefined}
                   >
-                    <span className="recent-tx-dot" style={{ background: colorForCategory(tx.category) }} aria-hidden="true" />
+                    <MerchantLogo label={tx.label} icon={tx.icon} fallbackIcon={categoryEmoji(tx.category)} className="expense-calendar__day-icon" />
                     <span className="expense-calendar__day-label">
                       {tx.label}
                       {tx.recurringRuleId ? <span className="recurring-badge" title="Générée automatiquement">🔁</span> : null}
@@ -292,16 +293,21 @@ export function ExpenseCalendar({ month, transactions, onMonthChange, today, onA
           )}
           {(plannedByDay.get(selectedDay)?.items.length ?? 0) > 0 ? (
             <div className="expense-calendar__planned-block">
-              <p className="expense-calendar__planned-title">⏳ Prévu ce jour (charges récurrentes)</p>
+              <p className="expense-calendar__planned-title">
+                <span>⏳ Prévu ce jour · charges récurrentes</span>
+                <strong className="expense-calendar__spent">−{euroFormatter.format(plannedByDay.get(selectedDay)!.total)}</strong>
+              </p>
               <ul className="expense-calendar__day-list">
                 {plannedByDay.get(selectedDay)!.items.map((item, index) => (
-                  <li key={`${item.label}-${index}`} className="expense-calendar__planned-row">
-                    <span className="recurring-badge" aria-hidden="true">🔁</span>
-                    <span className="expense-calendar__day-label">{item.label}</span>
-                    <span className="expense-calendar__day-cat">automatique</span>
-                    <span className={item.kind === 'depense' ? 'expense-calendar__spent' : 'expense-calendar__income'}>
-                      {item.kind === 'depense' ? '−' : '+'}{euroFormatter.format(item.amount)}
-                    </span>
+                  <li key={`${item.label}-${index}`}>
+                    <div className="expense-calendar__day-row expense-calendar__planned-row" title="Sera ajoutée automatiquement ce jour-là">
+                      <MerchantLogo label={item.label} fallbackIcon={categoryEmoji(item.category)} className="expense-calendar__day-icon" />
+                      <span className="expense-calendar__day-label">{item.label}</span>
+                      <span className="expense-calendar__day-cat">🔁 prévu</span>
+                      <span className={item.kind === 'depense' ? 'expense-calendar__spent' : 'expense-calendar__income'}>
+                        {item.kind === 'depense' ? '−' : '+'}{euroFormatter.format(item.amount)}
+                      </span>
+                    </div>
                   </li>
                 ))}
               </ul>
