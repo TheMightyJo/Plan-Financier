@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from '../supabase'
 import {
+  ensureUuid,
   transactionFromRow,
   transactionToRow,
   type TransactionRow,
@@ -87,4 +88,40 @@ export const transactionsSupabaseRepo: SyncRepo<Transaction> = {
     }
     return { ok: true }
   },
+}
+
+/**
+ * Suppression douce (deleted_at) de plusieurs opérations de l'utilisateur :
+ * c'est ce marqueur que les autres appareils lisent pour retirer la ligne.
+ */
+export const softDeleteTransactions = async (ids: Array<string | number>): Promise<SyncResult> => {
+  const auth = await requireUser()
+  if (!auth || !auth.result.ok) return auth?.result ?? { ok: false, error: 'unknown' }
+  if (ids.length === 0) return { ok: true }
+  const { error } = await supabase
+    .from(TABLE)
+    .update({ deleted_at: new Date().toISOString() })
+    .in('id', ids.map(ensureUuid))
+    .eq('created_by_user_id', auth.userId)
+    .is('deleted_at', null)
+  if (error) {
+    return { ok: false, error: mapSupabaseError(error.message), message: error.message }
+  }
+  return { ok: true }
+}
+
+/** Identifiants (uuid) des opérations supprimées sur un autre appareil. */
+export const listDeletedTransactionIds = async (): Promise<{ data: string[]; result: SyncResult }> => {
+  const auth = await requireUser()
+  if (!auth || !auth.result.ok) return { data: [], result: auth?.result ?? { ok: false, error: 'unknown' } }
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select('id')
+    .eq('created_by_user_id', auth.userId)
+    .not('deleted_at', 'is', null)
+    .limit(5000)
+  if (error) {
+    return { data: [], result: { ok: false, error: mapSupabaseError(error.message), message: error.message } }
+  }
+  return { data: (data ?? []).map((row) => String((row as { id: string }).id)), result: { ok: true } }
 }

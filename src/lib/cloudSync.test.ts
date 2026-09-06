@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { mergeById } from './cloudSync'
+import { applyDeletions, mergeById } from './cloudSync'
+import { ensureUuid } from './supabaseMappers'
 
 describe('mergeById', () => {
   it('union : local + entrées distantes inconnues', () => {
@@ -30,5 +31,19 @@ describe('mergeById', () => {
     const pull = mergeById<{ id: number }>([], [{ id: 1 }, { id: 2 }])
     expect(pull.merged).toHaveLength(2)
     expect(pull.addedFromRemote).toBe(2)
+  })
+})
+
+describe('applyDeletions', () => {
+  it('retire les opérations supprimées ailleurs (ids uuid dérivés)', () => {
+    const items = [{ id: 1 }, { id: 2 }, { id: 3 }]
+    const { kept, removed } = applyDeletions(items, new Set([ensureUuid(2)]))
+    expect(kept.map((i) => i.id)).toEqual([1, 3])
+    expect(removed).toBe(1)
+  })
+
+  it('renvoie la même référence sans suppression', () => {
+    const items = [{ id: 1 }]
+    expect(applyDeletions(items, new Set()).kept).toBe(items)
   })
 })
