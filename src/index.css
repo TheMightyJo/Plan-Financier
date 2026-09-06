@@ -3556,8 +3556,20 @@ h1 {
 
 .forecast-card {
   margin: 0 0 1rem;
+  padding: 1.35rem 1.6rem 1.3rem;
   display: grid;
-  gap: 0.8rem;
+  gap: 1.1rem;
+}
+
+@media (max-width: 760px) {
+  .forecast-card {
+    padding: 1.1rem 1rem 1rem;
+    gap: 0.9rem;
+  }
+}
+
+.forecast-card .panel-title {
+  margin-bottom: 0;
 }
 
 .forecast-card .panel-title {
@@ -3656,7 +3668,7 @@ h1 {
 .forecast-figures > div {
   display: grid;
   gap: 0.15rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.75rem 0.95rem;
   border-radius: 0.75rem;
   background: var(--surface-soft, var(--bg-2));
 }
@@ -3694,7 +3706,7 @@ h1 {
   grid-template-columns: 4.5rem 1fr auto;
   gap: 0.6rem;
   align-items: center;
-  padding: 0.4rem 0.6rem;
+  padding: 0.5rem 0.85rem;
   border-radius: 0.6rem;
   background: var(--surface-soft, var(--bg-2));
 }
