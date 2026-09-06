@@ -37,7 +37,7 @@ function Sparkline({ forecast }: { forecast: Forecast }) {
   }, [])
 
   const H = 120
-  const PAD_X = 8
+  const PAD_X = 16
   const PAD_TOP = 22
   const PAD_BOTTOM = 22
   const values = forecast.points.map((p) => p.projected)
@@ -93,10 +93,10 @@ function Sparkline({ forecast }: { forecast: Forecast }) {
           )
         })}
         {/* Montants de départ et d'arrivée */}
-        <text x={x(0)} y={y(values[0]) - 8} className="forecast-spark__value" textAnchor="start">
+        <text x={x(0)} y={y(values[0]) - 10} className="forecast-spark__value" textAnchor="start">
           {euroFormatter.format(values[0])}
         </text>
-        <text x={x(last)} y={y(values[last]) - 8} className="forecast-spark__value forecast-spark__value--end" textAnchor="end">
+        <text x={x(last) - 10} y={y(values[last]) - 10} className="forecast-spark__value forecast-spark__value--end" textAnchor="end">
           {euroFormatter.format(values[last])}
         </text>
         {/* Repères de dates */}
