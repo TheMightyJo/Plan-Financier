@@ -166,8 +166,18 @@ export type SavingsTarget = {
   achievedAt?: number
   /** Propriétaire ; deviendra owner_user_id en Supabase. */
   member?: FamilyMember
+  /** Versements « mis de côté » (V2) — sert au rythme et à la projection. */
+  contributions?: SavingsContribution[]
   createdAt?: number
   updatedAt?: number
+}
+
+export type SavingsContribution = {
+  id: string
+  /** YYYY-MM-DD */
+  date: string
+  /** Montant en euros ; négatif = retrait. */
+  amount: number
 }
 
 export type AlertItem = { message: string; level: 'info' | 'warning' | 'danger' }

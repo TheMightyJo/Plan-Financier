@@ -4,6 +4,10 @@ export const euroFormatter = new Intl.NumberFormat('fr-FR', {
   maximumFractionDigits: 0,
 })
 
+/** « septembre 2026 » à partir d'une date ISO (YYYY-MM-DD). */
+const monthYearFormatter = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' })
+export const formatMonthYear = (iso: string): string => monthYearFormatter.format(new Date(`${iso}T00:00:00`))
+
 export const formatTooltipValue = (
   value: number | string | ReadonlyArray<number | string> | undefined,
 ): string => {

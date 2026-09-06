@@ -32,7 +32,8 @@ const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
 const CRON_SECRET = Deno.env.get('CRON_SECRET') ?? ''
-const REPORT_FROM = Deno.env.get('REPORT_FROM') ?? 'Plan Financier <onboarding@resend.dev>'
+const REPORT_FROM = Deno.env.get('REPORT_FROM') ?? 'Plan Financier <contact@protojo.fr>'
+const APP_URL = Deno.env.get('APP_URL') ?? 'https://planfinancier.app'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -280,7 +281,7 @@ const buildReportHtml = (
 
   const html = `<!doctype html><html lang="fr"><body style="margin:0;background:#FDFAF6;font-family:'Segoe UI',Arial,sans-serif;color:#3D2B1F;">
   <div style="max-width:560px;margin:0 auto;padding:24px;">
-    <h1 style="font-size:22px;margin:0 0 4px;">💰 Plan Financier</h1>
+    <h1 style="font-size:22px;margin:0 0 4px;"><img src="${APP_URL}/logo.png" width="32" height="32" alt="" style="vertical-align:middle;border-radius:9px;margin-right:8px;">Plan Financier</h1>
     <p style="margin:0 0 20px;color:#A08060;">Votre rapport — ${periodLabel}</p>
     <div style="background:#fff;border:1px solid #D6C5B0;border-radius:12px;padding:18px;margin-bottom:16px;">
       <p style="margin:0 0 6px;font-size:15px;">Dépensé : <strong style="color:#C05C2A;">−${euro(spent)}</strong></p>

@@ -6,6 +6,10 @@ import {
   recommendedMonthlyAmount,
   computeGoalStatus,
   validateGoal,
+  addContribution,
+  monthlyPace,
+  projectedCompletionDate,
+  computePaceOutlook,
 } from './savingsGoals'
 import type { Account, SavingsTarget } from '../types'
 
@@ -156,5 +160,99 @@ describe('validateGoal', () => {
 
   it('rejette date dans le passé', () => {
     expect(validateGoal(goal({ targetDate: '2000-01-01' }))).toBe('target_date_in_past')
+  })
+})
+
+describe('addContribution', () => {
+  it('ajoute au montant manuel et trace le versement', () => {
+    const next = addContribution(goal({ currentSaved: 100 }), 50, '2026-05-15')
+    expect(next.currentSaved).toBe(150)
+    expect(next.contributions).toHaveLength(1)
+    expect(next.contributions?.[0]).toMatchObject({ date: '2026-05-15', amount: 50 })
+  })
+
+  it('ne descend jamais sous 0 en cas de retrait', () => {
+    const next = addContribution(goal({ currentSaved: 20 }), -50, '2026-05-15')
+    expect(next.currentSaved).toBe(0)
+  })
+
+  it('ne touche pas currentSaved si un compte est lié (le solde fait foi)', () => {
+    const next = addContribution(goal({ destinationAccountId: 'a1', currentSaved: 0 }), 50, '2026-05-15')
+    expect(next.currentSaved).toBe(0)
+    expect(next.contributions).toHaveLength(1)
+  })
+
+  it('ignore un montant nul ou invalide', () => {
+    const g = goal({ currentSaved: 10 })
+    expect(addContribution(g, 0)).toBe(g)
+    expect(addContribution(g, Number.NaN)).toBe(g)
+  })
+})
+
+describe('monthlyPace', () => {
+  it('renvoie null sans versement', () => {
+    expect(monthlyPace(goal(), '2026-05-15')).toBeNull()
+  })
+
+  it('ramène les versements récents au mois (plancher 1 mois)', () => {
+    const g = goal({
+      contributions: [
+        { id: 'c1', date: '2026-05-01', amount: 100 },
+        { id: 'c2', date: '2026-05-10', amount: 100 },
+      ],
+    })
+    // 200 € sur moins d'un mois → plancher 1 mois → 200 €/mois
+    expect(monthlyPace(g, '2026-05-15')).toBeCloseTo(200, 0)
+  })
+
+  it('ignore les versements hors fenêtre de 90 jours', () => {
+    const g = goal({
+      contributions: [
+        { id: 'c1', date: '2025-12-01', amount: 5000 },
+        { id: 'c2', date: '2026-05-01', amount: 100 },
+      ],
+    })
+    expect(monthlyPace(g, '2026-05-15')).toBeCloseTo(100, 0)
+  })
+
+  it('renvoie null si le net des versements est ≤ 0', () => {
+    const g = goal({
+      contributions: [
+        { id: 'c1', date: '2026-05-01', amount: 100 },
+        { id: 'c2', date: '2026-05-10', amount: -100 },
+      ],
+    })
+    expect(monthlyPace(g, '2026-05-15')).toBeNull()
+  })
+})
+
+describe('projectedCompletionDate', () => {
+  it('projette la date au rythme donné', () => {
+    // reste 1000 € à 500 €/mois → ~2 mois (61 jours)
+    expect(projectedCompletionDate(goal(), 2000, 500, '2026-05-15')).toBe('2026-07-15')
+  })
+
+  it('renvoie null sans rythme ou déjà atteint', () => {
+    expect(projectedCompletionDate(goal(), 0, null, '2026-05-15')).toBeNull()
+    expect(projectedCompletionDate(goal(), 3000, 500, '2026-05-15')).toBeNull()
+  })
+})
+
+describe('computePaceOutlook', () => {
+  it("calcule l'écart en mois vs l'échéance (négatif = en avance)", () => {
+    const g = goal({
+      targetDate: '2026-12-15',
+      contributions: [{ id: 'c1', date: '2026-05-01', amount: 500 }],
+    })
+    // 500 €/mois, reste 1000 € (2000 épargnés) → atteint ~mi-juillet, 5 mois avant décembre
+    const outlook = computePaceOutlook(g, 2000, '2026-05-15')
+    expect(outlook).not.toBeNull()
+    expect(outlook?.projectedDate).toBe('2026-07-15')
+    expect(outlook?.monthsDelta).toBe(-5)
+  })
+
+  it('renvoie monthsDelta null sans échéance', () => {
+    const g = goal({ contributions: [{ id: 'c1', date: '2026-05-01', amount: 500 }] })
+    expect(computePaceOutlook(g, 2000, '2026-05-15')?.monthsDelta).toBeNull()
   })
 })
