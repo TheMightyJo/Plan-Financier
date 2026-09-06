@@ -2,7 +2,7 @@
   "name": "Plan Financier",
   "short_name": "Plan Financier",
   "description": "Cockpit budgétaire familial : dépenses, budgets et objectifs d'épargne.",
-  "start_url": "/",
+  "start_url": "/app",
   "scope": "/",
   "display": "standalone",
   "background_color": "#FDFAF6",

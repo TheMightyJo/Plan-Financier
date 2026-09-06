@@ -21,7 +21,7 @@ const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
 const CRON_SECRET = Deno.env.get('CRON_SECRET') ?? ''
-const FROM = Deno.env.get('REPORT_FROM') ?? 'Plan Financier <onboarding@resend.dev>'
+const FROM = Deno.env.get('REPORT_FROM') ?? 'Plan Financier <contact@protojo.fr>'
 const APP_URL = Deno.env.get('APP_URL') ?? 'https://planfinancier.app'
 
 const corsHeaders = {
@@ -44,7 +44,7 @@ const layout = (title: string, inner: string) => `<!doctype html>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FDFAF6;padding:24px 12px;">
     <tr><td align="center">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#FFFFFF;border:1px solid #E6DCCB;border-radius:16px;overflow:hidden;">
-        <tr><td style="background:linear-gradient(130deg,#8B6C52,#B8963E);padding:18px 24px;color:#FFF8F0;font-weight:800;font-size:18px;">💰 Plan Financier</td></tr>
+        <tr><td style="background:linear-gradient(130deg,#8B6C52,#B8963E);padding:16px 24px;color:#FFF8F0;font-weight:800;font-size:18px;"><img src="${APP_URL}/logo.png" width="36" height="36" alt="" style="vertical-align:middle;border-radius:10px;margin-right:10px;">Plan Financier</td></tr>
         <tr><td style="padding:26px 24px;font-size:16px;line-height:1.6;">${inner}</td></tr>
         <tr><td style="padding:16px 24px;border-top:1px solid #E6DCCB;color:#6B5644;font-size:12px;line-height:1.5;">
           Vous recevez cet email parce que vous avez créé un compte sur ${APP_URL.replace('https://', '')}.

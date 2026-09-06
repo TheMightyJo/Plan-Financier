@@ -40,8 +40,8 @@ Confirmez votre compte Plan Financier
             <td style="padding:32px 32px 8px 32px;">
               <table role="presentation" cellspacing="0" cellpadding="0" border="0">
                 <tr>
-                  <td style="width:48px;height:48px;border-radius:14px;background:#8B6C52;text-align:center;vertical-align:middle;">
-                    <span style="font-size:20px;font-weight:600;color:#FFF8F0;letter-spacing:-1px;line-height:48px;">FP</span>
+                  <td style="width:48px;height:48px;vertical-align:middle;">
+                    <img src="https://planfinancier.app/logo.png" width="48" height="48" alt="Plan Financier" style="display:block;border-radius:14px;">
                   </td>
                   <td style="padding-left:14px;vertical-align:middle;">
                     <div style="font-size:18px;font-weight:600;color:#3D2B1F;letter-spacing:-0.5px;">Plan Financier</div>
@@ -150,8 +150,8 @@ Réinitialisez votre mot de passe Plan Financier
             <td style="padding:32px 32px 8px 32px;">
               <table role="presentation" cellspacing="0" cellpadding="0" border="0">
                 <tr>
-                  <td style="width:48px;height:48px;border-radius:14px;background:#8B6C52;text-align:center;vertical-align:middle;">
-                    <span style="font-size:20px;font-weight:600;color:#FFF8F0;letter-spacing:-1px;line-height:48px;">FP</span>
+                  <td style="width:48px;height:48px;vertical-align:middle;">
+                    <img src="https://planfinancier.app/logo.png" width="48" height="48" alt="Plan Financier" style="display:block;border-radius:14px;">
                   </td>
                   <td style="padding-left:14px;vertical-align:middle;">
                     <div style="font-size:18px;font-weight:600;color:#3D2B1F;letter-spacing:-0.5px;">Plan Financier</div>
@@ -242,8 +242,8 @@ Connectez-vous à Plan Financier
             <td style="padding:32px;">
               <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:24px;">
                 <tr>
-                  <td style="width:48px;height:48px;border-radius:14px;background:#8B6C52;text-align:center;vertical-align:middle;">
-                    <span style="font-size:20px;font-weight:600;color:#FFF8F0;letter-spacing:-1px;line-height:48px;">FP</span>
+                  <td style="width:48px;height:48px;vertical-align:middle;">
+                    <img src="https://planfinancier.app/logo.png" width="48" height="48" alt="Plan Financier" style="display:block;border-radius:14px;">
                   </td>
                   <td style="padding-left:14px;vertical-align:middle;">
                     <div style="font-size:18px;font-weight:600;color:#3D2B1F;letter-spacing:-0.5px;">Plan Financier</div>
@@ -295,4 +295,5 @@ Connectez-vous à Plan Financier
 
 - Les emails Supabase sont envoyés via leur **SMTP par défaut** (rate-limité à ~4 emails/heure en free tier). Pour la prod, configurer un SMTP custom : **Project Settings → Auth → SMTP Settings** (Resend, Postmark, SendGrid…).
 - Le rendu peut varier entre Gmail, Outlook, Apple Mail. Le template est volontairement table-based (inline styles only) pour compat email-client maximale.
-- Logo : pour V1 c'est juste un carré "FP" en CSS pur. Pour V1.5 on peut héberger une image PNG dans Supabase Storage et la référencer en `<img>` (mais attention à la CSP des clients mail).
+- Logo : image PNG hébergée sur `https://planfinancier.app/logo.png` (512×512, servie par OVH). Les clients mail affichent les images distantes après « Afficher les images » ; l'attribut `alt` couvre le cas contraire.
+- Expéditeur : voir [docs/emails-expediteur.md](emails-expediteur.md) pour envoyer depuis `contact@protojo.fr` (SMTP Resend dans Supabase Auth).

@@ -17,6 +17,7 @@ import { RecurringSuggestions } from './components/RecurringSuggestions'
 import { NotificationsSettings } from './components/NotificationsSettings'
 import { detectRecurringCandidates, type RecurringCandidate } from './lib/recurringDetection'
 import { addContribution, computeCurrentSaved, computePaceOutlook, recommendedMonthlyAmount } from './lib/savingsGoals'
+import { switchLocalWorkspace } from './lib/localWorkspace'
 import { canPromptInstall, isIos, isStandalone, onInstallAvailabilityChange, promptInstall } from './lib/pwaInstall'
 import { CashChatPanel } from './components/CashChatPanel'
 import { QuickAddModal } from './components/QuickAddModal'
@@ -418,120 +419,22 @@ const loadDashboardWidgetState = (): DashboardWidgetState => {
 const defaultProfile: UserProfile = {
   id: 'principal',
   name: 'Principal',
-  monthlyBudget: 2300,
+  // 0 = budget à définir (onboarding ou Paramètres) ; rien n'est pré-rempli.
+  monthlyBudget: 0,
 }
 
-const baseTransactions: Transaction[] = [
-  {
-    id: 1,
-    label: 'Supermarche hebdo',
-    amount: 145,
-    category: 'Courses',
-    member: defaultProfile.id,
-    date: '2026-04-02',
-    kind: 'depense',
-    envelope: 'Maison',
-  },
-  {
-    id: 2,
-    label: 'Abonnement transport',
-    amount: 58,
-    category: 'Transport',
-    member: defaultProfile.id,
-    date: '2026-04-05',
-    kind: 'depense',
-    envelope: 'Perso',
-  },
-  {
-    id: 3,
-    label: 'Cours de piano',
-    amount: 70,
-    category: 'Loisirs',
-    member: defaultProfile.id,
-    date: '2026-04-08',
-    kind: 'depense',
-    envelope: 'Vacances',
-  },
-  {
-    id: 4,
-    label: 'Cantine',
-    amount: 55,
-    category: 'Ecole',
-    member: defaultProfile.id,
-    date: '2026-04-10',
-    kind: 'depense',
-    envelope: 'Perso',
-  },
-  {
-    id: 5,
-    label: 'Prime du mois',
-    amount: 380,
-    category: 'Autre',
-    member: defaultProfile.id,
-    date: '2026-04-11',
-    kind: 'revenu',
-    envelope: 'Perso',
-  },
-  {
-    id: 6,
-    label: 'Pharmacie',
-    amount: 36,
-    category: 'Sante',
-    member: defaultProfile.id,
-    date: '2026-04-17',
-    kind: 'depense',
-    envelope: 'Perso',
-  },
-  {
-    id: 7,
-    label: 'Argent de poche',
-    amount: 90,
-    category: 'Autre',
-    member: defaultProfile.id,
-    date: '2026-04-18',
-    kind: 'revenu',
-    envelope: 'Vacances',
-  },
-  {
-    id: 8,
-    label: 'Cinema',
-    amount: 24,
-    category: 'Loisirs',
-    member: defaultProfile.id,
-    date: '2026-04-21',
-    kind: 'depense',
-    envelope: 'Vacances',
-  },
-  {
-    id: 9,
-    label: 'Electricite',
-    amount: 112,
-    category: 'Maison',
-    member: defaultProfile.id,
-    date: '2026-04-23',
-    kind: 'depense',
-    envelope: 'Maison',
-  },
-  {
-    id: 10,
-    label: 'Sortie scolaire',
-    amount: 44,
-    category: 'Ecole',
-    member: defaultProfile.id,
-    date: '2026-04-25',
-    kind: 'depense',
-    envelope: 'Perso',
-  },
-]
+// Compte neuf = aucune opération (l'onboarding et la démo ont leurs propres jeux).
+const baseTransactions: Transaction[] = []
 
+// 0 = pas de plafond (l'utilisateur fixe les siens dans Budget).
 const defaultGoalTemplate: Record<Category, number> = {
-  Courses: 320,
-  Transport: 120,
-  Ecole: 80,
-  Loisirs: 140,
-  Sante: 90,
-  Maison: 260,
-  Autre: 110,
+  Courses: 0,
+  Transport: 0,
+  Ecole: 0,
+  Loisirs: 0,
+  Sante: 0,
+  Maison: 0,
+  Autre: 0,
 }
 
 const defaultSavingsGoals: SavingsGoals = {
@@ -1058,7 +961,9 @@ function App() {
   const [demoMode, setDemoMode] = useState(false)
   // Site vitrine affiché avant l'écran de connexion pour les visiteurs.
   // /login et /app/* mènent directement à l'écran de connexion.
+  // En app installée (PWA), la vitrine n'existe pas : connexion directe.
   const [showLanding, setShowLanding] = useState(() => {
+    if (isStandalone()) return false
     const path = window.location.pathname
     return path !== '/login' && !path.startsWith('/app')
   })
@@ -2637,19 +2542,24 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
   // ── Supabase auth listener ────────────────────────────────────
   useEffect(() => {
     // Hydrate la session existante (cookie/storage) au premier mount
-    supabase.auth.getSession().then(({ data }) => {
-      setIsAuthenticated(!!data.session)
-      setUserEmail(data.session?.user.email ?? '')
-      setAccountCreatedAt(data.session?.user.created_at ?? null)
-      setAuthProviderReady(true)
-    })
-    // Puis écoute les changements (signin/signout/refresh)
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+    // Espace local par compte : si le compte connecté n'est pas celui dont les
+    // données sont en place, on bascule l'espace PUIS on recharge pour relire
+    // l'état — avant toute synchro cloud (sinon les données de l'ancien compte
+    // seraient poussées dans le nouveau).
+    const applySession = (session: { user: { id: string; email?: string; created_at?: string } } | null) => {
+      if (session && switchLocalWorkspace(session.user.id)) {
+        const path = window.location.pathname
+        window.location.replace(path.startsWith('/app') ? path : '/app')
+        return
+      }
       setIsAuthenticated(!!session)
       setUserEmail(session?.user.email ?? '')
       setAccountCreatedAt(session?.user.created_at ?? null)
       setAuthProviderReady(true)
-    })
+    }
+    supabase.auth.getSession().then(({ data }) => applySession(data.session))
+    // Puis écoute les changements (signin/signout/refresh)
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => applySession(session))
     return () => subscription.subscription.unsubscribe()
   }, [])
 
@@ -3104,6 +3014,7 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
   const commitSavingsTargets = (next: SavingsTarget[]) => {
     setSavingsTargets(next)
+    if (demoMode) return
     window.localStorage.setItem(SAVINGS_TARGETS_STORAGE_KEY, JSON.stringify(next))
   }
 
@@ -4653,8 +4564,9 @@ Sur la base de ces données, estime le solde net probable à la fin du mois. Don
 
 
   const handleLogout = () => {
-    window.history.replaceState({}, '', '/')
-    setShowLanding(true)
+    const standalone = isStandalone()
+    window.history.replaceState({}, '', standalone ? '/login' : '/')
+    setShowLanding(!standalone)
     void (async () => {
       await logAuditEvent('logout')
       await supabase.auth.signOut()
@@ -5245,10 +5157,14 @@ Réponse attendue:
           window.history.pushState({}, '', '/app')
           enterDemoMode()
         }}
-        onBackToSite={() => {
-          window.history.pushState({}, '', '/')
-          setShowLanding(true)
-        }}
+        onBackToSite={
+          isStandalone()
+            ? undefined
+            : () => {
+                window.history.pushState({}, '', '/')
+                setShowLanding(true)
+              }
+        }
       />
     )
   }
@@ -5662,15 +5578,30 @@ Réponse attendue:
             Bonjour {selectedProfile.name}{' '}
             <span className="hero-wave" aria-hidden="true">👋</span>
           </span>
-          <p className="hero-focus-label">Reste à dépenser · {formatMonth(selectedMonth)}</p>
-          <p className={`hero-focus-value${remaining < 0 ? ' hero-focus-value--negative' : ''}`}>
-            {euroFormatter.format(remaining)}
-          </p>
-          <p className="hero-focus-hint">
-            {remaining >= 0
-              ? `≈ ${euroFormatter.format(dailyAllowance)} / jour sur les ${daysLeftInMonth} jours restants`
-              : 'Budget dépassé — réduisez une catégorie ou ajustez le budget.'}
-          </p>
+          {budget <= 0 ? (
+            <>
+              <p className="hero-focus-label">Dépensé · {formatMonth(selectedMonth)}</p>
+              <p className="hero-focus-value">{euroFormatter.format(monthlyExpense)}</p>
+              <p className="hero-focus-hint">
+                <button type="button" className="hero-inline-link" onClick={() => openSettingsPanel('profiles')}>
+                  Définissez votre budget mensuel
+                </button>{' '}
+                pour suivre votre reste à dépenser.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="hero-focus-label">Reste à dépenser · {formatMonth(selectedMonth)}</p>
+              <p className={`hero-focus-value${remaining < 0 ? ' hero-focus-value--negative' : ''}`}>
+                {euroFormatter.format(remaining)}
+              </p>
+              <p className="hero-focus-hint">
+                {remaining >= 0
+                  ? `≈ ${euroFormatter.format(dailyAllowance)} / jour sur les ${daysLeftInMonth} jours restants`
+                  : 'Budget dépassé — réduisez une catégorie ou ajustez le budget.'}
+              </p>
+            </>
+          )}
           {(() => {
             const week = weeklyStatsData.at(-1)
             if (!week) return null

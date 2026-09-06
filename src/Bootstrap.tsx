@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { LandingPage } from './components/LandingPage'
+import { isStandalone } from './lib/pwaInstall'
 
 /**
  * Point d'entrée « vitrine d'abord » : un visiteur qui arrive sur « / » sans
@@ -22,7 +23,10 @@ const hasStoredSession = (): boolean => {
   }
 }
 
-const shouldBootApp = (): boolean => window.location.pathname !== '/' || hasStoredSession()
+// App installée (PWA) : jamais la vitrine, on ouvre directement l'app
+// (connexion ou tableau de bord).
+const shouldBootApp = (): boolean =>
+  isStandalone() || window.location.pathname !== '/' || hasStoredSession()
 
 /** Précharge l'app au premier signe d'intention (sans peser sur le premier affichage). */
 const prefetchApp = () => {

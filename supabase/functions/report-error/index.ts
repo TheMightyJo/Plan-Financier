@@ -19,7 +19,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const CRON_SECRET = Deno.env.get('CRON_SECRET') ?? ''
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
-const FROM = Deno.env.get('REPORT_FROM') ?? 'Plan Financier <onboarding@resend.dev>'
+const FROM = Deno.env.get('REPORT_FROM') ?? 'Plan Financier <contact@protojo.fr>'
 const ADMIN_EMAIL = Deno.env.get('ADMIN_EMAIL') ?? 'contact@protojo.fr'
 
 /** Nouvelles empreintes max par heure (au-delà : on ignore, anti-flood). */
@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
 
     const html = `<!doctype html><html lang="fr"><body style="margin:0;background:#FDFAF6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#2A1810;">
 <div style="max-width:640px;margin:0 auto;padding:24px 12px;">
-  <h1 style="font-size:20px;margin:0 0 6px;">🩺 Plan Financier — erreurs des dernières 24 h</h1>
+  <h1 style="font-size:20px;margin:0 0 6px;"><img src="https://planfinancier.app/logo.png" width="28" height="28" alt="" style="vertical-align:middle;border-radius:8px;margin-right:8px;">🩺 Plan Financier — erreurs des dernières 24 h</h1>
   <p style="margin:0 0 16px;color:#6B5644;">${rows.length} erreur${rows.length > 1 ? 's' : ''} distincte${rows.length > 1 ? 's' : ''}, ${total} occurrence${total > 1 ? 's' : ''}.</p>
   <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;background:#fff;border:1px solid #E6DCCB;border-radius:12px;overflow:hidden;">${list}</table>
   <p style="margin:16px 0 0;color:#6B5644;font-size:12px;">Détail (pile d'appels) : Supabase → Table Editor → client_errors.</p>
