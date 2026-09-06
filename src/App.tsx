@@ -42,6 +42,14 @@ import { computePremiumAccess } from './lib/premiumAccess'
 import { loadViewLayouts, moveCard, resetViewLayout, saveViewLayouts, setCardHidden, type ViewId, type ViewLayouts } from './lib/viewLayout'
 import { ViewLayoutContext } from './lib/viewLayoutContext'
 import { HiddenCardsBar, ViewCard } from './components/ViewCard'
+import { InfoHint } from './components/InfoHint'
+import { isPaletteId, type A11yPrefs, type PaletteId } from './lib/appearance'
+import { ThemeSettings } from './components/settings/ThemeSettings'
+import { A11ySettings } from './components/settings/A11ySettings'
+import { BackupSettings } from './components/settings/BackupSettings'
+import { ReportSettings } from './components/settings/ReportSettings'
+import { AiSettings } from './components/settings/AiSettings'
+import { SubscriptionSettings } from './components/settings/SubscriptionSettings'
 import { pullDocuments, setDocumentSyncUser } from './lib/documentSync'
 import { queuePendingDeletes } from './lib/pendingDeletes'
 import { accountIdentityFromMetadata, personalizeProfiles, type AccountIdentity } from './lib/accountIdentity'
@@ -267,12 +275,6 @@ const PALETTE_STORAGE_KEY = 'plan-financier-palette-v1'
 const NOTES_STORAGE_KEY = 'plan-financier-notes-v1'
 const A11Y_STORAGE_KEY = 'plan-financier-a11y-v1'
 
-type A11yPrefs = {
-  textSize: 'normal' | 'large' | 'xl'
-  reduceMotion: boolean
-  highContrast: boolean
-}
-
 const defaultA11yPrefs: A11yPrefs = { textSize: 'normal', reduceMotion: false, highContrast: false }
 
 const loadA11yPrefs = (): A11yPrefs => {
@@ -309,16 +311,6 @@ const loadNotes = (): NoteItem[] => {
 }
 // Palettes d'accent prédéfinies (voir index.css [data-palette=…]). Les pastilles
 // `dots` montrent la teinte claire (thème sombre) et foncée (thème clair).
-const COLOR_PALETTES = [
-  { id: 'cafe', label: 'Café', dots: ['#C4956A', '#8B6C52'] },
-  { id: 'foret', label: 'Forêt', dots: ['#8FBF7A', '#3A7D44'] },
-  { id: 'ocean', label: 'Océan', dots: ['#7FB5D1', '#2E6E8E'] },
-  { id: 'prune', label: 'Prune', dots: ['#A794C9', '#6B5B8A'] },
-  { id: 'terracotta', label: 'Terracotta', dots: ['#D98B5F', '#C05C2A'] },
-] as const
-type PaletteId = (typeof COLOR_PALETTES)[number]['id']
-const isPaletteId = (value: unknown): value is PaletteId =>
-  COLOR_PALETTES.some((entry) => entry.id === value)
 const DASHBOARD_WIDGETS_STORAGE_KEY = 'plan-financier-dashboard-widgets-v1'
 const AI_PROVIDER_KEYS_STORAGE_KEY = 'plan-financier-ai-provider-keys-v1'
 const DEFAULT_CHAT_THREAD: ChatThread = { id: 'general', label: 'Général', lastActivityAt: 0 }
@@ -785,15 +777,6 @@ const getChatHistoryStorageKey = (profileId: string, month: string, threadId: st
   `${CHAT_HISTORY_STORAGE_PREFIX}:${profileId}:${month}:${threadId}`
 
 /** ℹ️ cliquable : l'explication ne s'affiche qu'à la demande. */
-function InfoHint({ text }: { text: string }) {
-  return (
-    <details className="info-hint">
-      <summary aria-label="Plus d'informations" title="Plus d'informations">ℹ️</summary>
-      <span className="info-hint__pop" role="note">{text}</span>
-    </details>
-  )
-}
-
 function App() {
   type SettingsSection = 'profiles' | 'categories' | 'ai' | 'security' | 'backup' | 'reset' | 'theme' | 'rgpd' | 'account' | 'report' | 'a11y' | 'subscription' | 'install' | 'notifications'
   const currentMonth = new Date().toISOString().slice(0, 7)
@@ -853,7 +836,6 @@ function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMonth])
 
-  const backupRestoreInputRef = useRef<HTMLInputElement | null>(null)
   // ── Famille (comptes reliés) ──
   const [familyPeers, setFamilyPeers] = useState<FamilyPeer[]>([])
   const [pendingInvites, setPendingInvites] = useState<FamilyInvite[]>([])
@@ -6626,83 +6608,7 @@ Réponse attendue:
                 ) : null}
 
                 {settingsSection === 'ai' ? (
-                  <div className="settings-section-grid">
-                    <article className="glass-card settings-section-card form-panel ai-settings-card">
-                      <div className="panel-title">
-                        <h2>Assistant IA</h2>
-                        <p>Connectez une IA pour activer le coaching, les analyses et le chat.</p>
-                      </div>
-
-                      <div
-                        className={`ai-status ai-status--${activeAiKey || canUseIncludedAi ? 'ready' : 'off'}`}
-                        role="status"
-                      >
-                        <span className="ai-status__dot" aria-hidden="true" />
-                        <div>
-                          <strong>
-                            {activeAiKey
-                              ? 'Prêt à l\'emploi — clé personnelle'
-                              : canUseIncludedAi
-                                ? 'Prêt à l\'emploi — IA incluse'
-                                : 'Non configuré'}
-                          </strong>
-                          <small>
-                            {activeAiKey
-                              ? 'Votre clé est enregistrée sur cet appareil (aucun quota). Testez-la ci-dessous.'
-                              : canUseIncludedAi
-                                ? `Cash est propulsé par Claude (Anthropic), inclus avec votre compte${aiQuota ? ` : ${aiQuota.used} / ${aiQuota.limit} messages utilisés ce mois-ci` : ''}. Une clé personnelle (facultative) lève le quota.`
-                                : 'Ajoutez votre clé pour débloquer l\'assistant.'}
-                          </small>
-                        </div>
-                      </div>
-
-                      <label>
-                        Clé API Anthropic (Claude) — facultative
-                        <input
-                          type="password"
-                          value={activeAiKey}
-                          onChange={(event) => saveAiProviderKey('anthropic', event.target.value)}
-                          placeholder={selectedAiProvider.keyPlaceholder}
-                          autoComplete="off"
-                        />
-                      </label>
-                      <p className="ai-key-links">
-                        <a href={selectedAiProvider.consoleUrl} target="_blank" rel="noreferrer">
-                          Où trouver ma clé ?
-                        </a>
-                        {' · '}
-                        <a href={selectedAiProvider.helpUrl} target="_blank" rel="noreferrer">
-                          Guide {selectedAiProvider.name}
-                        </a>
-                        {' — '}La clé reste sur cet appareil.
-                      </p>
-
-                      <div className="settings-inline-actions">
-                        <button
-                          type="button"
-                          onClick={() => void testClaudeKey()}
-                          disabled={claudeTestState === 'testing' || !activeAiKey}
-                        >
-                          {claudeTestState === 'testing' ? (
-                            <span className="inline-loading-label"><span className="inline-loader" aria-hidden="true" />Test en cours...</span>
-                          ) : 'Tester la clé'}
-                        </button>
-                        <button
-                          type="button"
-                          className="ghost-button"
-                          onClick={() => setChatOpen(true)}
-                          disabled={!isBudgetAiConfigured}
-                        >
-                          Ouvrir le chat
-                        </button>
-                      </div>
-                      {claudeTestMessage ? (
-                        <p className={`claude-status-text claude-status-text--${claudeTestState}`}>
-                          {claudeTestMessage}
-                        </p>
-                      ) : null}
-                    </article>
-                  </div>
+                  <AiSettings activeAiKey={activeAiKey} canUseIncludedAi={canUseIncludedAi} aiQuota={aiQuota} selectedAiProvider={selectedAiProvider} saveAiProviderKey={saveAiProviderKey} testClaudeKey={testClaudeKey} claudeTestState={claudeTestState} claudeTestMessage={claudeTestMessage} setChatOpen={setChatOpen} isBudgetAiConfigured={isBudgetAiConfigured} />
                 ) : null}
 
                 {settingsSection === 'notifications' ? (
@@ -6761,305 +6667,20 @@ Réponse attendue:
                 ) : null}
 
                 {settingsSection === 'a11y' ? (
-                  <div className="settings-section-grid settings-section-grid--single">
-                    <article className="glass-card settings-section-card form-panel">
-                      <div className="panel-title">
-                        <h2>
-                          ♿ Accessibilité
-                         
-                        </h2>
-                        <p>Adaptez l'application à vos besoins de lecture et de confort.</p>
-                      </div>
-
-                      <span className="ai-provider-label">Taille du texte</span>
-                      <div className="theme-picker">
-                        {([
-                          ['normal', 'Aa', 'Normale'],
-                          ['large', 'Aa', 'Grande'],
-                          ['xl', 'Aa', 'Très grande'],
-                        ] as const).map(([value, icon, label]) => (
-                          <button
-                            key={value}
-                            type="button"
-                            className={`theme-option a11y-size-option a11y-size-option--${value}${a11yPrefs.textSize === value ? ' theme-option--active' : ''}`}
-                            onClick={() => setA11yPrefs((previous) => ({ ...previous, textSize: value }))}
-                          >
-                            <span className="theme-option-icon">{icon}</span>
-                            <span>{label}</span>
-                            {a11yPrefs.textSize === value ? <span className="theme-option-state">✓</span> : null}
-                          </button>
-                        ))}
-                      </div>
-
-                      <label className="a11y-toggle">
-                        <input
-                          type="checkbox"
-                          checked={a11yPrefs.reduceMotion}
-                          onChange={(event) =>
-                            setA11yPrefs((previous) => ({ ...previous, reduceMotion: event.target.checked }))
-                          }
-                        />
-                        <span>
-                          <strong>Réduire les animations</strong>
-                          <small>Désactive les mouvements (coucou 👋, jauges animées, transitions).</small>
-                        </span>
-                      </label>
-
-                      <label className="a11y-toggle">
-                        <input
-                          type="checkbox"
-                          checked={a11yPrefs.highContrast}
-                          onChange={(event) =>
-                            setA11yPrefs((previous) => ({ ...previous, highContrast: event.target.checked }))
-                          }
-                        />
-                        <span>
-                          <strong>Contraste renforcé</strong>
-                          <small>Textes secondaires plus foncés et bordures plus marquées.</small>
-                        </span>
-                      </label>
-
-                    </article>
-                  </div>
+                  <A11ySettings a11yPrefs={a11yPrefs} setA11yPrefs={setA11yPrefs} />
                 ) : null}
 
                 {settingsSection === 'report' ? (
-                  <div className="settings-section-grid settings-section-grid--single">
-                    <article className="glass-card settings-section-card form-panel">
-                      <div className="panel-title">
-                        <h2>📧 Rapport par email</h2>
-                        <p>
-                          Recevez automatiquement un résumé de vos finances sur {userEmail || 'votre adresse'} —
-                          construit à partir de vos données synchronisées.
-                        </p>
-                      </div>
-                      {reportPrefs.frequency !== 'none' ? (
-                        <div className="report-current" role="status">
-                          <strong>📬 Rapport programmé</strong>
-                          <p>
-                            {reportPrefs.frequency === 'weekly' ? 'Chaque semaine' : 'Chaque mois'}
-                            {' · '}
-                            {reportPrefs.format === 'detailed' ? 'détaillé' : "l'essentiel"}
-                            {reportPrefs.attachment === 'none'
-                              ? ''
-                              : ` · ${reportPrefs.attachment === 'csv' ? 'CSV' : reportPrefs.attachment === 'excel' ? 'Excel' : 'PDF'} joint`}
-                            {' — envoyé à '}
-                            {userEmail || 'votre adresse'}
-                            {reportPrefs.ccEmails.length > 0
-                              ? ` + ${reportPrefs.ccEmails.length} adresse${reportPrefs.ccEmails.length > 1 ? 's' : ''} en copie`
-                              : ''}
-                          </p>
-                          <small>
-                            {reportPrefs.lastSentAt
-                              ? `Dernier envoi : ${new Date(reportPrefs.lastSentAt).toLocaleDateString('fr-FR')}. `
-                              : 'Aucun envoi automatique pour le moment. '}
-                            Modifiez les réglages ci-dessous : ils sont enregistrés aussitôt.
-                          </small>
-                        </div>
-                      ) : (
-                        <div className="report-current report-current--off" role="status">
-                          <strong>Aucun rapport programmé</strong>
-                          <small>Choisissez une fréquence ci-dessous pour l'activer.</small>
-                        </div>
-                      )}
-                      <label>
-                        Fréquence
-                        <select
-                          value={reportPrefs.frequency}
-                          onChange={(event) =>
-                            void handleReportPrefsChange({
-                              frequency: event.target.value as ReportPrefs['frequency'],
-                              format: reportPrefs.format,
-                            })
-                          }
-                        >
-                          <option value="none">Jamais (désactivé)</option>
-                          <option value="weekly">Chaque semaine</option>
-                          <option value="monthly">Chaque mois (bilan du mois précédent)</option>
-                        </select>
-                      </label>
-                      <label>
-                        Contenu
-                        <select
-                          value={reportPrefs.format}
-                          onChange={(event) =>
-                            void handleReportPrefsChange({
-                              frequency: reportPrefs.frequency,
-                              format: event.target.value as ReportPrefs['format'],
-                            })
-                          }
-                        >
-                          <option value="summary">L'essentiel (totaux + top catégories)</option>
-                          <option value="detailed">Détaillé (avec la liste des opérations)</option>
-                        </select>
-                      </label>
-                      <label>
-                        Pièce jointe
-                        <select
-                          value={reportPrefs.attachment}
-                          onChange={(event) =>
-                            void handleReportPrefsChange({
-                              attachment: event.target.value as ReportPrefs['attachment'],
-                            })
-                          }
-                        >
-                          <option value="none">Aucune — tout est dans l'email</option>
-                          <option value="pdf">PDF (à imprimer ou archiver)</option>
-                          <option value="csv">CSV (à ouvrir dans un tableur)</option>
-                          <option value="excel">Excel</option>
-                        </select>
-                      </label>
-                      <label>
-                        Envoyer une copie à (5 adresses max)
-                        <input
-                          type="text"
-                          value={reportCcDraft}
-                          onChange={(event) => setReportCcDraft(event.target.value)}
-                          onBlur={(event) => handleReportCcCommit(event.target.value)}
-                          placeholder="conjoint@exemple.fr, comptable@exemple.fr"
-                          autoComplete="off"
-                        />
-                        <small className="field-hint">
-                          Ces adresses reçoivent les rapports automatiques (pas le rapport test).
-                        </small>
-                      </label>
-                      <div className="settings-inline-actions">
-                        <button type="button" onClick={() => void handleSendTestReport()} disabled={reportBusy}>
-                          {reportBusy ? 'Envoi…' : 'Recevoir un rapport test maintenant'}
-                        </button>
-                      </div>
-                      {reportFeedback ? (
-                        <p className={reportFeedback.kind === 'ok' ? 'auth-success' : 'auth-error'}>
-                          {reportFeedback.text}
-                        </p>
-                      ) : null}
-                    </article>
-                  </div>
+                  <ReportSettings userEmail={userEmail} reportPrefs={reportPrefs} reportCcDraft={reportCcDraft} setReportCcDraft={setReportCcDraft} handleReportPrefsChange={handleReportPrefsChange} handleReportCcCommit={handleReportCcCommit} handleSendTestReport={handleSendTestReport} reportBusy={reportBusy} reportFeedback={reportFeedback} />
                 ) : null}
 
 
                 {settingsSection === 'backup' ? (
-                  <div className="settings-section-grid">
-                    <article className="glass-card settings-section-card form-panel">
-                      <div className="panel-title">
-                        <h2>Enregistrement en ligne</h2>
-                        <p>Vos données suivent votre compte, sur tous vos appareils.</p>
-                      </div>
-                      <div className={`sync-status-card sync-status-card--${cloudSyncStatus}`} role="status">
-                        {cloudSyncStatus === 'ok' ? (
-                          <>
-                            <strong>✅ Vos données sont enregistrées en ligne</strong>
-                            <small>
-                              Tout ce que vous ajoutez est copié automatiquement sur votre compte.
-                              Connectez-vous depuis n'importe quel appareil pour les retrouver.
-                            </small>
-                          </>
-                        ) : cloudSyncStatus === 'syncing' ? (
-                          <>
-                            <strong>☁️ Enregistrement en cours…</strong>
-                            <small>Vos dernières modifications sont en train d'être copiées en ligne.</small>
-                          </>
-                        ) : cloudSyncStatus === 'error' ? (
-                          <>
-                            <strong>⚠️ Enregistrement en ligne impossible pour le moment</strong>
-                            <small>
-                              Pas d'inquiétude : tout reste enregistré sur cet appareil. La copie en
-                              ligne reprendra automatiquement dès que la connexion reviendra.
-                            </small>
-                          </>
-                        ) : (
-                          <>
-                            <strong>☁️ En attente de connexion</strong>
-                            <small>
-                              Vos données sont enregistrées sur cet appareil. La copie en ligne
-                              démarre dès que vous êtes connecté.
-                            </small>
-                          </>
-                        )}
-                      </div>
-                    </article>
-                    <article className="glass-card settings-section-card form-panel">
-                      <div className="panel-title">
-                        <h2>
-                          Sauvegarde de vos données
-                          <InfoHint text="Le fichier exporté contient toutes vos données : gardez-le en lieu sûr, il permet de tout restaurer sur n'importe quel appareil." />
-                        </h2>
-                        <p>Exportez ou restaurez toutes vos données en un fichier.</p>
-                      </div>
-                      <div className="backup-zone backup-zone--standalone">
-                        <div className="settings-inline-actions">
-                          <button type="button" onClick={() => void handleExportEncryptedBackup()}>
-                            Exporter ma sauvegarde
-                          </button>
-                          <button type="button" className="ghost-button" onClick={() => backupRestoreInputRef.current?.click()}>
-                            Restaurer une sauvegarde
-                          </button>
-                        </div>
-                        <input
-                          ref={backupRestoreInputRef}
-                          type="file"
-                          accept="application/json,.json"
-                          className="hidden-input"
-                          onChange={(event) => void handleRestoreEncryptedBackup(event)}
-                        />
-                      </div>
-                    </article>
-                  </div>
+                  <BackupSettings cloudSyncStatus={cloudSyncStatus} handleExportEncryptedBackup={handleExportEncryptedBackup} handleRestoreEncryptedBackup={handleRestoreEncryptedBackup} />
                 ) : null}
 
                 {settingsSection === 'theme' ? (
-                  <div className="settings-section-grid">
-                    <article className="glass-card settings-section-card form-panel">
-                      <div className="panel-title">
-                        <h2>
-                          Thème
-                          <InfoHint text="Le mode Système suit automatiquement les préférences (clair/sombre) de votre appareil." />
-                        </h2>
-                        <p>Choisissez l'apparence de l'application.</p>
-                      </div>
-                      <div className="theme-picker">
-                        {([
-                          ['dark',   '🌙', 'Sombre'],
-                          ['light',  '☀️', 'Clair'],
-                          ['system', '💻', 'Système'],
-                        ] as const).map(([value, icon, label]) => (
-                          <button
-                            key={value}
-                            type="button"
-                            className={`theme-option${theme === value ? ' theme-option--active' : ''}`}
-                            onClick={() => setTheme(value)}
-                          >
-                            <span className="theme-option-icon">{icon}</span>
-                            <span>{label}</span>
-                            {theme === value ? <span className="theme-option-state">✓ sélectionné</span> : null}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="panel-title" style={{ marginTop: '0.9rem' }}>
-                        <h2>Palette de couleurs</h2>
-                        <p>La teinte d'accent utilisée par les boutons, liens et indicateurs.</p>
-                      </div>
-                      <div className="palette-picker" role="listbox" aria-label="Palettes de couleurs">
-                        {COLOR_PALETTES.map((entry) => (
-                          <button
-                            key={entry.id}
-                            type="button"
-                            role="option"
-                            aria-selected={palette === entry.id}
-                            className={`palette-option${palette === entry.id ? ' palette-option--active' : ''}`}
-                            onClick={() => setPalette(entry.id)}
-                          >
-                            <span className="palette-dots" aria-hidden="true">
-                              <span style={{ background: entry.dots[0] }} />
-                              <span style={{ background: entry.dots[1] }} />
-                            </span>
-                            <span>{entry.label}</span>
-                            {palette === entry.id ? <span className="theme-option-state">✓</span> : null}
-                          </button>
-                        ))}
-                      </div>
-                    </article>
-                  </div>
+                  <ThemeSettings theme={theme} setTheme={setTheme} palette={palette} setPalette={setPalette} />
                 ) : null}
 
                 {settingsSection === 'account' ? (
@@ -7074,111 +6695,9 @@ Réponse attendue:
                   </div>
                 ) : null}
 
-                {settingsSection === 'subscription' ? (() => {
-                  const renewDate = subscription?.currentPeriodEnd
-                    ? new Date(subscription.currentPeriodEnd).toLocaleDateString('fr-FR', {
-                        day: 'numeric', month: 'long', year: 'numeric',
-                      })
-                    : null
-                  const quotaPct = aiQuota && aiQuota.limit > 0
-                    ? Math.min(100, Math.round((aiQuota.used / aiQuota.limit) * 100))
-                    : 0
-                  const busyLabel = (key: string, label: string) =>
-                    checkoutBusy === key ? (
-                      <span className="inline-loading-label"><span className="inline-loader" aria-hidden="true" />Ouverture…</span>
-                    ) : label
-                  return (
-                    <div className="settings-section-grid settings-section-grid--single">
-                      <article className="glass-card settings-section-card form-panel">
-                        <div className="panel-title">
-                          <h2>Abonnement</h2>
-                          <p>Votre formule actuelle, votre quota IA inclus et les options pour évoluer.</p>
-                        </div>
-
-                        <div className={`subscription-current subscription-current--${userPlan}`}>
-                          <strong>
-                            {userPlan === 'premium' ? '⭐ Premium' : userPlan === 'family' ? '👨‍👩‍👧 Famille' : '🌱 Découverte — gratuit'}
-                          </strong>
-                          <small>
-                            {userPlan === 'free'
-                              ? premiumAccess.reason === 'trial'
-                                ? premiumAccess.unlocked && premiumAccess.trialEndsAt
-                                  ? `Essai complet : ${premiumAccess.daysLeft ?? 0} jour${(premiumAccess.daysLeft ?? 0) > 1 ? 's' : ''} restant${(premiumAccess.daysLeft ?? 0) > 1 ? 's' : ''} (jusqu'au ${premiumAccess.trialEndsAt.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}). Ensuite : plan Découverte — 1 profil, 3 poches, 15 messages Cash par mois, sans rapport email.`
-                                  : 'Essai terminé — plan Découverte : 3 poches, 1 profil, sans rapport email. Passez Premium pour tout retrouver.'
-                                : 'Vous profitez de la période de lancement : toutes les fonctionnalités sont offertes aux premiers inscrits.'
-                              : subscription?.cancelAtPeriodEnd
-                                ? `Résiliation programmée — accès jusqu'au ${renewDate ?? 'terme en cours'}.`
-                                : renewDate
-                                  ? `Abonnement actif — renouvellement le ${renewDate}.`
-                                  : 'Abonnement actif.'}
-                          </small>
-                        </div>
-
-                        {canUseIncludedAi ? (
-                          <div className="ai-quota-box">
-                            <div className="ai-quota-box__head">
-                              <strong>🤖 IA incluse (Cash)</strong>
-                              <span>{aiQuota ? `${aiQuota.used} / ${aiQuota.limit} messages ce mois-ci` : 'Chargement…'}</span>
-                            </div>
-                            <div className="ai-quota-bar" role="progressbar" aria-valuenow={quotaPct} aria-valuemin={0} aria-valuemax={100}>
-                              <span style={{ width: `${quotaPct}%` }} />
-                            </div>
-                            <small>Votre clé API personnelle (Paramètres → Assistant IA) reste utilisable sans quota.</small>
-                          </div>
-                        ) : null}
-
-                        {userPlan !== 'family' ? (
-                          <div className="subscription-plans">
-                            {userPlan === 'free' ? (
-                              <div className="subscription-plan subscription-plan--highlight">
-                                <div className="subscription-plan__head">
-                                  <strong>⭐ Premium</strong>
-                                  <span>3,99 €/mois</span>
-                                </div>
-                                <p>IA complète (300 messages/mois), poches et profils illimités, rapports email automatiques.</p>
-                                <div className="subscription-plan__actions">
-                                  <button type="button" className="hero-cta-button" disabled={checkoutBusy !== null} onClick={() => void handleStartCheckout('premium', 'monthly')}>
-                                    {busyLabel('premium-monthly', 'Passer Premium — 3,99 €/mois')}
-                                  </button>
-                                  <button type="button" className="ghost-button" disabled={checkoutBusy !== null} onClick={() => void handleStartCheckout('premium', 'yearly')}>
-                                    {busyLabel('premium-yearly', '29,99 €/an (−37 %)')}
-                                  </button>
-                                </div>
-                              </div>
-                            ) : null}
-                            <div className="subscription-plan">
-                              <div className="subscription-plan__head">
-                                <strong>👨‍👩‍👧 Famille</strong>
-                                <span>5,99 €/mois</span>
-                              </div>
-                              <p>Tout Premium, jusqu'à 5 membres du foyer, vue famille fusionnée, 500 messages IA/mois.</p>
-                              <div className="subscription-plan__actions">
-                                <button type="button" className="hero-cta-button" disabled={checkoutBusy !== null} onClick={() => void handleStartCheckout('family', 'monthly')}>
-                                  {busyLabel('family-monthly', 'Choisir Famille — 5,99 €/mois')}
-                                </button>
-                                <button type="button" className="ghost-button" disabled={checkoutBusy !== null} onClick={() => void handleStartCheckout('family', 'yearly')}>
-                                  {busyLabel('family-yearly', '44,99 €/an')}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {userPlan !== 'free' ? (
-                          <div className="settings-inline-actions">
-                            <button type="button" className="ghost-button" disabled={checkoutBusy !== null} onClick={() => void handleOpenBillingPortal()}>
-                              {busyLabel('portal', '🧾 Gérer mon abonnement (factures, résiliation)')}
-                            </button>
-                          </div>
-                        ) : null}
-
-                        <p className="auth-note">
-                          Paiement sécurisé par Stripe. Résiliable en un clic, sans engagement — vos données restent à vous, quel que soit le plan.
-                        </p>
-                      </article>
-                    </div>
-                  )
-                })() : null}
+                {settingsSection === 'subscription' ? (
+                  <SubscriptionSettings subscription={subscription} aiQuota={aiQuota} userPlan={userPlan} premiumAccess={premiumAccess} checkoutBusy={checkoutBusy} canUseIncludedAi={canUseIncludedAi} handleStartCheckout={handleStartCheckout} handleOpenBillingPortal={handleOpenBillingPortal} />
+                ) : null}
 
                 {settingsSection === 'rgpd' ? (
                   <div className="settings-section-grid">
